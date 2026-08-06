@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "@react-native-community/netinfo": "^12.0.1",
+    "@react-native-voice/voice": "^3.2.4",
+    "react-native-camera-kit": "^18.0.0",
+    "react-native-encrypted-storage": "^4.0.3"
+  },
+  "devDependencies": {
+    "@react-native/jest-preset": "^0.86.0",
+    "@testing-library/react-native": "^14.0.1",
+    "jest": "^30.4.2",
+    "react-test-renderer": "^19.2.8"
+  }
+}

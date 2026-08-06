@@ -1,0 +1,25 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+storemate_mobile/node_modules/
+
+# React Native
+storemate_mobile/android/.gradle/
+storemate_mobile/android/app/build/
+storemate_mobile/android/.cxx/
+storemate_mobile/ios/build/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
