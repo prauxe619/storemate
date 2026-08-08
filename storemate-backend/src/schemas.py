@@ -68,20 +68,44 @@ class SyncPushResponse(BaseModel):
     server_timestamp: str
 
 # --- AI ROUTER SCHEMAS ---
-class VoiceCommandRequest(BaseModel):
-    store_id: str
-    transcript: str
 
-class AIActionResponse(BaseModel):
-    intent: str
-    confidence: float
-    parameters: Dict[str, Any]
-    executed: bool
-    system_message: str
-
-# 1. Define the incoming request payload
 class VoiceCommand(BaseModel):
     text: str
+
+# 🚀 THIS COMPLETES PHASE 3: The unified strict schema for Gemini
+class IntentResult(BaseModel):
+    intent: str = Field(
+        description="""
+        The exact mapped action. MUST be one of: 
+        'inventory.add', 'sale.create', 'khata.credit', 
+        'inventory.update_price', 'ui.show_low_stock', 
+        'ui.search', 'ui.open_billing', 'ui.show_sales', or 'unknown'
+        """
+    )
+    product: Optional[str] = Field(
+        default=None, 
+        description="The product name, e.g., 'heavyweight oversized t-shirt', 'minimalist pullover'."
+    )
+    qty: Optional[float] = Field(
+        default=None, 
+        description="Quantity of the product mentioned."
+    )
+    customer_name: Optional[str] = Field(
+        default=None, 
+        description="Name of the customer for sales or Khata entries."
+    )
+    amount: Optional[float] = Field(
+        default=None, 
+        description="Financial amount for ledger entries."
+    )
+    new_price: Optional[float] = Field(
+        default=None, 
+        description="The new price to set if updating a product's price."
+    )
+    reason: Optional[str] = Field(
+        default=None, 
+        description="If intent is 'unknown', explain why the command was not understood."
+    )
 
 
 class ReceiptItem(BaseModel):

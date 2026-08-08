@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- 1. For react-native-camera-kit (Barcode Scanner) -->
+	<key>NSCameraUsageDescription</key>
+	<string>StoreMate needs camera access to scan product barcodes.</string>
+
+	<!-- 2. For @react-native-voice/voice (AI Assistant) -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>StoreMate needs microphone access to log Khata entries via voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>StoreMate needs speech recognition to understand your voice commands.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

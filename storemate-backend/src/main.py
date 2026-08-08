@@ -193,78 +193,38 @@ def get_admin_ledger(db: Session = Depends(get_db)):
     return entries
 
 # --- AI BRAIN API ---
-
-@app.post("/ai/voice-command", response_model=schemas.AIActionResponse)
-def execute_voice_command(command: schemas.VoiceCommandRequest, db: Session = Depends(get_db)):
-    # 1. Pass the raw text to our AI Engine
-    parsed_data = parse_store_intent(command.transcript)
+@app.post("/api/v1/ai/parse-intent")
+async def parse_intent(command: schemas.VoiceCommand):
+    system_prompt = """
+    You are the natural language parser for an apparel POS and inventory system.
+    Extract the user's spoken command into the exact structured fields.
     
-    intent = parsed_data["intent"]
-    params = parsed_data["parameters"]
+    Examples:
+    1. "Update the price of the minimalist pullover to 1499"
+       -> intent: 'inventory.update_price', product: 'minimalist pullover', new_price: 1499
+    2. "Show me what is low in stock"
+       -> intent: 'ui.show_low_stock'
+    3. "Open the billing screen"
+       -> intent: 'ui.open_billing'
+    """
     
-    # 2. Execute the database action based on the AI's intent
-    system_message = ""
-    executed = False
-
-    if intent == "ADD_LEDGER_CREDIT":
-        # In a real scenario, we would lookup the customer_id based on the name here
-        # For now, we simulate the ledger insertion
-        system_message = f"Successfully added ₹{params.get('amount')} to {params.get('customer_name')}'s account."
-        executed = True
-
-    elif intent == "CHECK_INVENTORY":
-        system_message = f"Checked stock for {params.get('item_name')}. You have 14 units remaining."
-        executed = True
-        
-    else:
-        system_message = "I didn't quite catch that. Could you repeat?"
-
-    # 3. Return the structured action to the mobile app UI
-    return {
-        "intent": intent,
-        "confidence": parsed_data["confidence"],
-        "parameters": params,
-        "executed": executed,
-        "system_message": system_message
-    }
-
-# 1. Define what a physical product looks like
-class LineItem(BaseModel):
-    product_name: str = Field(description="The name of the physical product, e.g., 'Amul Milk', 'Sugar'")
-    quantity: float = Field(description="The numeric quantity purchased, e.g., 2, 1.5")
-    unit: str = Field(description="The unit of measurement, e.g., 'packets', 'kg', 'liters', or 'pieces'")
-
-# 2. Upgrade the main intent to include a shopping cart
-class ParsedIntent(BaseModel):
-    status: str = Field(description="Must be 'success' or 'error'")
-    intent: str = Field(description="Must be 'CREDIT_GIVEN', 'PAYMENT_RECEIVED', or 'CASH_SALE'")
-    amount: float = Field(description="The exact financial amount extracted. If not explicitly stated, estimate based on items.")
-    customer_id: str = Field(description="The customer's name, prefixed with 'cust_'. Use 'cust_walkin' if no name is given.")
-    message: str = Field(description="A friendly, concise confirmation message for the Kirana owner")
-    cart: List[LineItem] = Field(default=[], description="The list of physical products the customer purchased")
-class VoiceCommand(BaseModel):
-    text: str
-
-@app.post("/ai/command")
-async def parse_voice_command(command: VoiceCommand):
     try:
+        # 🚀 Here is where we force Gemini to strictly follow your Phase 3 schema
         response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=f"Extract the transaction and product details from this messy transcription: '{command.text}'",
+            contents=f"{system_prompt}\n\nUser Command: {command.text}",
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=ParsedIntent,
-                system_instruction="You are an AI assistant for an Indian Kirana store. Extract the customer name, the total amount, and build a shopping cart of any physical items mentioned. If the user doesn't mention a price, you can set the amount to 0."
+                response_schema=schemas.IntentResult, 
             ),
         )
-        ai_data = json.loads(response.text)
-        return ai_data
+        
+        # Returns the perfectly structured JSON straight to your mobile app
+        return json.loads(response.text)
         
     except Exception as e:
-        return {
-            "status": "error", 
-            "message": f"The AI Brain failed: {str(e)}"
-        }
+        print(f"AI Engine Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process voice command")
 
 @app.post("/ai/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):

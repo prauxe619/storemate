@@ -7,8 +7,8 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 
-// ✅ 1. Import the legacy Voice Package manually
-import com.wenkesj.voice.VoicePackage 
+// ✅ 1. Import your custom StoreMate Native Speech Package
+import com.storemate_mobile.StoreMateSpeechPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -19,8 +19,8 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here:
           
-          // ✅ 2. Inject the package directly into the JavaScript engine
-          add(VoicePackage()) 
+          // ✅ 2. Inject your native speech engine into the JavaScript engine
+          add(StoreMateSpeechPackage()) 
         },
     )
   }
