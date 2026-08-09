@@ -202,10 +202,12 @@ async def parse_intent(command: schemas.VoiceCommand):
     Examples:
     1. "Update the price of the minimalist pullover to 1499"
        -> intent: 'inventory.update_price', product: 'minimalist pullover', new_price: 1499
-    2. "Show me what is low in stock"
-       -> intent: 'ui.show_low_stock'
-    3. "Open the billing screen"
-       -> intent: 'ui.open_billing'
+    2. "Add 2 heavyweight tees to the cart"
+       -> intent: 'pos.add_item', product: 'heavyweight tee', qty: 2
+    3. "Apply a 10 percent discount"
+       -> intent: 'pos.apply_discount', discount_percent: 10
+    4. "Generate the invoice for Rahul"
+       -> intent: 'pos.checkout', customer_name: 'Rahul'
     """
     
     try:

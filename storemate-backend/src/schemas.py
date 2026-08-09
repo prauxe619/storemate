@@ -79,8 +79,13 @@ class IntentResult(BaseModel):
         The exact mapped action. MUST be one of: 
         'inventory.add', 'sale.create', 'khata.credit', 
         'inventory.update_price', 'ui.show_low_stock', 
-        'ui.search', 'ui.open_billing', 'ui.show_sales', or 'unknown'
+        'ui.search', 'ui.open_billing', 'ui.show_sales',
+        'pos.add_item', 'pos.apply_discount', 'pos.checkout', 'unknown'
         """
+    )
+    discount_percent: Optional[float] = Field(
+        default=None, 
+        description="The discount percentage to apply to the cart, e.g., 10 for '10 percent'."
     )
     product: Optional[str] = Field(
         default=None, 

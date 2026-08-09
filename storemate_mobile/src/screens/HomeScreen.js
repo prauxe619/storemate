@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { executeAIAction } from '../core/ai/IntentHandler'; 
 import { SpeechEngine } from '../core/speech/SpeechEngine';
 
-// 🚀 Make sure to change this to your Render URL if you are testing on mobile data!
+// 🚀 Make sure to change this to your actual server IP or URL
 const BASE_URL = 'http://192.168.31.65:5050'; 
 
 const HomeScreen = () => {
@@ -32,6 +32,7 @@ const HomeScreen = () => {
   const [avatarUri, setAvatarUri] = useState(null); 
 
   const pulseAnim = useRef(new Animated.Value(0)).current;
+  const isProcessingCommand = useRef(false); // 🚀 Guard lock for duplicate voice events
 
   useEffect(() => {
     let loop;
@@ -111,22 +112,31 @@ const HomeScreen = () => {
       });
     });
 
-    // 🚀 NEW: Setup Custom Native Speech Listeners
+    // 🚀 UPDATED: Custom Speech Listeners with Lock Guard
     const partialSub = SpeechEngine.onPartialResult((text) => {
       setTranscribedText(text);
       setAiStatus("Listening…");
     });
 
-    const finalSub = SpeechEngine.onFinalResult((text) => {
+    const finalSub = SpeechEngine.onFinalResult(async (text) => {
+      // Prevent duplicate POST requests
+      if (isProcessingCommand.current) return;
+      isProcessingCommand.current = true;
+
       setTranscribedText(text);
       setIsListening(false);
-      processVoiceCommand(text); // Pass final text to Gemini
+
+      try {
+        await processVoiceCommand(text);
+      } finally {
+        isProcessingCommand.current = false;
+      }
     });
 
     const errorSub = SpeechEngine.onError((code) => {
       setIsListening(false);
+      isProcessingCommand.current = false;
       
-      // Let's decode the specific Android error!
       let errorMsg = `Error Code: ${code}`;
       if (code === 6) errorMsg = "Speech timeout (didn't hear anything)";
       if (code === 7) errorMsg = "No match (speak louder/clearer)";
@@ -149,11 +159,17 @@ const HomeScreen = () => {
     setAiStatus("Thinking...");
 
     try {
-      // Send raw voice text to Python/Gemini Backend
+      // 🚀 Fetch inventory items to pass to local RapidFuzz parser
+      const inventoryItems = await database.get('inventory_items').query().fetch();
+      const inventoryNames = inventoryItems.map(i => i.productName);
+
       const response = await fetch(`${BASE_URL}/api/v1/ai/parse-intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text })
+        body: JSON.stringify({ 
+          text: text,
+          inventory_names: inventoryNames 
+        })
       });
 
       if (!response.ok) throw new Error("API Network Error");
@@ -172,7 +188,6 @@ const HomeScreen = () => {
     }
   };
 
-  // 🚀 NEW: Cleaned up safeMicPress using our custom module
   const safeMicPress = async () => {
     try {
       if (isListening) {
@@ -248,7 +263,6 @@ const HomeScreen = () => {
         </TouchableOpacity>
       </View>
 
-      // Update your ScrollView to this:
       <ScrollView 
         contentContainerStyle={{ paddingBottom: 140 }} 
         showsVerticalScrollIndicator={false}
@@ -368,37 +382,20 @@ const styles = StyleSheet.create({
   balanceLabel: { color: '#6B7280', fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 },
   balanceValue: { fontSize: 23, fontWeight: '800' },
   balanceSubLabel: { color: '#9CA3AF', fontSize: 12, marginTop: 4 },
-  // --- RESPONSIVE GRID FIX ---
+  
   actionGrid: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
-    paddingHorizontal: 12, // Reduced from 16 to give more breathing room
+    paddingHorizontal: 12, 
     marginTop: 18, 
     marginBottom: 6,
-    gap: 4, // Adds safe spacing between tiles
-  },
-  actionTile: { 
-    flex: 1, // This forces all 4 buttons to split the screen exactly 25% each!
-    alignItems: 'center' 
-  },
-  actionIconWrap: { 
-    width: 48, // Slightly smaller to fit narrow phones
-    height: 48, 
-    borderRadius: 24, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginBottom: 6 
-  },
-  actionLabel: { 
-    color: '#1B1F23', 
-    fontSize: 11, // Reduced by 1pt to prevent text wrapping
-    fontWeight: '600', 
-    textAlign: 'center' 
+    gap: 4, 
   },
   actionTile: { flex: 1, alignItems: 'center' },
-  actionIconWrap: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  actionIconWrap: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   actionIcon: { fontSize: 22 },
-  actionLabel: { color: '#1B1F23', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  actionLabel: { color: '#1B1F23', fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  
   aiCard: { backgroundColor: '#FFFFFF', marginHorizontal: 16, marginTop: 18, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#EAECEC' },
   aiCardActive: { borderColor: '#0C9C4C' },
   aiHeaderRow: { flexDirection: 'row', alignItems: 'center' },

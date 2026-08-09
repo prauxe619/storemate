@@ -1,100 +1,132 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   SafeAreaView, View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  Alert, ScrollView, TextInput, Linking, Vibration 
+  Alert, ScrollView, TextInput, Linking, Vibration, Animated 
 } from 'react-native';
 import { database } from '../core/database';
 import { Q } from '@nozbe/watermelondb';
 import { Camera, CameraType } from 'react-native-camera-kit';
+import { SpeechEngine } from '../core/speech/SpeechEngine';
 
-const sendWhatsAppReceipt = (cart, totalAmount, customerPhone, paymentMethod, customerName, oldBalance = 0) => {
-  // 1. Beautiful Header with Today's Date
+const BASE_URL = 'http://192.168.31.65:5050'; 
+
+const sendWhatsAppReceipt = (cart, totalAmount, customerPhone, paymentMethod, customerName, oldBalance = 0, discount = 0) => {
   const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  let receiptText = `🏪 *STORE INVOICE* 🏪\n`;
-  receiptText += `📅 Date: ${today}\n`;
-  receiptText += `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n\n`;
-  
-  // 2. Clean, Numbered Item List with Indented Math
-  receiptText += `🛒 *ORDER DETAILS:*\n`;
+  let receiptText = `🏪 *STORE INVOICE* 🏪\n📅 Date: ${today}\n〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n\n🛒 *ORDER DETAILS:*\n`;
   cart.forEach((item, index) => {
-    receiptText += `${index + 1}. *${item.name}*\n`;
-    receiptText += `    └ ${item.qty} x ₹${item.price} = ₹${item.price * item.qty}\n`;
+    receiptText += `${index + 1}. *${item.name}*\n    └ ${item.qty} x ₹${item.price} = ₹${item.price * item.qty}\n`;
   });
-  
   receiptText += `\n〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n`;
-  
-  // 3. Smart Billing Section
-  if (paymentMethod === 'KHATA') {
-    receiptText += `🧾 *Current Bill:* ₹${totalAmount}\n`;
-    receiptText += `👤 *Customer:* ${customerName.trim()}\n`;
-    receiptText += `📖 *Payment:* Udhaar (Khata)\n\n`;
+  if (discount > 0) receiptText += `🏷️ *Discount Applied:* ${discount}%\n`;
 
+  if (paymentMethod === 'KHATA') {
+    receiptText += `🧾 *Current Bill:* ₹${totalAmount}\n👤 *Customer:* ${customerName.trim()}\n📖 *Payment:* Udhaar (Khata)\n\n`;
     if (oldBalance > 0) {
-      receiptText += `📊 *Previous Dues:* ₹${oldBalance}\n`;
-      receiptText += `🚨 *TOTAL BALANCE: ₹${totalAmount + oldBalance}*\n`;
+      receiptText += `📊 *Previous Dues:* ₹${oldBalance}\n🚨 *TOTAL BALANCE: ₹${totalAmount + oldBalance}*\n`;
     } else if (oldBalance < 0) {
       receiptText += `🟢 *Previous Advance:* ₹${Math.abs(oldBalance)}\n`;
       const newTotal = totalAmount + oldBalance;
-      if (newTotal > 0) {
-        receiptText += `🚨 *TOTAL BALANCE: ₹${newTotal}*\n`;
-      } else {
-        receiptText += `🟢 *Remaining Advance: ₹${Math.abs(newTotal)}*\n`;
-      }
+      receiptText += newTotal > 0 ? `🚨 *TOTAL BALANCE: ₹${newTotal}*\n` : `🟢 *Remaining Advance: ₹${Math.abs(newTotal)}*\n`;
     } else {
       receiptText += `🚨 *TOTAL BALANCE: ₹${totalAmount}*\n`;
     }
   } else {
-    receiptText += `🧾 *Total Paid: ₹${totalAmount}*\n`;
-    receiptText += `💵 *Payment:* Cash / UPI\n`;
+    receiptText += `🧾 *Total Paid: ₹${totalAmount}*\n💵 *Payment:* Cash / UPI\n`;
   }
-
-  // 4. Professional Footer
   receiptText += `\n🙏 *Thank you for your visit!*`;
 
-  // 5. Send to WhatsApp
   let formattedPhone = customerPhone.replace(/\D/g, ''); 
-  if (formattedPhone.length === 10) {
-    formattedPhone = `91${formattedPhone}`;
-  }
-
-  const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(receiptText)}`;
-
-  Linking.openURL(url).catch(err => console.error('Could not open WhatsApp', err));
+  if (formattedPhone.length === 10) formattedPhone = `91${formattedPhone}`;
+  Linking.openURL(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(receiptText)}`).catch(err => console.error('Could not open WhatsApp', err));
 };
 
 const POSScreen = ({ onClose }) => {
   const [cart, setCart] = useState([]);
   const [total, setTotal] = useState(0);
+  const [discount, setDiscount] = useState(0);
   const [availableItems, setAvailableItems] = useState([]);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
-  
   const [searchQuery, setSearchQuery] = useState('');
   const [lastScanned, setLastScanned] = useState(null);
+
+  const [isListening, setIsListening] = useState(false);
+  const [aiStatus, setAiStatus] = useState("Tap mic to add items");
+  
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const isProcessingCommand = useRef(false); 
+  const inventoryRef = useRef([]);
 
   useEffect(() => {
     const fetchInventory = async () => {
       const items = await database.get('inventory_items').query().fetch();
       setAvailableItems(items);
+      inventoryRef.current = items;
     };
     fetchInventory();
   }, []);
+
+  useEffect(() => {
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const discountAmount = subtotal * (discount / 100);
+    setTotal(Math.round(subtotal - discountAmount));
+  }, [cart, discount]);
+
+  useEffect(() => {
+    let loop;
+    if (isListening) {
+      pulseAnim.setValue(0);
+      loop = Animated.loop(Animated.timing(pulseAnim, { toValue: 1, duration: 1400, useNativeDriver: true }));
+      loop.start();
+    } else {
+      pulseAnim.setValue(0);
+    }
+    return () => loop && loop.stop();
+  }, [isListening]);
+
+  useEffect(() => {
+    const partialSub = SpeechEngine.onPartialResult((text) => setAiStatus(`Listening: "${text}"`));
+    
+    const finalSub = SpeechEngine.onFinalResult(async (text) => {
+      if (isProcessingCommand.current) return;
+      isProcessingCommand.current = true;
+
+      setIsListening(false);
+      
+      try {
+        await processPOSVoiceCommand(text);
+      } finally {
+        isProcessingCommand.current = false;
+      }
+    });
+
+    const errorSub = SpeechEngine.onError((code) => {
+      setIsListening(false);
+      isProcessingCommand.current = false;
+      setAiStatus(`Mic failed (Code ${code})`);
+    });
+
+    return () => { 
+      partialSub.remove();
+      finalSub.remove();
+      errorSub.remove();
+    };
+  }, []); 
 
   const filteredItems = availableItems.filter(item => 
     item.productName.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (item.barcode && item.barcode.includes(searchQuery))
   );
 
-  // 🚀 NEW: Centralized Add to Cart Logic
-  const addToCart = (product) => {
+  const addToCart = (product, explicitQty = null) => {
     setCart(prevCart => {
       const existingItemIndex = prevCart.findIndex(item => item.id === product.id);
       const currentQtyInCart = existingItemIndex >= 0 ? prevCart[existingItemIndex].qty : 0;
+      const qtyToAdd = explicitQty || 1;
 
-      // Prevent adding more than what is in stock
-      if (currentQtyInCart >= product.quantity) {
+      if (currentQtyInCart + qtyToAdd > product.quantity) {
         Alert.alert("Stock Limit ⚠️", `You only have ${product.quantity} of ${product.productName} left!`);
         return prevCart;
       }
@@ -102,114 +134,119 @@ const POSScreen = ({ onClose }) => {
       let newCart;
       if (existingItemIndex >= 0) {
         newCart = [...prevCart];
-        newCart[existingItemIndex].qty += 1;
-        newCart[existingItemIndex].qtyText = newCart[existingItemIndex].qty.toString(); // Keep text in sync
+        newCart[existingItemIndex].qty += qtyToAdd;
+        newCart[existingItemIndex].qtyText = newCart[existingItemIndex].qty.toString();
       } else {
         newCart = [...prevCart, { 
           id: product.id, 
           name: product.productName, 
           price: product.sellingPrice,
-          qty: 1,
-          qtyText: "1", // 🚀 NEW: Store the text version for decimal typing
+          qty: qtyToAdd,
+          qtyText: qtyToAdd.toString(), 
           maxQty: product.quantity 
         }];
       }
-      
-      calculateTotal(newCart);
       return newCart;
     });
-    
     setSearchQuery(''); 
   };
 
-  const handleScan = async (barcode) => {
+  const processPOSVoiceCommand = async (text) => {
+    setAiStatus("Thinking...");
     try {
-      const item = await database.get('inventory_items').query(Q.where('barcode', barcode)).fetch();
-      if (item.length > 0) {
-        addToCart(item[0]);
+      const inventoryNames = inventoryRef.current.map(i => i.productName);
+
+      const response = await fetch(`${BASE_URL}/api/v1/ai/parse-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, inventory_names: inventoryNames })
+      });
+      if (!response.ok) throw new Error("API Network Error");
+      
+      const aiData = await response.json();
+      const { intent, product, qty, discount_percent, customer_name } = aiData;
+
+      // 🚀 Automatically populate customer name if mentioned (e.g. "Rahul ke khate mein")
+      if (customer_name) {
+        setCustomerName(customer_name);
+      }
+
+      // 🚀 Handle POS Cart intents natively
+      if (intent === 'pos.add_item' || intent === 'sale.create' || intent === 'inventory.add') {
+        if (!product) {
+          setAiStatus("Didn't catch which product. Try again.");
+        } else {
+          // Find matching product using case-insensitive substring matching
+          const match = inventoryRef.current.find(i => i.productName.toLowerCase().includes(product.toLowerCase()));
+          if (match) {
+            addToCart(match, qty || 1);
+            setAiStatus(`Added ${qty || 1} ${match.productName}`);
+          } else {
+            setAiStatus(`Couldn't find "${product}" in inventory`);
+          }
+        }
+      } else if (intent === 'pos.apply_discount') {
+        setDiscount(discount_percent || 0);
+        setAiStatus(`Applied ${discount_percent}% discount`);
+      } else if (intent === 'pos.checkout') {
+        setAiStatus("Ready to bill!");
       } else {
-        Alert.alert("Not Found", `Barcode ${barcode} not found!`);
+        setAiStatus("Command not recognized.");
       }
     } catch (error) {
-      Alert.alert("Database Error", error.message);
+      setAiStatus("Connection failed.");
     }
   };
 
-  // 🚀 FIXED: Quantity Adjustment Buttons [-] [+] now update the text box too!
-  const adjustQuantity = (itemId, change) => {
-    setCart(prevCart => {
-      const newCart = prevCart.map(item => {
-        if (item.id === itemId) {
-          const newQty = item.qty + change;
-          
-          if (newQty > item.maxQty) {
-            Alert.alert("Stock Limit", `Only ${item.maxQty} available in stock.`);
-            return item;
-          }
-          
-          if (newQty > 0) {
-            // 🐛 THE BUG WAS HERE: We added `qtyText: newQty.toString()` so the screen updates!
-            return { ...item, qty: newQty, qtyText: newQty.toString() }; 
-          }
-        }
-        return item;
-      });
-      
-      calculateTotal(newCart);
-      return newCart;
-    });
+  const safeMicPress = async () => {
+    if (isListening) {
+      await SpeechEngine.stop();
+      setIsListening(false);
+      setAiStatus("Tap mic to add items");
+    } else {
+      setAiStatus("Listening...");
+      setIsListening(true);
+      await SpeechEngine.start();
+    }
   };
 
-  // 🚀 NEW: Handle manual typing of decimals (like 1.5 kg)
-  const handleExactQuantity = (itemId, textValue) => {
-    // Only allow numbers and decimal points
-    const cleanedText = textValue.replace(/[^0-9.]/g, '');
+  const handleScan = async (barcode) => {
+    const item = await database.get('inventory_items').query(Q.where('barcode', barcode)).fetch();
+    if (item.length > 0) addToCart(item[0]);
+    else Alert.alert("Not Found", `Barcode ${barcode} not found!`);
+  };
 
-    setCart(prevCart => {
-      const newCart = prevCart.map(item => {
-        if (item.id === itemId) {
-          const numValue = parseFloat(cleanedText);
-          
-          // Prevent them from typing 50kg if they only have 10kg in stock
-          if (numValue > item.maxQty) {
-            Alert.alert("Stock Limit", `Only ${item.maxQty} available in stock.`);
-            return { ...item, qtyText: item.maxQty.toString(), qty: item.maxQty };
-          }
-
-          return { 
-            ...item, 
-            qtyText: cleanedText, 
-            qty: isNaN(numValue) ? 0 : numValue 
-          };
+  const adjustQuantity = (itemId, change) => {
+    setCart(prevCart => prevCart.map(item => {
+      if (item.id === itemId) {
+        const newQty = item.qty + change;
+        if (newQty > item.maxQty) {
+          Alert.alert("Stock Limit", `Only ${item.maxQty} available.`);
+          return item;
         }
-        return item;
-      });
-      
-      calculateTotal(newCart);
-      return newCart;
-    });
+        if (newQty > 0) return { ...item, qty: newQty, qtyText: newQty.toString() }; 
+      }
+      return item;
+    }));
+  };
+
+  const handleExactQuantity = (itemId, textValue) => {
+    const cleanedText = textValue.replace(/[^0-9.]/g, '');
+    setCart(prevCart => prevCart.map(item => {
+      if (item.id === itemId) {
+        const numValue = parseFloat(cleanedText);
+        if (numValue > item.maxQty) {
+          Alert.alert("Stock Limit", `Only ${item.maxQty} available.`);
+          return { ...item, qtyText: item.maxQty.toString(), qty: item.maxQty };
+        }
+        return { ...item, qtyText: cleanedText, qty: isNaN(numValue) ? 0 : numValue };
+      }
+      return item;
+    }));
   };
 
   const removeFromCart = (itemId, itemName) => {
-    Alert.alert("Remove Item", `Remove ${itemName} from the cart?`, [
-      { text: "Cancel", style: "cancel" },
-      { 
-        text: "Remove", 
-        style: "destructive",
-        onPress: () => {
-          setCart(prevCart => {
-            const newCart = prevCart.filter(item => item.id !== itemId);
-            calculateTotal(newCart);
-            return newCart;
-          });
-        }
-      }
-    ]);
-  };
-
-  const calculateTotal = (currentCart) => {
-    const newTotal = currentCart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    setTotal(newTotal);
+    setCart(prevCart => prevCart.filter(item => item.id !== itemId));
   };
 
   const onBarcodeRead = (event) => {
@@ -225,27 +262,17 @@ const POSScreen = ({ onClose }) => {
   const processCheckout = async (paymentMethod) => {
     if (cart.length === 0) return Alert.alert("Empty Cart", "Add some items first!");
 
-    let oldBalance = 0; // 🚀 NEW: Variable to hold the old balance
-
+    let oldBalance = 0;
     if (paymentMethod === 'KHATA') {
       if (!customerName.trim()) return Alert.alert("Required", "Customer Name required for Udhaar.");
-      
-      // 🚀 NEW: Calculate the old balance by looking up previous Khata entries
       const allEntries = await database.get('ledger_entries').query().fetch();
-      const customerEntries = allEntries.filter(
-        e => e.customerId.toLowerCase() === customerName.trim().toLowerCase()
-      );
-      
-      customerEntries.forEach(e => {
-        if (e.entryType === 'CREDIT') oldBalance += e.amount;
-        if (e.entryType === 'PAYMENT') oldBalance -= e.amount;
-      });
+      allEntries.filter(e => e.customerId.toLowerCase() === customerName.trim().toLowerCase())
+        .forEach(e => oldBalance += e.entryType === 'CREDIT' ? e.amount : -e.amount);
     }
 
     try {
       await database.write(async () => {
         const now = Date.now();
-
         await database.get('sales_transactions').create((t) => {
           t.totalAmount = total;
           t.paymentType = paymentMethod; 
@@ -274,14 +301,12 @@ const POSScreen = ({ onClose }) => {
         }
       });
 
-      // 🚀 UPGRADED: We now pass the oldBalance into the WhatsApp function
       if (customerPhone.length >= 10) {
-        sendWhatsAppReceipt(cart, total, customerPhone, paymentMethod, customerName, oldBalance);
+        sendWhatsAppReceipt(cart, total, customerPhone, paymentMethod, customerName, oldBalance, discount);
       }
 
       Alert.alert("Checkout Complete", paymentMethod === 'KHATA' ? `₹${total} put on Khata.` : `₹${total} paid via Cash.`);
-
-      setCart([]); setTotal(0); setCustomerPhone(''); setCustomerName('');
+      setCart([]); setTotal(0); setDiscount(0); setCustomerPhone(''); setCustomerName('');
       onClose();
     } catch (error) {
       Alert.alert("Checkout Failed", error.message);
@@ -298,6 +323,9 @@ const POSScreen = ({ onClose }) => {
       </SafeAreaView>
     );
   }
+
+  const pulseScale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.4] });
+  const pulseOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] });
 
   return (
     <SafeAreaView style={styles.container}>
@@ -334,45 +362,41 @@ const POSScreen = ({ onClose }) => {
       <FlatList
         data={cart}
         keyExtractor={item => item.id}
+        showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
           <View style={styles.cartItem}>
             <View style={{ flex: 1 }}>
               <Text style={styles.cartItemText}>{item.name}</Text>
               <Text style={styles.cartItemPrice}>₹{item.price * item.qty}</Text>
-              
-              {/* 🚀 NEW: Smart Kirana Converter! */}
-              {/* If the number has a decimal (like 0.25), automatically show the grams */}
-              {item.qty % 1 !== 0 && (
-                <Text style={{ color: '#0C9C4C', fontSize: 12, fontWeight: '600', marginTop: 2 }}>
-                  ⚖️ {item.qty * 1000} grams
-                </Text>
-              )}
+              {item.qty % 1 !== 0 && <Text style={styles.gramsText}>⚖️ {item.qty * 1000} grams</Text>}
             </View>
             
             <View style={styles.qtyControls}>
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => adjustQuantity(item.id, -1)}>
-                <Text style={styles.qtyBtnText}>-</Text>
-              </TouchableOpacity>
-              
-              <TextInput
-                style={styles.qtyInput}
-                keyboardType="decimal-pad"
-                value={item.qtyText}
-                onChangeText={(text) => handleExactQuantity(item.id, text)}
-                selectTextOnFocus={true} 
-              />
-
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => adjustQuantity(item.id, 1)}>
-                <Text style={styles.qtyBtnText}>+</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => adjustQuantity(item.id, -1)}><Text style={styles.qtyBtnText}>-</Text></TouchableOpacity>
+              <TextInput style={styles.qtyInput} keyboardType="decimal-pad" value={item.qtyText} onChangeText={(text) => handleExactQuantity(item.id, text)} selectTextOnFocus={true} />
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => adjustQuantity(item.id, 1)}><Text style={styles.qtyBtnText}>+</Text></TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.removeBtn} onPress={() => removeFromCart(item.id, item.name)} activeOpacity={0.7}>
-              <Text style={styles.removeBtnText}>🗑️</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.removeBtn} onPress={() => removeFromCart(item.id, item.name)} activeOpacity={0.7}><Text style={styles.removeBtnText}>✕</Text></TouchableOpacity>
           </View>
         )}
       />
+
+      <View style={styles.voiceAgentRow}>
+        <View style={styles.micWrap}>
+          {isListening && <Animated.View pointerEvents="none" style={[styles.pulseRing, { transform: [{ scale: pulseScale }], opacity: pulseOpacity }]} />}
+          <TouchableOpacity style={[styles.micButton, isListening && styles.micButtonActive]} onPress={safeMicPress} activeOpacity={0.85}>
+            <Text style={styles.micIcon}>{isListening ? "⏹" : "🎙"}</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.aiStatusText} numberOfLines={1}>{aiStatus}</Text>
+        
+        {discount > 0 && (
+          <View style={styles.discountBadge}>
+            <Text style={styles.discountText}>-{discount}% Off</Text>
+          </View>
+        )}
+      </View>
 
       <View style={styles.footer}>
         <View style={styles.inputRow}>
@@ -403,7 +427,7 @@ const styles = StyleSheet.create({
   cancelScanBtn: { position: 'absolute', bottom: 40, left: 20, right: 20, backgroundColor: '#E0433B', padding: 18, borderRadius: 12, alignItems: 'center' },
   cancelScanText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   searchInput: { backgroundColor: '#FFFFFF', color: '#1B1F23', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#EAECEC', fontSize: 15, marginBottom: 15 },
-  scannerGridWrapper: { maxHeight: 180, marginBottom: 20 }, 
+  scannerGridWrapper: { maxHeight: 180, marginBottom: 10 }, 
   scannerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   scanBtn: { backgroundColor: '#E7F7EE', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, width: '48%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   btnText: { color: '#0C9C4C', fontWeight: '700', fontSize: 13, flex: 1, marginRight: 5 },
@@ -411,26 +435,29 @@ const styles = StyleSheet.create({
   cartTitle: { color: '#1B1F23', fontSize: 17, fontWeight: '700', borderBottomWidth: 1, borderColor: '#EAECEC', paddingBottom: 10, marginBottom: 10 },
   
   cartItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderColor: '#EAECEC' },
-  cartItemText: { color: '#1B1F23', fontSize: 16, marginBottom: 4, fontWeight: '500' },
+  cartItemText: { color: '#1B1F23', fontSize: 16, marginBottom: 4, fontWeight: '600' },
   cartItemPrice: { color: '#0C9C4C', fontSize: 15, fontWeight: '700' },
+  gramsText: { color: '#0C9C4C', fontSize: 12, fontWeight: '600', marginTop: 2 },
   
-  // 🚀 NEW: Quantity Stepper Styles
-  qtyControls: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAECEC', borderRadius: 8, marginRight: 15 },
+  qtyControls: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 8, marginRight: 15 },
   qtyBtn: { paddingHorizontal: 12, paddingVertical: 6 },
   qtyBtnText: { fontSize: 18, fontWeight: 'bold', color: '#1B1F23' },
-  // Replace qtyValue with this:
-  qtyInput: { 
-    fontSize: 16, 
-    fontWeight: '700', 
-    width: 45, 
-    textAlign: 'center', 
-    color: '#1D4ED8', // Make it blue so it looks tappable/editable
-    paddingVertical: 0 // Prevents Android from making the text box too tall
-  },
+  qtyInput: { fontSize: 15, fontWeight: '700', width: 40, textAlign: 'center', color: '#1D4ED8', paddingVertical: 0 },
 
-  removeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#FDECEA', alignItems: 'center', justifyContent: 'center' },
-  removeBtnText: { fontSize: 16 },
-  footer: { marginTop: 'auto', borderTopWidth: 1, borderColor: '#EAECEC', paddingTop: 20 },
+  removeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FDECEA', alignItems: 'center', justifyContent: 'center' },
+  removeBtnText: { fontSize: 14, color: '#E0433B', fontWeight: '800' },
+
+  voiceAgentRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#0C9C4C', marginTop: 10, marginBottom: 10 },
+  micWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  pulseRing: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: '#E0433B' },
+  micButton: { backgroundColor: '#0C9C4C', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  micButtonActive: { backgroundColor: '#E0433B' },
+  micIcon: { fontSize: 18 },
+  aiStatusText: { flex: 1, color: '#1B1F23', fontSize: 14, fontWeight: '600', fontStyle: 'italic' },
+  discountBadge: { backgroundColor: '#E0433B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  discountText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
+
+  footer: { marginTop: 'auto', borderTopWidth: 1, borderColor: '#EAECEC', paddingTop: 15 },
   inputRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   inputField: { backgroundColor: '#FFFFFF', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#EAECEC' },
   total: { fontSize: 26, color: '#1B1F23', fontWeight: '800', marginBottom: 15 },

@@ -1,18 +1,21 @@
-from flask import Flask, json, request, jsonify
-from google import genai
-from PIL import Image
-from google.genai import types
-from models import db, InventoryItem, LedgerEntry, SalesTransaction, User
-from ai_service import process_invoice_image 
 import os
-from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_jwt_extended import JWTManager, create_access_token
+import re
+import io
+import json
 import traceback
+from flask import Flask, request, jsonify
+from PIL import Image
+from google import genai
+from google.genai import types
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import timedelta
-from src.schemas import ParsedReceipt
 from dotenv import load_dotenv
+
+# Local Imports
+from models import db, InventoryItem, LedgerEntry, SalesTransaction, User
+from ai_service import process_invoice_image 
+from src.hybrid_parser import parse_with_rules
 
 # Load environment variables
 load_dotenv()
@@ -29,24 +32,23 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://storemate_admin:secretpass
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 🔐 Setup JWT Authentication
-app.config['JWT_SECRET_KEY'] = 'storemate-super-secret-key-2026-v2' # Now it is safely over 32 characters!
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30) # ✅ NEW: Keeps users logged in for 30 days
-ai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-
+app.config['JWT_SECRET_KEY'] = 'storemate-super-secret-key-2026-v2' 
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30) 
 
 jwt = JWTManager(app)
+
+# Initialize Gemini AI Client
+ai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 @jwt.unauthorized_loader
 def unauthorized(reason):
     print("JWT Unauthorized:", reason)
     return jsonify(error=reason), 401
 
-
 @jwt.invalid_token_loader
 def invalid(reason):
     print("JWT Invalid:", reason)
     return jsonify(error=reason), 422
-
 
 @jwt.expired_token_loader
 def expired(jwt_header, jwt_payload):
@@ -59,18 +61,13 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-# 🛠️ Temporary fake database for testing users (Move this to models.py later!)
-users_db = {}
-
-
 @app.route("/")
 def home():
     return {
         "status": "running",
-        "service": "StoreMate Backend",
-        "version": "1.0"
+        "service": "StoreMate Backend (Optimized Dual-Engine)",
+        "version": "3.0"
     }
-
 
 # ==========================================
 # ☁️ SYNC ROUTE
@@ -83,7 +80,6 @@ def sync_data():
         return jsonify({"error": "No data"}), 400
 
     try:
-        # Helper function to prevent SQLAlchemy crashes from unknown fields
         def sanitize_data(model_class, incoming_data):
             valid_keys = [c.name for c in model_class.__table__.columns]
             return {k: v for k, v in incoming_data.items() if k in valid_keys}
@@ -124,8 +120,47 @@ def sync_data():
 
 
 # ==========================================
-# 🤖 AI INVOICE SCANNER ROUTE
+# 🤖 DUAL-ENGINE INVOICE SCANNER ROUTE
 # ==========================================
+
+def clean_donut_output(donut_data):
+    """Fallback Parser: Cleans raw Donut ML output if Gemini fails"""
+    extracted_items = []
+    
+    def find_items_list(d):
+        if isinstance(d, list): return d
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if isinstance(v, list): return v
+                res = find_items_list(v)
+                if res: return res
+        return []
+
+    raw_items = find_items_list(donut_data)
+    
+    for idx, item in enumerate(raw_items):
+        if not isinstance(item, dict): continue
+        
+        name = (item.get("productName") or item.get("item_name") or item.get("name") or 
+                item.get("nm") or item.get("item_title") or item.get("desc") or f"Item #{idx + 1}")
+        
+        qty_str = str(item.get("quantity") or item.get("qty") or item.get("num") or "1")
+        qty_match = re.search(r'(\d+(\.\d+)?)', qty_str)
+        qty = float(qty_match.group(1)) if qty_match else 1.0
+        
+        price_str = str(item.get("purchasePrice") or item.get("price") or item.get("unitprice") or "0")
+        price_match = re.search(r'(\d+(\.\d+)?)', price_str)
+        price = float(price_match.group(1)) if price_match else 0.0
+        
+        extracted_items.append({
+            "productName": str(name).title(),
+            "quantity": qty,
+            "purchasePrice": price,
+            "sellingPrice": round(price * 1.2) if price > 0 else 0
+        })
+        
+    return extracted_items
+
 
 @app.route('/api/v1/invoices/upload', methods=['POST'])
 def upload_invoice():
@@ -138,58 +173,107 @@ def upload_invoice():
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
+    # STAGE 1: Try Fast Gemini Cloud Engine (Strict Schema)
     try:
-        print("\n📸 Image received! Sending to Gemini 2.5 Flash...")
+        print("\n📸 Invoice received! Optimizing image for AI...")
         image = Image.open(file.stream)
 
-        # 🚀 UPGRADED: Smart Bulk-to-Retail AI Prompt
+        # 🚀 FIX: Keep colors, just resize to prevent massive token burn
+        image.thumbnail((1500, 1500)) 
+
+        prompt = """
+        Extract purchased items from this wholesale bill.
+        CRITICAL RULES:
+        1. If a loose bulk item is listed (e.g. 'SUGAR 50KG Rs 2000'), calculate quantity as 50, purchasePrice as 40, productName as 'Sugar (Per KG)'.
+        2. 'sellingPrice' must default to purchasePrice * 1.2
+        """
+
+        # 🚀 FIX: Enforce Strict JSON Schema so it doesn't return empty data
         response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[
-                image,
-                """Extract ONLY purchased line items from this wholesale bill. 
-                CRITICAL MATH RULE FOR RETAIL:
-                Wholesalers sell in bulk sacks, but this shop sells per 1 KG. IF an item indicates a bulk loose weight in its name (e.g., 'CHANA 50 KG', 'SOYABEAN 15 KG'):
-                1. Multiply the billed quantity by the package weight to get the total base `quantity` in KGs (e.g., 2 sacks of 15 KG = 30). 
-                2. Divide the total item amount by this new total quantity to get the `purchase_price` PER 1 KG (e.g., ₹2760 / 50 KG = ₹55.20). 
-                3. Rename the item to indicate it is loose (e.g., rename 'CHANA 50 KG' to 'CHANA (Per KG)').
-                
-                IF an item is a standard packaged good (e.g., 'BESAN 500 GM', 'PARLE-G', 'OIL 1 KG'):
-                Leave the name alone, extract the exact billed quantity (Pieces/Packets), and extract the per-packet rate as the `purchase_price`.
-                
-                Do not guess the MRP if missing (leave null)."""
-            ],
+            contents=[image, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=ParsedReceipt, 
-            ),
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "extracted_data": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "productName": {"type": "STRING"},
+                                    "quantity": {"type": "NUMBER"},
+                                    "purchasePrice": {"type": "NUMBER"},
+                                    "sellingPrice": {"type": "NUMBER"}
+                                }
+                            }
+                        }
+                    }
+                }
+            )
         )
 
-        raw_json = json.loads(response.text)
-        
-        # 🟢 Print exactly what Gemini saw to your terminal
-        print("🧠 GEMINI SUCCESSFULLY EXTRACTED:")
-        print(json.dumps(raw_json, indent=2)) 
-        
-        items_list = raw_json.get("items", [])
+        tokens_used = response.usage_metadata.total_token_count
+        print(f"💰 Gemini Tokens Used for Invoice: {tokens_used}")
 
-        return jsonify({
-            "extracted_data": items_list,
-            "status": "SUCCESS"
-        }), 200
+        result_json = json.loads(response.text)
+        items = result_json.get("extracted_data") or []
 
-    except Exception as e:
-        print("\n❌ GEMINI ERROR:")
-        traceback.print_exc()
-        return jsonify({"error": "Gemini Extraction Failed", "details": str(e)}), 500
+        print(f"⚡ Cloud Engine Success: Extracted {len(items)} items!")
+        return jsonify({"extracted_data": items, "status": "SUCCESS"}), 200
+
+    except Exception as cloud_err:
+        print(f"⚠️ Cloud Engine Unavailable ({cloud_err}). Falling back to Local Donut ML...")
+        
+        # STAGE 2: Local Donut ML Fallback
+        try:
+            file.stream.seek(0)
+            raw_donut_json = process_invoice_image(file.stream)
+            formatted_items = clean_donut_output(raw_donut_json)
+            
+            print(f"✅ Local Fallback Extracted {len(formatted_items)} items!")
+            return jsonify({"extracted_data": formatted_items, "status": "SUCCESS_LOCAL"}), 200
+
+        except Exception as local_err:
+            print("\n❌ Both Cloud and Local Extraction Failed:")
+            traceback.print_exc()
+            return jsonify({"error": "Invoice extraction failed", "details": str(local_err)}), 500
 
 
 @app.route('/health', methods=['GET'])
 def health_check():
     return {"status": "online"}, 200
 
+
 # ==========================================
-# 🔐 AUTHENTICATION ROUTES (PostgreSQL Version)
+# 🎙️ 100% OFFLINE VOICE PARSER ROUTE
+# ==========================================
+
+@app.route('/api/v1/ai/parse-intent', methods=['POST'])
+def parse_intent():
+    data = request.json or {}
+    text = data.get('text', '')
+    inventory_names = data.get('inventory_names', []) 
+
+    if not text:
+        return jsonify({"error": "No speech text provided"}), 400
+
+    try:
+        # Passes directly to local rule-based engine, completely bypassing Cloud AI
+        local_result = parse_with_rules(text, inventory_names=inventory_names)
+        print(f"⚡ Local Parser Confidence: {local_result['confidence']} for command: '{text}'")
+
+        local_result['source'] = 'LOCAL_HYBRID_ENGINE'
+        return jsonify(local_result), 200
+
+    except Exception as e:
+        print(f"❌ Local Parser Error: {e}")
+        return jsonify({"error": "Voice parsing failed", "details": str(e)}), 500
+
+
+# ==========================================
+# 🔐 AUTHENTICATION & PROFILE ROUTES 
 # ==========================================
 
 @app.route('/api/v1/auth/register', methods=['POST'])
@@ -202,11 +286,9 @@ def register():
     if not email or not password:
         return jsonify({"error": "Email and password required"}), 400
     
-    # Check if user exists in the database
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "User already exists"}), 400
 
-    # Securely hash the password and save to DB
     new_user = User(
         email=email,
         password_hash=generate_password_hash(password),
@@ -217,14 +299,12 @@ def register():
     
     return jsonify({"message": "Shop registered successfully"}), 201
 
-
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
     data = request.json
     email = data.get('email')
     password = data.get('password')
 
-    # Find the user in the database
     user = User.query.filter_by(email=email).first()
     
     if not user or not check_password_hash(user.password_hash, password):
@@ -236,7 +316,6 @@ def login():
         "access_token": access_token,
         "shop_name": user.shop_name
     }), 200
-
 
 @app.route('/api/v1/auth/profile', methods=['GET'])
 @jwt_required()
@@ -253,7 +332,6 @@ def get_profile():
         "phone": user.phone or ""
     }), 200
 
-
 @app.route('/api/v1/auth/profile', methods=['PUT'])
 @jwt_required()
 def update_profile():
@@ -265,7 +343,6 @@ def update_profile():
         
     data = request.json
     
-    # Update the database record
     user.shop_name = data.get('shop_name', user.shop_name)
     user.phone = data.get('phone', user.phone)
     
@@ -287,13 +364,11 @@ def update_profile():
 def get_all_users():
     current_user_email = get_jwt_identity()
     
-    # 🛑 SECURITY: Only allow your specific email to access this data
     ADMIN_EMAIL = "superadmin@gmail.com" 
     
     if current_user_email != ADMIN_EMAIL:
         return jsonify({"error": "Access Denied. Super Admins only."}), 403
 
-    # Fetch all users, newest first
     users = User.query.order_by(User.id.desc()).all()
     
     user_list = []

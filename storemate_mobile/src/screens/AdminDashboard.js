@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://192.168.31.1:5050';
+const BASE_URL = 'http://192.168.31.65:5050';
 
 const AdminDashboard = ({ onClose }) => {
   const [users, setUsers] = useState([]);

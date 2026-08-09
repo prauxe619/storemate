@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Linking } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Linking, RefreshControl } from 'react-native';
 import { database } from '../core/database';
-import { Q } from '@nozbe/watermelondb'; // ✅ Added to prevent crashes in the phone search!
+import { Q } from '@nozbe/watermelondb'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KhataScreen = ({ onClose }) => {
   const [customers, setCustomers] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null); // For Payment
+  const [selectedCustomer, setSelectedCustomer] = useState(null); 
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [refreshing, setRefreshing] = useState(false); // 🚀 NEW: Pull-to-Refresh State
 
-  // ✅ Phone Number Popup States
   const [phoneModalVisible, setPhoneModalVisible] = useState(false);
   const [activeRemindCustomer, setActiveRemindCustomer] = useState(null);
   const [newPhoneInput, setNewPhoneInput] = useState('');
 
-  // ✅ History Modal States
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [activeCustomerHistory, setActiveCustomerHistory] = useState(null);
 
@@ -27,14 +26,11 @@ const KhataScreen = ({ onClose }) => {
       const customerData = {};
       entries.forEach(entry => {
         const originalName = entry.customerId;
-        
-        // ✅ The Fix: Create a hidden, lowercase key to group the data perfectly
         const normalizedKey = originalName.trim().toLowerCase();
         
-        // Initialize the customer object using the normalized key
         if (!customerData[normalizedKey]) {
           customerData[normalizedKey] = { 
-            name: originalName, // Keeps the first typed version for display (e.g., "Rahul")
+            name: originalName, 
             balance: 0, 
             phone: null, 
             entryId: entry.id, 
@@ -49,7 +45,6 @@ const KhataScreen = ({ onClose }) => {
           customerData[normalizedKey].phone = entry.customerPhone;
         }
 
-        // Save every transaction to their history log
         customerData[normalizedKey].history.push({
           id: entry.id,
           amount: entry.amount,
@@ -58,53 +53,63 @@ const KhataScreen = ({ onClose }) => {
         });
       });
 
-      // Sort each customer's history so the newest transactions are at the top
       Object.values(customerData).forEach(c => {
         c.history.sort((a, b) => b.date - a.date);
       });
 
-      const activeDebtors = Object.values(customerData).filter(c => c.balance !== 0);
-      setCustomers(activeDebtors);
+      // 🚀 FIXED: We no longer hide 0-balance accounts!
+      // We sort them so people with highest debt appear at the top.
+      const sortedCustomers = Object.values(customerData).sort((a, b) => {
+        if (b.balance !== a.balance) return b.balance - a.balance;
+        return a.name.localeCompare(b.name);
+      });
+      
+      setCustomers(sortedCustomers);
     } catch (error) {
       console.error("Error fetching Khata:", error);
     }
   };
 
   useEffect(() => {
-  fetchKhata();
-  loadShopConfig(); // 🚀 NEW: Load the shop details
-}, []);
+    fetchKhata();
+    loadShopConfig(); 
+  }, []);
+
+  // 🚀 NEW: Pull to Refresh Trigger
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchKhata();
+    setRefreshing(false);
+  };
 
   const loadShopConfig = async () => {
     const name = await AsyncStorage.getItem('shopName');
     const upi = await AsyncStorage.getItem('shopUpi');
-    setShopConfig({
-      name: name || 'Kirana Store',
-      upiId: upi || ''
-    });
+    setShopConfig({ name: name || 'Kirana Store', upiId: upi || '' });
   };
 
   const sendWhatsAppReminder = (customerName, balance, phone) => {
-  let message = `Namaste ${customerName} 🙏\n\nThis is a gentle reminder that your pending Khata (Udhaar) balance at our store is *₹${balance}*.\n\n`;
+    let message = `Namaste ${customerName} 🙏\n\nThis is a gentle reminder that your pending Khata (Udhaar) balance at our store is *₹${balance}*.\n\n`;
 
-  // 🚀 Dynamically inject UPI only if the shop owner has set it in their profile
-  if (shopConfig.upiId) {
-    const upiLink = `upi://pay?pa=${shopConfig.upiId}&pn=${encodeURIComponent(shopConfig.name)}&am=${balance}&cu=INR`;
-    message += `*Pay instantly via UPI:* 👇\n${upiLink}\n\nOr manually pay to UPI ID: ${shopConfig.upiId}\n\n`;
-  } else {
-    message += `Please visit the store to clear your dues.\n\n`;
-  }
+    if (shopConfig.upiId) {
+      const upiLink = `upi://pay?pa=${shopConfig.upiId}&pn=${encodeURIComponent(shopConfig.name)}&am=${balance}&cu=INR`;
+      message += `*Pay instantly via UPI:* 👇\n${upiLink}\n\nOr manually pay to UPI ID: ${shopConfig.upiId}\n\n`;
+    } else {
+      message += `Please visit the store to clear your dues.\n\n`;
+    }
 
-  message += `Thank you from ${shopConfig.name}!`;
+    message += `Thank you from ${shopConfig.name}!`;
 
-  let formattedPhone = phone.replace(/\D/g, '');
-  if (formattedPhone.length === 10) formattedPhone = `91${formattedPhone}`;
+    let formattedPhone = phone.replace(/\D/g, '');
+    if (formattedPhone.length === 10) formattedPhone = `91${formattedPhone}`;
 
-  const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-  Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open WhatsApp."));
-};
+    const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open WhatsApp."));
+  };
 
   const handleRemindTap = (customer) => {
+    if (customer.balance <= 0) return Alert.alert("No Dues", `${customer.name} has no pending dues to remind them about!`);
+    
     if (customer.phone) {
       sendWhatsAppReminder(customer.name, customer.balance, customer.phone);
     } else {
@@ -165,7 +170,6 @@ const KhataScreen = ({ onClose }) => {
     }
   };
 
-  // ✅ Open the history popup
   const openHistory = (customer) => {
     setActiveCustomerHistory(customer);
     setHistoryModalVisible(true);
@@ -175,8 +179,8 @@ const KhataScreen = ({ onClose }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.header}>Pending Khata</Text>
-          <Text style={styles.headerHinglish}>Baki Udhaar</Text>
+          <Text style={styles.header}>Khata Register</Text>
+          <Text style={styles.headerHinglish}>Udhaar Book</Text>
         </View>
         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
           <Text style={styles.closeBtnText}>Back</Text>
@@ -186,7 +190,7 @@ const KhataScreen = ({ onClose }) => {
       {customers.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>🎉</Text>
-          <Text style={styles.emptyText}>All dues are cleared!</Text>
+          <Text style={styles.emptyText}>No customers in your Khata yet.</Text>
         </View>
       ) : (
         <FlatList
@@ -194,16 +198,25 @@ const KhataScreen = ({ onClose }) => {
           keyExtractor={item => item.name}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 20 }}
+          // 🚀 ADDED REFRESH CONTROL HERE
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0C9C4C" />
+          }
           renderItem={({ item }) => (
             <View style={styles.card}>
-              {/* ✅ Left side is now tappable to open history */}
               <TouchableOpacity style={styles.cardInfo} onPress={() => openHistory(item)} activeOpacity={0.7}>
                 <Text style={styles.customerName}>{item.name}</Text>
-                <Text style={[styles.customerBalance, item.balance < 0 && { color: '#0C9C4C' }]}>
-                  {item.balance < 0 
-                    ? `Advance: ₹${Math.abs(item.balance).toFixed(2)}` 
-                    : `Owes: ₹${item.balance.toFixed(2)}`}
-                </Text>
+                
+                {item.balance === 0 ? (
+                  <Text style={[styles.customerBalance, { color: '#6B7280' }]}>Settled (₹0.00)</Text>
+                ) : (
+                  <Text style={[styles.customerBalance, item.balance < 0 && { color: '#0C9C4C' }]}>
+                    {item.balance < 0 
+                      ? `Advance: ₹${Math.abs(item.balance).toFixed(2)}` 
+                      : `Owes: ₹${item.balance.toFixed(2)}`}
+                  </Text>
+                )}
+                
                 <Text style={styles.viewHistoryHint}>Tap to view history ›</Text>
               </TouchableOpacity>
               
@@ -228,7 +241,6 @@ const KhataScreen = ({ onClose }) => {
               <View>
                 <Text style={styles.modalTitle}>{activeCustomerHistory?.name}'s Khata</Text>
                 
-                {/* 🚀 NEW: Customer Details Section */}
                 <Text style={styles.customerPhoneText}>
                   📞 {activeCustomerHistory?.phone ? activeCustomerHistory.phone : 'No phone number added'}
                 </Text>
@@ -246,15 +258,14 @@ const KhataScreen = ({ onClose }) => {
             
             <FlatList
               data={activeCustomerHistory?.history || []}
-              keyExtractor={item => item.id}
+              keyExtractor={(item, index) => `${item.id}-${index}`}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
                 <View style={styles.historyRow}>
                   <View>
                     <Text style={item.type === 'CREDIT' ? styles.historyTypeCredit : styles.historyTypePayment}>
-                      {item.type === 'CREDIT' ? '🔴 Udhar (Credit)' : '🟢 Paid (Received)'}
+                      {item.type === 'CREDIT' ? (item.amount === 0 ? '🟢 Account Created' : '🔴 Udhar (Credit)') : '🟢 Paid (Received)'}
                     </Text>
-                    {/* Formats nicely as: 24 Sept 2026, 02:30 PM */}
                     <Text style={styles.historyDate}>
                       {new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </Text>
@@ -335,11 +346,6 @@ const KhataScreen = ({ onClose }) => {
   );
 };
 
-// ---- Palette (matches HomeScreen / App.js / InventoryScreen) ----
-// Background #F5F7F6   Card #FFFFFF   Ink #1B1F23   Muted #6B7280
-// Brand Green #0C9C4C  Alert Red #E0433B  Hairline #EAECEC
-// Khata due amounts stay red (money owed to the shop), advances/payments go green.
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F7F6', padding: 20 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
@@ -377,7 +383,6 @@ const styles = StyleSheet.create({
   confirmBtn: { backgroundColor: '#0C9C4C', paddingVertical: 15, paddingHorizontal: 20, borderRadius: 10 },
   confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  // History modal
   historyModalContent: { backgroundColor: '#FFFFFF', padding: 25, borderRadius: 16, width: '90%', maxHeight: '80%', borderWidth: 1, borderColor: '#EAECEC' },
   historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: '#EAECEC', paddingBottom: 15, marginBottom: 15 },
   historySubtitle: { color: '#E0433B', fontSize: 15, fontWeight: '700' },

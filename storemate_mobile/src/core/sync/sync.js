@@ -2,7 +2,8 @@ import { Q } from '@nozbe/watermelondb';
 import { database } from '../database';
 
 // Note: 10.0.2.2 is how the Android Emulator connects to your computer's localhost
-const API_URL = 'http://10.0.2.2:5050/api/sync';
+// Change localhost to your IP:
+const SYNC_URL = 'http://192.168.31.65:5050/api/sync';
 
 export const syncWithCloud = async () => {
   try {
