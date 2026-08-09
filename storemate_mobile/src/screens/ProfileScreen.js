@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { 
   SafeAreaView, View, Text, StyleSheet, TextInput, 
   TouchableOpacity, Alert, ActivityIndicator, Image,
-  Share as RNShare, Modal 
+  Share as RNShare, Modal, ScrollView, KeyboardAvoidingView, Platform 
 } from 'react-native';
 import AdminDashboard from './AdminDashboard'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,11 +10,11 @@ import RNFS from 'react-native-fs';
 import { database } from '../core/database'; 
 import { AuthContext } from '../../App';
 import Share from 'react-native-share'; 
-import { launchImageLibrary } from 'react-native-image-picker'; // 🚀 NEW: For Profile Pic
-import AnalyticsScreen from './AnalyticsScreen'; // 🚀 NEW: Import Analytics
-import { SecureStorage } from '../utils/secureStorage'; // 🔒 NEW: For secure token storage
-
-const BASE_URL = 'http://192.168.31.1:5050';
+import { launchImageLibrary } from 'react-native-image-picker';
+import AnalyticsScreen from './AnalyticsScreen';
+import { SecureStorage } from '../utils/secureStorage';
+import { backupNow } from '../services/BackupService';
+import { BASE_URL } from '../config/api';
 
 const ProfileScreen = () => {
   const { logout } = useContext(AuthContext);
@@ -22,17 +22,18 @@ const ProfileScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false); 
+  const [isBackingUp, setIsBackingUp] = useState(false); 
   const [isEditing, setIsEditing] = useState(false);
 
   const [email, setEmail] = useState('');
   const [shopName, setShopName] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState(''); // 🚀 NEW: Store Address
-  const [avatarUri, setAvatarUri] = useState(null); // 🚀 NEW: Profile Picture
+  const [address, setAddress] = useState(''); 
+  const [avatarUri, setAvatarUri] = useState(null); 
   const [upiId, setUpiId] = useState('');
   
   const [showAdmin, setShowAdmin] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false); // 🚀 NEW
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -40,7 +41,6 @@ const ProfileScreen = () => {
 
   const fetchProfile = async () => {
     try {
-      // Load offline profile info
       const localShop = await AsyncStorage.getItem('shopName');
       const localEmail = await AsyncStorage.getItem('userEmail');
       const localPhone = await AsyncStorage.getItem('userPhone');
@@ -55,7 +55,6 @@ const ProfileScreen = () => {
       if (localAddress) setAddress(localAddress);
       if (localAvatar) setAvatarUri(localAvatar);
 
-      // 🔒 SECURE: Fetch token using EncryptedStorage instead of AsyncStorage
       const token = await SecureStorage.getToken();
       if (!token) return;
 
@@ -84,7 +83,6 @@ const ProfileScreen = () => {
     }
   };
 
-  // 🚀 NEW: Handle Profile Picture Selection
   const handlePickAvatar = async () => {
     try {
       const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.5 });
@@ -92,7 +90,7 @@ const ProfileScreen = () => {
 
       const uri = result.assets[0].uri;
       setAvatarUri(uri);
-      await AsyncStorage.setItem('avatarUri', uri); // Save to local storage
+      await AsyncStorage.setItem('avatarUri', uri);
     } catch (error) {
       Alert.alert("Error", "Could not pick an image.");
     }
@@ -103,15 +101,13 @@ const ProfileScreen = () => {
     
     setIsSaving(true);
     try {
-      // 1. Always save locally immediately so the UI is fast
       await AsyncStorage.setItem('shopName', shopName); 
       await AsyncStorage.setItem('userPhone', phone); 
       await AsyncStorage.setItem('userAddress', address); 
       await AsyncStorage.setItem('shopUpi', upiId); 
 
-      // 2. Try to update the server
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch(`${BASE_URL}/api/v1/auth/profile`, {
+      await fetch(`${BASE_URL}/api/v1/auth/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -123,7 +119,6 @@ const ProfileScreen = () => {
       setIsEditing(false);
       Alert.alert("Success", "Profile updated perfectly.");
     } catch (error) {
-      // Even if the server fails (offline), we saved it locally!
       setIsEditing(false);
       Alert.alert("Saved Locally", "Profile updated on this device. Will sync when online.");
     } finally {
@@ -131,7 +126,18 @@ const ProfileScreen = () => {
     }
   };
 
-  // 🚀 FIXED: Generates a REAL .csv file for WhatsApp instead of a text block
+  const handleDriveBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      await backupNow();
+      Alert.alert("Backup Successful ☁️", "Your Inventory, Sales, and Khata records are securely saved to your Google Drive.");
+    } catch (error) {
+      Alert.alert("Backup Error", error.message || "Failed to back up to Google Drive.");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
   const handleExportCSV = async () => {
     try {
       setIsExporting(true);
@@ -149,11 +155,9 @@ const ProfileScreen = () => {
         return `"${entry.customerId}",${entry.amount},${entry.entryType},"${dateFormatted}"`;
       }).join('\n');
 
-      // 1. Save as a physical file on the device
       const path = `${RNFS.CachesDirectoryPath}/Storemate_Ledger.csv`;
       await RNFS.writeFile(path, csvHeader + csvRows, 'utf8');
 
-      // 2. Share the PHYSICAL file (WhatsApp prefers this over base64)
       await Share.open({
         url: `file://${path}`,
         type: 'text/csv',
@@ -192,124 +196,159 @@ const ProfileScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.header}>Profile & Settings</Text>
-        <TouchableOpacity 
-          style={styles.actionBtn} 
-          onPress={() => isEditing ? handleSave() : setIsEditing(true)}
-          disabled={isSaving}
-          activeOpacity={0.85}
-        >
-          {isSaving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.actionBtnText}>{isEditing ? 'Save' : 'Edit'}</Text>}
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.avatarRow}>
-          {/* 🚀 UPGRADED: Tappable Avatar for Image Upload */}
-          <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.8}>
-            <View style={styles.avatarCircle}>
-              {avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-              ) : (
-                <Text style={styles.avatarText}>{(shopName || email || 'S').trim().charAt(0).toUpperCase()}</Text>
-              )}
-              <View style={styles.editBadge}><Text style={{fontSize: 10}}>📷</Text></View>
-            </View>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        style={styles.keyboardContainer}
+      >
+        {/* Fixed Header Row */}
+        <View style={styles.headerRow}>
+          <Text style={styles.header}>Profile & Settings</Text>
+          <TouchableOpacity 
+            style={styles.actionBtn} 
+            onPress={() => isEditing ? handleSave() : setIsEditing(true)}
+            disabled={isSaving}
+            activeOpacity={0.85}
+          >
+            {isSaving ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionBtnText}>{isEditing ? 'Save' : 'Edit'}</Text>
+            )}
           </TouchableOpacity>
-          
-          <View style={{ marginLeft: 16, flex: 1 }}>
-            <Text style={styles.avatarShopName}>{shopName || 'Your Shop'}</Text>
-            <Text style={styles.avatarEmail}>{email || 'No email registered'}</Text>
+        </View>
+
+        {/* Scrollable Content Container optimized for all device sizes */}
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* SECTION 1: Store Information Card */}
+          <View style={styles.card}>
+            <View style={styles.avatarRow}>
+              <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.8}>
+                <View style={styles.avatarCircle}>
+                  {avatarUri ? (
+                    <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarText}>{(shopName || email || 'S').trim().charAt(0).toUpperCase()}</Text>
+                  )}
+                  <View style={styles.editBadge}><Text style={{fontSize: 10}}>📷</Text></View>
+                </View>
+              </TouchableOpacity>
+              
+              <View style={styles.avatarInfo}>
+                <Text style={styles.avatarShopName} numberOfLines={1}>{shopName || 'Your Shop'}</Text>
+                <Text style={styles.avatarEmail} numberOfLines={1}>{email || 'No email registered'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <Text style={styles.label}>Shop Name</Text>
+            <TextInput 
+              style={[styles.input, isEditing ? styles.inputEditable : styles.inputDisabled]} 
+              value={shopName} 
+              onChangeText={setShopName}
+              editable={isEditing} 
+              placeholder="Enter Shop Name"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <Text style={styles.label}>Mobile Number</Text>
+            <TextInput 
+              style={[styles.input, isEditing ? styles.inputEditable : styles.inputDisabled]} 
+              value={phone} 
+              onChangeText={setPhone}
+              editable={isEditing} 
+              keyboardType="numeric"
+              placeholder="e.g. 9876543210"
+              placeholderTextColor="#9CA3AF"
+              maxLength={10}
+            />
+
+            <Text style={styles.label}>Store Address</Text>
+            <TextInput 
+              style={[styles.input, isEditing ? styles.inputEditable : styles.inputDisabled, styles.textArea]} 
+              value={address} 
+              onChangeText={setAddress}
+              editable={isEditing} 
+              multiline={true}
+              placeholder="Full shop address"
+              placeholderTextColor="#9CA3AF"
+            />
           </View>
-        </View>
 
-        <View style={styles.divider} />
-
-        <Text style={styles.label}>Shop Name</Text>
-        <TextInput 
-          style={[styles.input, isEditing && styles.inputEditable, !isEditing && styles.inputDisabled]} 
-          value={shopName} 
-          onChangeText={setShopName}
-          editable={isEditing} 
-          placeholder="Enter Shop Name"
-          placeholderTextColor="#9CA3AF"
-        />
-
-        <Text style={styles.label}>Mobile Number</Text>
-        <TextInput 
-          style={[styles.input, isEditing && styles.inputEditable, !isEditing && styles.inputDisabled]} 
-          value={phone} 
-          onChangeText={setPhone}
-          editable={isEditing} 
-          keyboardType="numeric"
-          placeholder="e.g. 9876543210"
-          placeholderTextColor="#9CA3AF"
-          maxLength={10}
-        />
-
-        {/* 🚀 NEW: Store Address (Useful for receipts later) */}
-        <Text style={styles.label}>Store Address</Text>
-        <TextInput 
-          style={[styles.input, isEditing && styles.inputEditable, !isEditing && styles.inputDisabled, { height: 60 }]} 
-          value={address} 
-          onChangeText={setAddress}
-          editable={isEditing} 
-          multiline={true}
-          placeholder="Full shop address"
-          placeholderTextColor="#9CA3AF"
-        />
-      </View>
-
-      <Text style={styles.label}>Shop UPI ID (For Khata Payments)</Text>
-        <TextInput 
-          style={[styles.input, isEditing && styles.inputEditable, !isEditing && styles.inputDisabled]} 
-          value={upiId} 
-          onChangeText={setUpiId}
-          editable={isEditing} 
-          autoCapitalize="none"
-          placeholder="e.g. 9876543210@paytm"
-          placeholderTextColor="#9CA3AF"
-        />
-
-      {email === 'superadmin@gmail.com' && (
-        <TouchableOpacity style={[styles.exportCard, styles.adminCard]} onPress={() => setShowAdmin(true)} activeOpacity={0.85}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.exportTitle, { color: '#B7791F' }]}>👑 Super Admin Dashboard</Text>
-            <Text style={styles.exportSubtitle}>Manage users and monitor system health.</Text>
+          {/* SECTION 2: Payment Configuration */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Payment Integration</Text>
+            <Text style={styles.label}>Shop UPI ID (For Khata Payments)</Text>
+            <TextInput 
+              style={[styles.input, isEditing ? styles.inputEditable : styles.inputDisabled]} 
+              value={upiId} 
+              onChangeText={setUpiId}
+              editable={isEditing} 
+              autoCapitalize="none"
+              placeholder="e.g. 9876543210@paytm"
+              placeholderTextColor="#9CA3AF"
+            />
           </View>
-          <Text style={{ fontSize: 24 }}>🚀</Text>
-        </TouchableOpacity>
-      )}
 
-      {/* 🚀 NEW: Analytics Button */}
-      <TouchableOpacity style={styles.exportCard} onPress={() => setShowAnalytics(true)} activeOpacity={0.85}>
-        <View style={{ flex: 1, marginRight: 10 }}>
-          <Text style={styles.exportTitle}>Business Analytics</Text>
-          <Text style={styles.exportSubtitle}>View your profit, total sales, and market dues.</Text>
-        </View>
-        <Text style={{ fontSize: 24 }}>📈</Text>
-      </TouchableOpacity>
+          {/* SECTION 3: Business & Management Tools */}
+          <View style={styles.toolsSection}>
+            <Text style={styles.sectionTitle}>Business Tools</Text>
 
-      <View style={styles.exportCard}>
-        <View style={{ flex: 1, marginRight: 10 }}>
-          <Text style={styles.exportTitle}>Export Khata for Accountant</Text>
-          <Text style={styles.exportSubtitle}>Generate an Excel-ready (.csv) report of all customer credits and payments.</Text>
-        </View>
-        <TouchableOpacity style={styles.exportBtn} onPress={handleExportCSV} disabled={isExporting} activeOpacity={0.85}>
-          {isExporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.exportBtnText}>Export</Text>}
-        </TouchableOpacity>
-      </View>
+            {email === 'superadmin@gmail.com' && (
+              <TouchableOpacity style={[styles.exportCard, styles.adminCard]} onPress={() => setShowAdmin(true)} activeOpacity={0.85}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.exportTitle, { color: '#B7791F' }]}>👑 Super Admin Dashboard</Text>
+                  <Text style={styles.exportSubtitle}>Manage users and monitor system health.</Text>
+                </View>
+                <Text style={{ fontSize: 24 }}>🚀</Text>
+              </TouchableOpacity>
+            )}
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-        <Text style={styles.logoutBtnText}>Logout of Storemate</Text>
-      </TouchableOpacity>
+            <TouchableOpacity style={styles.exportCard} onPress={() => setShowAnalytics(true)} activeOpacity={0.85}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={styles.exportTitle}>Business Analytics</Text>
+                <Text style={styles.exportSubtitle}>View your profit, total sales, and market dues.</Text>
+              </View>
+              <Text style={{ fontSize: 24 }}>📈</Text>
+            </TouchableOpacity>
 
+            <View style={styles.exportCard}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={styles.exportTitle}>Google Drive Cloud Backup</Text>
+                <Text style={styles.exportSubtitle}>Save shop records to your private Google Drive space.</Text>
+              </View>
+              <TouchableOpacity style={styles.exportBtn} onPress={handleDriveBackup} disabled={isBackingUp} activeOpacity={0.85}>
+                {isBackingUp ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.exportBtnText}>Backup</Text>}
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.exportCard}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={styles.exportTitle}>Export Khata for Accountant</Text>
+                <Text style={styles.exportSubtitle}>Generate an Excel-ready (.csv) report of credits.</Text>
+              </View>
+              <TouchableOpacity style={styles.exportBtn} onPress={handleExportCSV} disabled={isExporting} activeOpacity={0.85}>
+                {isExporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.exportBtnText}>Export</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* SECTION 4: Logout Action */}
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+            <Text style={styles.logoutBtnText}>Logout of Storemate</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Modals */}
       <Modal visible={showAdmin} animationType="slide" presentationStyle="pageSheet">
         <AdminDashboard onClose={() => setShowAdmin(false)} />
       </Modal>
 
-      {/* 🚀 NEW: Analytics Modal */}
       <Modal visible={showAnalytics} animationType="slide">
         <AnalyticsScreen onClose={() => setShowAnalytics(false)} />
       </Modal>
@@ -318,40 +357,224 @@ const ProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7F6', padding: 20 },
-  loadingContainer: { flex: 1, backgroundColor: '#F5F7F6', justifyContent: 'center', alignItems: 'center' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 20 },
-  header: { fontSize: 22, color: '#1B1F23', fontWeight: '800' },
-  actionBtn: { backgroundColor: '#0C9C4C', paddingVertical: 9, paddingHorizontal: 20, borderRadius: 10 },
-  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F5F7F6' 
+  },
+  keyboardContainer: { 
+    flex: 1, 
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  loadingContainer: { 
+    flex: 1, 
+    backgroundColor: '#F5F7F6', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  headerRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  header: { 
+    fontSize: 22, 
+    color: '#1B1F23', 
+    fontWeight: '800' 
+  },
+  actionBtn: { 
+    backgroundColor: '#0C9C4C', 
+    paddingVertical: 8, 
+    paddingHorizontal: 18, 
+    borderRadius: 10,
+    minWidth: 75,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnText: { 
+    color: '#fff', 
+    fontWeight: '700', 
+    fontSize: 14 
+  },
   
-  card: { backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#EAECEC', marginBottom: 15 },
-  avatarRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  scrollContent: { 
+    paddingBottom: 40,
+    flexGrow: 1,
+  },
+
+  card: { 
+    backgroundColor: '#FFFFFF', 
+    padding: 16, 
+    borderRadius: 16, 
+    borderWidth: 1, 
+    borderColor: '#EAECEC', 
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
   
-  // 🚀 UPDATED: Avatar Styles
-  avatarCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#0C9C4C', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  avatarText: { color: '#fff', fontSize: 26, fontWeight: '800' },
-  avatarImage: { width: 64, height: 64, borderRadius: 32 },
-  editBadge: { position: 'absolute', bottom: -2, right: -2, backgroundColor: '#FFFFFF', borderRadius: 10, width: 22, height: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EAECEC' },
-  
-  avatarShopName: { color: '#1B1F23', fontSize: 19, fontWeight: '800' },
-  avatarEmail: { color: '#6B7280', fontSize: 13, marginTop: 3 },
-  divider: { height: 1, backgroundColor: '#EAECEC', marginBottom: 16 },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 
-  label: { color: '#6B7280', fontSize: 13, marginBottom: 6, fontWeight: '600' },
-  input: { padding: 14, borderRadius: 10, borderWidth: 1, marginBottom: 16, fontSize: 15 },
-  inputEditable: { backgroundColor: '#FFFFFF', color: '#1B1F23', borderColor: '#0C9C4C' },
-  inputDisabled: { borderColor: '#EAECEC', color: '#6B7280', backgroundColor: '#F5F7F6' },
+  avatarRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 14 
+  },
+  avatarCircle: { 
+    width: 60, 
+    height: 60, 
+    borderRadius: 30, 
+    backgroundColor: '#0C9C4C', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    position: 'relative' 
+  },
+  avatarText: { 
+    color: '#fff', 
+    fontSize: 24, 
+    fontWeight: '800' 
+  },
+  avatarImage: { 
+    width: 60, 
+    height: 60, 
+    borderRadius: 30 
+  },
+  editBadge: { 
+    position: 'absolute', 
+    bottom: -2, 
+    right: -2, 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 10, 
+    width: 20, 
+    height: 20, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 1, 
+    borderColor: '#EAECEC' 
+  },
+  avatarInfo: {
+    marginLeft: 14, 
+    flex: 1,
+  },
+  avatarShopName: { 
+    color: '#1B1F23', 
+    fontSize: 18, 
+    fontWeight: '800' 
+  },
+  avatarEmail: { 
+    color: '#6B7280', 
+    fontSize: 13, 
+    marginTop: 2 
+  },
+  divider: { 
+    height: 1, 
+    backgroundColor: '#EAECEC', 
+    marginBottom: 14 
+  },
 
-  exportCard: { backgroundColor: '#FFFFFF', padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#EAECEC', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
-  adminCard: { borderColor: '#F3D9A8', backgroundColor: '#FFF9EE' },
-  exportTitle: { color: '#1B1F23', fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  exportSubtitle: { color: '#6B7280', fontSize: 12, lineHeight: 16 },
-  exportBtn: { backgroundColor: '#0C9C4C', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  exportBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  label: { 
+    color: '#6B7280', 
+    fontSize: 12.5, 
+    marginBottom: 6, 
+    fontWeight: '600' 
+  },
+  input: { 
+    paddingHorizontal: 14,
+    paddingVertical: 12, 
+    borderRadius: 10, 
+    borderWidth: 1, 
+    marginBottom: 14, 
+    fontSize: 14.5 
+  },
+  inputEditable: { 
+    backgroundColor: '#FFFFFF', 
+    color: '#1B1F23', 
+    borderColor: '#0C9C4C' 
+  },
+  inputDisabled: { 
+    borderColor: '#EAECEC', 
+    color: '#6B7280', 
+    backgroundColor: '#F9FAFB' 
+  },
+  textArea: {
+    height: 65,
+    textAlignVertical: 'top',
+  },
 
-  logoutBtn: { backgroundColor: '#FDECEA', marginTop: 10, padding: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#F7C9C4' },
-  logoutBtnText: { color: '#E0433B', fontSize: 15, fontWeight: '700' }
+  toolsSection: {
+    marginBottom: 6,
+  },
+  exportCard: { 
+    backgroundColor: '#FFFFFF', 
+    padding: 16, 
+    borderRadius: 16, 
+    borderWidth: 1, 
+    borderColor: '#EAECEC', 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  adminCard: { 
+    borderColor: '#F3D9A8', 
+    backgroundColor: '#FFF9EE' 
+  },
+  exportTitle: { 
+    color: '#1B1F23', 
+    fontSize: 14.5, 
+    fontWeight: '700', 
+    marginBottom: 3 
+  },
+  exportSubtitle: { 
+    color: '#6B7280', 
+    fontSize: 11.5, 
+    lineHeight: 15 
+  },
+  exportBtn: { 
+    backgroundColor: '#0C9C4C', 
+    paddingVertical: 9, 
+    paddingHorizontal: 14, 
+    borderRadius: 8, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  exportBtnText: { 
+    color: '#fff', 
+    fontWeight: '700', 
+    fontSize: 13 
+  },
+
+  logoutBtn: { 
+    backgroundColor: '#FDECEA', 
+    marginTop: 6, 
+    marginBottom: 20,
+    padding: 15, 
+    borderRadius: 12, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#F7C9C4' 
+  },
+  logoutBtnText: { 
+    color: '#E0433B', 
+    fontSize: 15, 
+    fontWeight: '700' 
+  }
 });
 
 export default ProfileScreen;

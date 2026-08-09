@@ -1,44 +1,19 @@
-import os
-from dotenv import load_dotenv
-from google import genai
+from app import app, db
+from sqlalchemy import inspect, text
 
-print("=" * 70)
-print("🧪 StoreMate Environment Test")
-print("=" * 70)
-
-# Load .env
-load_dotenv()
-
-# Read API Key
-api_key = os.getenv("GOOGLE_API_KEY")
-
-print(f"Current Working Directory : {os.getcwd()}")
-print(f".env Loaded              : {api_key is not None}")
-
-if api_key:
-    print(f"API Key Starts With      : {api_key[:10]}...")
-    print(f"API Key Length           : {len(api_key)}")
-else:
-    print("❌ GOOGLE_API_KEY NOT FOUND")
-    exit()
-
-print("-" * 70)
-
-try:
-    client = genai.Client(api_key=api_key)
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents="Reply with exactly: StoreMate Environment OK"
-    )
-
-    print("✅ Gemini Connection Successful")
-    print("Gemini Response:")
-    print(response.text)
-
-except Exception as e:
-    print("❌ Gemini Connection Failed")
-    print(type(e).__name__)
-    print(e)
-
-print("=" * 70)
+with app.app_context():
+    inspector = inspect(db.engine)
+    
+    # Auto-detect if your table is named 'user' or 'users'
+    table_name = 'user' if 'user' in inspector.get_table_names() else 'users'
+    
+    # Get all current columns in the table
+    existing_columns = [col['name'] for col in inspector.get_columns(table_name)]
+    
+    if 'is_active' not in existing_columns:
+        # 🚀 FIX: Changed 'DEFAULT 1' to 'DEFAULT TRUE' for PostgreSQL strict typing
+        db.session.execute(text(f'ALTER TABLE {table_name} ADD COLUMN is_active BOOLEAN DEFAULT TRUE;'))
+        db.session.commit()
+        print(f'✅ SUCCESS: Added "is_active" column to the {table_name} table!')
+    else:
+        print(f'⚠️ The "is_active" column already exists in the {table_name} table.')

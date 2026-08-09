@@ -34,3 +34,6 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     shop_name = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(20), nullable=True)
+    reset_otp = db.Column(db.String(6), nullable=True)
+    reset_otp_expiry = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   SafeAreaView, View, Text, StyleSheet, FlatList, 
   TouchableOpacity, TextInput, Alert, ActivityIndicator, 
-  Modal, PermissionsAndroid 
+  Modal, PermissionsAndroid, AppState 
 } from 'react-native';
 import { withObservables } from '@nozbe/watermelondb/react';
 import { database } from '../core/database';
@@ -10,15 +10,33 @@ import { Camera, CameraType } from 'react-native-camera-kit';
 import { uploadInvoice } from '../services/ocrService';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Q } from '@nozbe/watermelondb';
+import RNFS from 'react-native-fs';
 
 const InventoryScreen = ({ items, onClose }) => {
   const cameraRef = React.useRef(null);
   
   const [scanMode, setScanMode] = useState(null); 
+  const appState = useRef(AppState.currentState);
   const [processingOCR, setProcessingOCR] = useState(false);
   
   const [scannedItems, setScannedItems] = useState([]);
   const [showReviewModal, setShowReviewModal] = useState(false);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/active/) && 
+        (nextAppState === 'inactive' || nextAppState === 'background')
+      ) {
+        setScanMode(null); // Turns off the camera
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
 // Manual Add States
   const [barcode, setBarcode] = useState('');
@@ -202,8 +220,9 @@ const InventoryScreen = ({ items, onClose }) => {
   };
 
   const handleGalleryUpload = async () => {
+    let result;
     try {
-      const result = await launchImageLibrary({ mediaType: 'photo', quality: 1 });
+      result = await launchImageLibrary({ mediaType: 'photo', quality: 1 });
       if (result.didCancel || result.errorCode || !result.assets) return;
 
       const imageUri = result.assets[0].uri;
@@ -224,6 +243,10 @@ const InventoryScreen = ({ items, onClose }) => {
       Alert.alert("Upload Failed", error.message || "Could not open the gallery.");
     } finally {
       setProcessingOCR(false);
+      // 🚀 Clean up the gallery duplicate
+      if (result?.assets?.[0]?.uri) {
+        RNFS.unlink(result.assets[0].uri).catch(() => {});
+      }
     }
   };
   
@@ -253,9 +276,11 @@ const InventoryScreen = ({ items, onClose }) => {
           <View style={styles.cameraActionRow}>
             <TouchableOpacity
               style={styles.captureBtn}
-              onPress={async () => {
+             onPress={async () => {
+                let capturedImageUri = null; // Store URI to delete later
                 try {
                   const image = await cameraRef.current.capture();
+                  capturedImageUri = image.uri;
                   setScanMode(null);
                   setProcessingOCR(true);
                   
@@ -273,6 +298,10 @@ const InventoryScreen = ({ items, onClose }) => {
                   Alert.alert("Scan Failed", "Could not read the invoice.");
                 } finally {
                   setProcessingOCR(false);
+                  // 🚀 Clean up the camera temporary file
+                  if (capturedImageUri) {
+                    RNFS.unlink(capturedImageUri).catch(() => {});
+                  }
                 }
               }}
             >
@@ -400,6 +429,10 @@ const InventoryScreen = ({ items, onClose }) => {
         keyExtractor={item => item.id}
         contentContainerStyle={{ paddingBottom: 30 }}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true} 
+        initialNumToRender={15}      
+        maxToRenderPerBatch={10}     
+        windowSize={5}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🗄️</Text>
@@ -445,6 +478,10 @@ const InventoryScreen = ({ items, onClose }) => {
             data={scannedItems}
             keyExtractor={(item, index) => index.toString()}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true} 
+            initialNumToRender={15}      
+            maxToRenderPerBatch={10}     
+            windowSize={5}
             renderItem={({ item, index }) => (
               <View style={styles.aiItemCard}>
                 

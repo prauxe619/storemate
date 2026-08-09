@@ -21,8 +21,17 @@ const KhataScreen = ({ onClose }) => {
 
   const fetchKhata = async () => {
     try {
-      const entries = await database.get('ledger_entries').query().fetch();
-      
+      // ⚠️ Balance calculation MUST see every entry - capping this list
+      // silently drops old transactions from the sum, corrupting customer
+      // balances the moment a shop passes ~100 total transactions. Only the
+      // per-customer HISTORY display (below) is safe to cap, since that's
+      // just what's shown on screen, not what's added up.
+      const entries = await database.get('ledger_entries')
+        .query(Q.sortBy('created_at', Q.desc))
+        .fetch();
+
+      const HISTORY_DISPLAY_LIMIT = 100; // per customer, not global
+
       const customerData = {};
       entries.forEach(entry => {
         const originalName = entry.customerId;
@@ -45,12 +54,14 @@ const KhataScreen = ({ onClose }) => {
           customerData[normalizedKey].phone = entry.customerPhone;
         }
 
-        customerData[normalizedKey].history.push({
-          id: entry.id,
-          amount: entry.amount,
-          type: entry.entryType,
-          date: entry.createdAt || Date.now() 
-        });
+        if (customerData[normalizedKey].history.length < HISTORY_DISPLAY_LIMIT) {
+          customerData[normalizedKey].history.push({
+            id: entry.id,
+            amount: entry.amount,
+            type: entry.entryType,
+            date: entry.createdAt || Date.now() 
+          });
+        }
       });
 
       Object.values(customerData).forEach(c => {
@@ -198,6 +209,10 @@ const KhataScreen = ({ onClose }) => {
           keyExtractor={item => item.name}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 20 }}
+          removeClippedSubviews={true} 
+          initialNumToRender={15}      
+          maxToRenderPerBatch={10}     
+          windowSize={5}
           // 🚀 ADDED REFRESH CONTROL HERE
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0C9C4C" />
@@ -260,6 +275,10 @@ const KhataScreen = ({ onClose }) => {
               data={activeCustomerHistory?.history || []}
               keyExtractor={(item, index) => `${item.id}-${index}`}
               showsVerticalScrollIndicator={false}
+              removeClippedSubviews={true} 
+              initialNumToRender={15}      
+              maxToRenderPerBatch={10}     
+              windowSize={5}
               renderItem={({ item }) => (
                 <View style={styles.historyRow}>
                   <View>

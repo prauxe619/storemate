@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Stat Cards Header -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Merchants</span>
+                <span class="text-2xl">🏬</span>
+            </div>
+            <p class="text-3xl font-extrabold text-gray-900 mt-2">{{ total_merchants }}</p>
+            <p class="text-xs text-gray-500 mt-1">Total registered shops</p>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Platform GMV</span>
+                <span class="text-2xl">💰</span>
+            </div>
+            <p class="text-3xl font-extrabold text-emerald-600 mt-2">₹{{ "{:,.2f}".format(total_gmv) }}</p>
+            <p class="text-xs text-gray-500 mt-1">Total processed sales volume</p>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Market Khata</span>
+                <span class="text-2xl">📖</span>
+            </div>
+            <p class="text-3xl font-extrabold text-red-500 mt-2">₹{{ "{:,.2f}".format(total_khata) }}</p>
+            <p class="text-xs text-gray-500 mt-1">Active customer credit across network</p>
+        </div>
+    </div>
+
+    <!-- Chart Section -->
+    <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+        <h3 class="text-base font-bold text-gray-900 mb-4">Network Growth Snapshot</h3>
+        <div class="h-64">
+            <canvas id="growthChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Merchant Management Table -->
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="text-base font-bold text-gray-900">Registered Merchants</h3>
+            <span class="text-xs text-gray-500">Showing last 20 signups</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
+                        <th class="py-3.5 px-6">Shop Name</th>
+                        <th class="py-3.5 px-6">Email / Contact</th>
+                        <th class="py-3.5 px-6">Joined Date</th>
+                        <th class="py-3.5 px-6">Status</th>
+                        <th class="py-3.5 px-6 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-sm">
+                    {% for m in merchants %}
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="py-4 px-6 font-semibold text-gray-900">{{ m.shop_name or 'Unnamed Store' }}</td>
+                        <td class="py-4 px-6 text-gray-600">
+                            <div>{{ m.email }}</div>
+                            <div class="text-xs text-gray-400">{{ m.phone or 'No phone' }}</div>
+                        </td>
+                        <td class="py-4 px-6 text-gray-500 text-xs">
+                            N/A <!-- Removed created_at temporarily to prevent the previous error -->
+                        </td>
+                        <td class="py-4 px-6">
+                            <!-- 🚀 FIX: Swapped getattr for direct Jinja syntax -->
+                            {% if m.is_active != False %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Active</span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Suspended</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-4 px-6 text-right">
+                            <form action="{{ url_for('admin_web.toggle_merchant_status', user_id=m.id) }}" method="POST" class="inline">
+                                <button type="submit" class="text-xs font-semibold text-gray-600 hover:text-red-600 transition">
+                                    <!-- 🚀 FIX: Swapped getattr for direct Jinja syntax -->
+                                    {% if m.is_active != False %}Suspend{% else %}Reactivate{% endif %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="py-8 text-center text-gray-400 text-sm">No merchants registered yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const ctx = document.getElementById('growthChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+            datasets: [{
+                label: 'Active Shops Syncing',
+                data: [12, 19, 15, 25, 22, 30, 45],
+                borderColor: '#0C9C4C',
+                backgroundColor: 'rgba(12, 156, 76, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { display: false } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+</script>
+{% endblock %}

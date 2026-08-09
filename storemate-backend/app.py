@@ -11,11 +11,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import timedelta
 from dotenv import load_dotenv
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 # Local Imports
 from models import db, InventoryItem, LedgerEntry, SalesTransaction, User
 from ai_service import process_invoice_image 
 from src.hybrid_parser import parse_with_rules
+import random
+import datetime
+from flask_mail import Mail, Message
+from admin_web import admin_web_bp
 
 # Load environment variables
 load_dotenv()
@@ -25,14 +31,36 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
+app.secret_key = "YOUR_SUPER_SECRET_SESSION_KEY"  # Required for sessions
+
+# Register Web Admin Blueprint
+app.register_blueprint(admin_web_bp)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# PostgreSQL credentials
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev'
+# 🚀 1. Configure Flask-Mail
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
+
+mail = Mail(app)
+
+# PostgreSQL credentials (set DATABASE_URL in your .env file, e.g.
+# DATABASE_URL=postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+    'DATABASE_URL',
+    'postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev'  # local dev fallback only
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 🔐 Setup JWT Authentication
-app.config['JWT_SECRET_KEY'] = 'storemate-super-secret-key-2026-v2' 
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
+
+if not app.config['JWT_SECRET_KEY']:
+    raise RuntimeError("JWT_SECRET_KEY environment variable is not configured")
+
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30) 
 
 jwt = JWTManager(app)
@@ -307,9 +335,21 @@ def login():
 
     user = User.query.filter_by(email=email).first()
     
-    if not user or not check_password_hash(user.password_hash, password):
+    # 1. Check if user exists
+    if not user:
         return jsonify({"error": "Invalid email or password"}), 401
 
+    # 2. Catch Google users trying to type a password
+    if user.password_hash == "GOOGLE_SSO_USER":
+        return jsonify({
+            "error": "This account uses Google Login. Tap 'Continue with Google', or tap 'Forgot Password' to create a password for this account."
+        }), 400
+
+    # 3. Check standard password
+    if not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    # 4. Generate token and return
     access_token = create_access_token(identity=email)
     
     return jsonify({
@@ -317,6 +357,120 @@ def login():
         "shop_name": user.shop_name
     }), 200
 
+@app.route('/api/v1/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+
+    user = User.query.filter_by(email=email).first()
+
+    if user:
+        # Generate a 6-digit random OTP
+        otp = str(random.randint(100000, 999999))
+        
+        # Save OTP and set 10-minute expiration
+        user.reset_otp = otp
+        user.reset_otp_expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
+        db.session.commit()
+
+        # Send Email
+        try:
+            msg = Message(
+                subject="StoreMate - Password Reset OTP",
+                recipients=[user.email],
+                body=f"Hello,\n\nYour 6-digit password reset OTP for StoreMate is: {otp}\n\nThis code is valid for 10 minutes. If you did not request this, please ignore this email."
+            )
+            mail.send(msg)
+        except Exception as e:
+            print("Failed to send email:", str(e))
+            return jsonify({"error": "Failed to send email. Check server SMTP settings."}), 500
+
+    # Always return success to prevent user scanning
+    return jsonify({"message": "If that email is registered, a 6-digit OTP has been sent."}), 200
+
+
+# 🚀 3. Verify OTP & Reset Password
+@app.route('/api/v1/auth/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    email = data.get('email')
+    otp = data.get('otp')
+    new_password = data.get('new_password')
+
+    if not email or not otp or not new_password:
+        return jsonify({"error": "Email, OTP, and new password are required."}), 400
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user or not user.reset_otp or user.reset_otp != otp:
+        return jsonify({"error": "Invalid OTP code."}), 400
+
+    # Check OTP expiration
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if user.reset_otp_expiry and user.reset_otp_expiry.tzinfo is None:
+        expiry = user.reset_otp_expiry.replace(tzinfo=datetime.timezone.utc)
+    else:
+        expiry = user.reset_otp_expiry
+
+    if now > expiry:
+        return jsonify({"error": "OTP has expired. Please request a new one."}), 400
+
+    # Update Password & Clear OTP
+    user.password_hash = generate_password_hash(new_password)
+    user.reset_otp = None
+    user.reset_otp_expiry = None
+    db.session.commit()
+
+    return jsonify({"message": "Password updated successfully! You can now log in."}), 200
+
+
+@app.route('/api/v1/auth/google', methods=['POST'])
+def google_auth():
+    data = request.get_json()
+    token = data.get('token')
+    
+    # ⚠️ This must match the Web Client ID in your LoginScreen.js
+    CLIENT_ID = "106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com"
+
+    try:
+        # 1. Verify token with Google's servers
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(), CLIENT_ID)
+        
+        email = idinfo['email']
+        name = idinfo.get('name', 'My Shop')
+        
+        # 2. Check if user already exists in your database
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            # Registration Flow: Create a new user automatically
+            shop_name = data.get('shop_name') or f"{name.split(' ')[0]}'s Shop"
+            
+            user = User(
+                email=email,
+                shop_name=shop_name,
+                password_hash="GOOGLE_SSO_USER" # Disable traditional password login for this account
+            )
+            db.session.add(user)
+            db.session.commit()
+
+        # 3. Generate your standard app JWT access token (using email as identity)
+        access_token = create_access_token(identity=user.email)
+        
+        return jsonify({
+            "message": "Authenticated successfully",
+            "access_token": access_token,
+            "shop_name": user.shop_name,
+            "email": user.email
+        }), 200
+
+    except ValueError:
+        # Invalid token
+        return jsonify({"error": "Invalid Google token"}), 401
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    
 @app.route('/api/v1/auth/profile', methods=['GET'])
 @jwt_required()
 def get_profile():
@@ -387,4 +541,9 @@ def get_all_users():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5050, debug=True)
+    # ⚠️ debug=True enables Werkzeug's interactive debugger - anyone who can
+    # reach this port and trigger an unhandled exception gets a Python
+    # console with your credentials in scope. Set FLASK_DEBUG=1 in .env only
+    # while actively debugging on a trusted network.
+    debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
+    app.run(host='0.0.0.0', port=5050, debug=debug_mode)

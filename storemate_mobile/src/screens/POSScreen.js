@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   SafeAreaView, View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  Alert, ScrollView, TextInput, Linking, Vibration, Animated 
+  Alert, ScrollView, TextInput, Linking, Vibration, Animated, AppState 
 } from 'react-native';
 import { database } from '../core/database';
 import { Q } from '@nozbe/watermelondb';
 import { Camera, CameraType } from 'react-native-camera-kit';
 import { SpeechEngine } from '../core/speech/SpeechEngine';
 
-const BASE_URL = 'http://192.168.31.65:5050'; 
+import { BASE_URL } from '../config/api';
 
 const sendWhatsAppReceipt = (cart, totalAmount, customerPhone, paymentMethod, customerName, oldBalance = 0, discount = 0) => {
   const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -46,6 +46,24 @@ const POSScreen = ({ onClose }) => {
   const [discount, setDiscount] = useState(0);
   const [availableItems, setAvailableItems] = useState([]);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/active/) && 
+        (nextAppState === 'inactive' || nextAppState === 'background')
+      ) {
+        setIsScannerOpen(false); // Instantly kills the camera
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
   
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -115,10 +133,13 @@ const POSScreen = ({ onClose }) => {
     };
   }, []); 
 
-  const filteredItems = availableItems.filter(item => 
-    item.productName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (item.barcode && item.barcode.includes(searchQuery))
-  );
+  const filteredItems = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    return availableItems.filter(item => 
+      item.productName.toLowerCase().includes(query) || 
+      (item.barcode && item.barcode.includes(searchQuery))
+    );
+  }, [availableItems, searchQuery]);
 
   const addToCart = (product, explicitQty = null) => {
     setCart(prevCart => {
@@ -363,6 +384,10 @@ const POSScreen = ({ onClose }) => {
         data={cart}
         keyExtractor={item => item.id}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true} 
+        initialNumToRender={15}      
+        maxToRenderPerBatch={10}     
+        windowSize={5}
         renderItem={({ item }) => (
           <View style={styles.cartItem}>
             <View style={{ flex: 1 }}>

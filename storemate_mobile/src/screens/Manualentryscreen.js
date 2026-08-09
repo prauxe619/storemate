@@ -154,6 +154,10 @@ const ManualEntryScreen = ({ onClose, onSaved, initialQuery = '' }) => {
             data={filteredCustomers}
             keyExtractor={(item) => item.name}
             keyboardShouldPersistTaps="handled"
+            removeClippedSubviews={true} 
+            initialNumToRender={15}      
+            maxToRenderPerBatch={10}     
+            windowSize={5}
             ListFooterComponent={
               searchQuery.trim() && !exactMatchExists ? (
                 <TouchableOpacity style={styles.newCustomerRow} onPress={handleUseNewName}>

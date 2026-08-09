@@ -47,7 +47,8 @@ def _normalize_possessives(text: str) -> str:
 
 
 def _result(intent, confidence, product=None, qty=1, discount_percent=None,
-            new_price=None, customer_name=None, time_period=None, source="rules"):
+            new_price=None, customer_name=None, time_period=None, source="rules",
+            payment_type=None):
     return {
         "intent": intent,
         "product": product,
@@ -58,6 +59,7 @@ def _result(intent, confidence, product=None, qty=1, discount_percent=None,
         "time_period": time_period,
         "confidence": confidence,
         "source": source,
+        "payment_type": payment_type,
     }
 
 
@@ -88,6 +90,15 @@ def parse_with_rules(text: str, inventory_names: list = None, customer_names: li
         return _result("customer.create", confidence=0.90, customer_name=c_name)
 
     has_update_verb = any(w in text_clean for w in ["update", "rate", "karo", "kar do", "karo price"])
+
+    # Explicit cash/khata signal, if the shopkeeper said it outright.
+    # Only set when genuinely explicit - absence of this stays None rather
+    # than defaulting to CASH, since a wrong default here misfiles real money.
+    payment_type = None
+    if any(w in text_clean for w in ["khata", "udhaar", "udhar", "baki"]):
+        payment_type = "KHATA"
+    elif any(w in text_clean for w in ["cash", "nagad", "rokar"]):
+        payment_type = "CASH"
 
     # 2. Extract Quantity
     qty = 1
@@ -194,7 +205,8 @@ def parse_with_rules(text: str, inventory_names: list = None, customer_names: li
         new_price=new_price,
         customer_name=customer_name,
         time_period="today" if intent == "query.sales" else None,
-        source="rules_local"
+        source="rules_local",
+        payment_type=payment_type,
     )
 
 def parse_voice_command(text: str, inventory_names: list = None, customer_names: list = None):

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://192.168.31.65:5050';
+import { BASE_URL } from '../config/api';
 
 const AdminDashboard = ({ onClose }) => {
   const [users, setUsers] = useState([]);
@@ -195,6 +195,10 @@ const AdminDashboard = ({ onClose }) => {
             renderItem={renderUserCard}
             contentContainerStyle={{ paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true} 
+            initialNumToRender={15}      
+            maxToRenderPerBatch={10}     
+            windowSize={5}
             refreshControl={
               <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#0C9C4C" colors={['#0C9C4C']} />
             }
