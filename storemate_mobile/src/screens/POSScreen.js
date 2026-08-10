@@ -13,9 +13,11 @@ import { BASE_URL } from '../config/api';
 const sendWhatsAppReceipt = (cart, totalAmount, customerPhone, paymentMethod, customerName, oldBalance = 0, discount = 0) => {
   const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   let receiptText = `🏪 *STORE INVOICE* 🏪\n📅 Date: ${today}\n〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n\n🛒 *ORDER DETAILS:*\n`;
+  
   cart.forEach((item, index) => {
     receiptText += `${index + 1}. *${item.name}*\n    └ ${item.qty} x ₹${item.price} = ₹${item.price * item.qty}\n`;
   });
+  
   receiptText += `\n〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n`;
   if (discount > 0) receiptText += `🏷️ *Discount Applied:* ${discount}%\n`;
 
@@ -33,7 +35,12 @@ const sendWhatsAppReceipt = (cart, totalAmount, customerPhone, paymentMethod, cu
   } else {
     receiptText += `🧾 *Total Paid: ₹${totalAmount}*\n💵 *Payment:* Cash / UPI\n`;
   }
-  receiptText += `\n🙏 *Thank you for your visit!*`;
+  
+  receiptText += `\n🙏 *Thank you for your visit!*\n\n`;
+
+  // 🚀 PHASE 3: WhatsApp Virality Loop
+  receiptText += `---\n`;
+  receiptText += `Sent via StoreMate — The Free AI Operating System for Shops. Click here to digitize your store: https://storemate.in/app`;
 
   let formattedPhone = customerPhone.replace(/\D/g, ''); 
   if (formattedPhone.length === 10) formattedPhone = `91${formattedPhone}`;

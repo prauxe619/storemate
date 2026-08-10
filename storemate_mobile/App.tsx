@@ -2,7 +2,7 @@ import React, { useState, useEffect, createContext } from 'react';
 import { StatusBar, Text, View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { startHourlyBackupScheduler, stopHourlyBackupScheduler } from './src/services/BackupService';
-
+import NetworkHeader from './src/components/NetworkHeader';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
@@ -139,6 +139,8 @@ export default function App() {
       <DatabaseProvider database={database}>
         <NavigationContainer theme={MyLightTheme}>
           <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          {/* 🚀 PHASE 3: Global Offline State Badge */}
+          <NetworkHeader syncStatus="synced" />
 
           <Tab.Navigator
             screenOptions={{

@@ -19,12 +19,14 @@ import { BASE_URL } from '../config/api';
 const ProfileScreen = () => {
   const { logout } = useContext(AuthContext);
 
+  // Core State
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false); 
   const [isBackingUp, setIsBackingUp] = useState(false); 
   const [isEditing, setIsEditing] = useState(false);
 
+  // Profile Data State
   const [email, setEmail] = useState('');
   const [shopName, setShopName] = useState('');
   const [phone, setPhone] = useState('');
@@ -32,8 +34,12 @@ const ProfileScreen = () => {
   const [avatarUri, setAvatarUri] = useState(null); 
   const [upiId, setUpiId] = useState('');
   
+  // Modals & Feedback State
   const [showAdmin, setShowAdmin] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [isFeedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -55,7 +61,7 @@ const ProfileScreen = () => {
       if (localAddress) setAddress(localAddress);
       if (localAvatar) setAvatarUri(localAvatar);
 
-      const token = await SecureStorage.getToken();
+      const token = await SecureStorage.getToken() || await AsyncStorage.getItem('userToken');
       if (!token) return;
 
       const response = await fetch(`${BASE_URL}/api/v1/auth/profile`, {
@@ -68,13 +74,18 @@ const ProfileScreen = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setEmail(data.email);
-        setShopName(data.shop_name);
-        setPhone(data.phone || '');
+        
+        if (data.email) setEmail(data.email);
+        if (data.shop_name) setShopName(data.shop_name);
+        
+        // 🚀 FIX 1: Only overwrite local data if the backend actually has a value
+        if (data.phone) {
+          setPhone(data.phone);
+          await AsyncStorage.setItem('userPhone', data.phone);
+        }
         
         await AsyncStorage.setItem('userEmail', data.email);
         await AsyncStorage.setItem('shopName', data.shop_name);
-        if (data.phone) await AsyncStorage.setItem('userPhone', data.phone);
       }
     } catch (error) {
       console.log("Server unreachable. Using offline profile data.");
@@ -106,14 +117,22 @@ const ProfileScreen = () => {
       await AsyncStorage.setItem('userAddress', address); 
       await AsyncStorage.setItem('shopUpi', upiId); 
 
-      const token = await AsyncStorage.getItem('userToken');
+      // 🚀 FIX 2: Ensure we pull the correct token to authenticate the save request
+      const token = await SecureStorage.getToken() || await AsyncStorage.getItem('userToken');
+      
       await fetch(`${BASE_URL}/api/v1/auth/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ shop_name: shopName, phone: phone })
+        // 🚀 FIX 3: Actually send the UPI and Address to the backend database!
+        body: JSON.stringify({ 
+          shop_name: shopName, 
+          phone: phone,
+          upi_id: upiId,
+          address: address
+        })
       });
 
       setIsEditing(false);
@@ -179,6 +198,34 @@ const ProfileScreen = () => {
     }
   };
 
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackText.trim()) return Alert.alert("Empty", "Please type a message first.");
+    
+    setIsSubmitting(true);
+    try {
+      // Use email as a fallback if userId isn't available locally
+      const userId = await AsyncStorage.getItem('userId') || await AsyncStorage.getItem('userEmail'); 
+
+      const response = await fetch(`${BASE_URL}/api/v1/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, message: feedbackText })
+      });
+
+      if (response.ok) {
+        Alert.alert("Sent!", "Thanks for your feedback. We will look into it.");
+        setFeedbackText('');
+        setFeedbackModalVisible(false);
+      } else {
+        throw new Error("Failed to send");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Could not send feedback. Check your internet connection.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to securely log out of your shop?", [
       { text: "Cancel", style: "cancel" },
@@ -217,7 +264,7 @@ const ProfileScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Scrollable Content Container optimized for all device sizes */}
+        {/* Scrollable Content Container */}
         <ScrollView 
           showsVerticalScrollIndicator={false} 
           contentContainerStyle={styles.scrollContent}
@@ -337,7 +384,11 @@ const ProfileScreen = () => {
             </View>
           </View>
 
-          {/* SECTION 4: Logout Action */}
+          {/* SECTION 4: Feedback & Logout Action */}
+          <TouchableOpacity style={styles.feedbackBtn} onPress={() => setFeedbackModalVisible(true)} activeOpacity={0.85}>
+            <Text style={styles.feedbackBtnText}>🐞 Report a Bug / Feedback</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
             <Text style={styles.logoutBtnText}>Logout of Storemate</Text>
           </TouchableOpacity>
@@ -345,6 +396,40 @@ const ProfileScreen = () => {
       </KeyboardAvoidingView>
 
       {/* Modals */}
+
+      {/* The Feedback Modal Popup */}
+      <Modal visible={isFeedbackModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>How can we improve?</Text>
+            <Text style={styles.modalSubtitle}>Found a bug or need a new feature? Let us know!</Text>
+            
+            <TextInput
+              style={styles.feedbackInput}
+              placeholder="Describe the issue here..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={4}
+              value={feedbackText}
+              onChangeText={setFeedbackText}
+            />
+            
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setFeedbackModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.submitBtn} 
+                onPress={handleFeedbackSubmit}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.submitBtnText}>{isSubmitting ? "Sending..." : "Send Feedback"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showAdmin} animationType="slide" presentationStyle="pageSheet">
         <AdminDashboard onClose={() => setShowAdmin(false)} />
       </Modal>
@@ -560,20 +645,99 @@ const styles = StyleSheet.create({
     fontSize: 13 
   },
 
-  logoutBtn: { 
+  feedbackBtn: { 
     backgroundColor: '#FDECEA', 
-    marginTop: 6, 
+    padding: 15, 
+    borderRadius: 12, 
+    marginTop: 10, 
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F7C9C4'
+  },
+  feedbackBtnText: { 
+    color: '#E0433B', 
+    fontWeight: '700', 
+    fontSize: 15 
+  },
+
+  logoutBtn: { 
+    backgroundColor: '#FFFFFF', 
+    marginTop: 12, 
     marginBottom: 20,
     padding: 15, 
     borderRadius: 12, 
     alignItems: 'center', 
     borderWidth: 1, 
-    borderColor: '#F7C9C4' 
+    borderColor: '#EAECEC' 
   },
   logoutBtnText: { 
-    color: '#E0433B', 
+    color: '#6B7280', 
     fontSize: 15, 
     fontWeight: '700' 
+  },
+
+  // Feedback Modal Styles
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(27,31,35,0.55)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  modalContent: { 
+    backgroundColor: '#FFF', 
+    padding: 25, 
+    borderRadius: 16, 
+    width: '85%',
+    borderWidth: 1, 
+    borderColor: '#EAECEC' 
+  },
+  modalTitle: { 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: '#1B1F23', 
+    marginBottom: 5 
+  },
+  modalSubtitle: { 
+    fontSize: 14, 
+    color: '#6B7280', 
+    marginBottom: 20 
+  },
+  feedbackInput: { 
+    backgroundColor: '#F5F7F6', 
+    borderRadius: 10, 
+    padding: 15, 
+    height: 100, 
+    textAlignVertical: 'top', 
+    color: '#1B1F23', 
+    borderWidth: 1, 
+    borderColor: '#EAECEC', 
+    marginBottom: 20,
+    fontSize: 16
+  },
+  modalBtnRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'flex-end',
+    alignItems: 'center'
+  },
+  cancelBtn: { 
+    padding: 15, 
+    marginRight: 10 
+  },
+  cancelBtnText: { 
+    color: '#6B7280', 
+    fontWeight: '700',
+    fontSize: 15
+  },
+  submitBtn: { 
+    backgroundColor: '#0C9C4C', 
+    paddingVertical: 12, 
+    paddingHorizontal: 20,
+    borderRadius: 10 
+  },
+  submitBtnText: { 
+    color: '#FFF', 
+    fontWeight: '700',
+    fontSize: 15
   }
 });
 

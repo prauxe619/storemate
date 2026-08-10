@@ -1,9 +1,6 @@
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../database';
-
-// Note: 10.0.2.2 is how the Android Emulator connects to your computer's localhost
-// Change localhost to your IP:
-const SYNC_URL = 'http://192.168.31.65:5050/api/sync';
+import { BASE_URL } from '../../config/api';
 
 export const syncWithCloud = async () => {
   try {
@@ -58,8 +55,8 @@ export const syncWithCloud = async () => {
 
     console.log('📤 Pushing payload to cloud:', payload);
 
-    // 3. Send to Flask Backend
-    const response = await fetch(API_URL, {
+    // 3. Send to Flask Backend (🚀 FIX: Use BASE_URL from your config)
+    const response = await fetch(`${BASE_URL}/api/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

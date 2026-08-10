@@ -87,4 +87,8 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // 🚀 INJECTED: SQLCipher Database Encryption Engine
+    implementation 'net.zetetic:android-database-sqlcipher:4.5.3'
+    implementation "androidx.sqlite:sqlite:2.3.1"
 }

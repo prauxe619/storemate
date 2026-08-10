@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+
+    <key>NSCameraUsageDescription</key>
+	<string>StoreMate needs camera access to scan product barcodes for fast billing.</string>
+
+	<key>NSMicrophoneUsageDescription</key>
+	<string>StoreMate needs microphone access so you can add items to the cart using your voice.</string>
+
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>StoreMate uses speech recognition to convert your voice into POS commands.</string>
 	<!-- 1. For react-native-camera-kit (Barcode Scanner) -->
 	<key>NSCameraUsageDescription</key>
 	<string>StoreMate needs camera access to scan product barcodes.</string>

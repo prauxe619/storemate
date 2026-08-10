@@ -13,15 +13,15 @@ from datetime import timedelta
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests
-
-# Local Imports
-from models import db, InventoryItem, LedgerEntry, SalesTransaction, User
-from ai_service import process_invoice_image 
-from src.hybrid_parser import parse_with_rules
 import random
 import datetime
 from flask_mail import Mail, Message
-from admin_web import admin_web_bp
+
+# Local Imports
+from models import db, InventoryItem, LedgerEntry, SalesTransaction, User, Feedback
+from ai_service import process_invoice_image 
+from src.hybrid_parser import parse_with_rules
+from admin_web import admin_web_bp, limiter
 
 # Load environment variables
 load_dotenv()
@@ -31,13 +31,14 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
-app.secret_key = "YOUR_SUPER_SECRET_SESSION_KEY"  # Required for sessions
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "YOUR_SUPER_SECRET_SESSION_KEY")
 
 # Register Web Admin Blueprint
+limiter.init_app(app)
 app.register_blueprint(admin_web_bp)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# 🚀 1. Configure Flask-Mail
+# Configure Flask-Mail
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
@@ -47,15 +48,14 @@ app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
 
 mail = Mail(app)
 
-# PostgreSQL credentials (set DATABASE_URL in your .env file, e.g.
-# DATABASE_URL=postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev)
+# PostgreSQL credentials
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
     'DATABASE_URL',
-    'postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev'  # local dev fallback only
+    'postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 🔐 Setup JWT Authentication
+# Setup JWT Authentication
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
 
 if not app.config['JWT_SECRET_KEY']:
@@ -205,8 +205,6 @@ def upload_invoice():
     try:
         print("\n📸 Invoice received! Optimizing image for AI...")
         image = Image.open(file.stream)
-
-        # 🚀 FIX: Keep colors, just resize to prevent massive token burn
         image.thumbnail((1500, 1500)) 
 
         prompt = """
@@ -216,7 +214,6 @@ def upload_invoice():
         2. 'sellingPrice' must default to purchasePrice * 1.2
         """
 
-        # 🚀 FIX: Enforce Strict JSON Schema so it doesn't return empty data
         response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[image, prompt],
@@ -288,7 +285,6 @@ def parse_intent():
         return jsonify({"error": "No speech text provided"}), 400
 
     try:
-        # Passes directly to local rule-based engine, completely bypassing Cloud AI
         local_result = parse_with_rules(text, inventory_names=inventory_names)
         print(f"⚡ Local Parser Confidence: {local_result['confidence']} for command: '{text}'")
 
@@ -306,7 +302,7 @@ def parse_intent():
 
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register():
-    data = request.json
+    data = request.json or {}
     email = data.get('email')
     password = data.get('password')
     shop_name = data.get('shop_name')
@@ -327,29 +323,26 @@ def register():
     
     return jsonify({"message": "Shop registered successfully"}), 201
 
+
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
-    data = request.json
+    data = request.json or {}
     email = data.get('email')
     password = data.get('password')
 
     user = User.query.filter_by(email=email).first()
     
-    # 1. Check if user exists
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
 
-    # 2. Catch Google users trying to type a password
     if user.password_hash == "GOOGLE_SSO_USER":
         return jsonify({
             "error": "This account uses Google Login. Tap 'Continue with Google', or tap 'Forgot Password' to create a password for this account."
         }), 400
 
-    # 3. Check standard password
     if not check_password_hash(user.password_hash, password):
         return jsonify({"error": "Invalid email or password"}), 401
 
-    # 4. Generate token and return
     access_token = create_access_token(identity=email)
     
     return jsonify({
@@ -357,23 +350,20 @@ def login():
         "shop_name": user.shop_name
     }), 200
 
+
 @app.route('/api/v1/auth/forgot-password', methods=['POST'])
 def forgot_password():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = data.get('email')
 
     user = User.query.filter_by(email=email).first()
 
     if user:
-        # Generate a 6-digit random OTP
         otp = str(random.randint(100000, 999999))
-        
-        # Save OTP and set 10-minute expiration
         user.reset_otp = otp
         user.reset_otp_expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
         db.session.commit()
 
-        # Send Email
         try:
             msg = Message(
                 subject="StoreMate - Password Reset OTP",
@@ -385,14 +375,12 @@ def forgot_password():
             print("Failed to send email:", str(e))
             return jsonify({"error": "Failed to send email. Check server SMTP settings."}), 500
 
-    # Always return success to prevent user scanning
     return jsonify({"message": "If that email is registered, a 6-digit OTP has been sent."}), 200
 
 
-# 🚀 3. Verify OTP & Reset Password
 @app.route('/api/v1/auth/reset-password', methods=['POST'])
 def reset_password():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = data.get('email')
     otp = data.get('otp')
     new_password = data.get('new_password')
@@ -405,17 +393,12 @@ def reset_password():
     if not user or not user.reset_otp or user.reset_otp != otp:
         return jsonify({"error": "Invalid OTP code."}), 400
 
-    # Check OTP expiration
     now = datetime.datetime.now(datetime.timezone.utc)
-    if user.reset_otp_expiry and user.reset_otp_expiry.tzinfo is None:
-        expiry = user.reset_otp_expiry.replace(tzinfo=datetime.timezone.utc)
-    else:
-        expiry = user.reset_otp_expiry
+    expiry = user.reset_otp_expiry.replace(tzinfo=datetime.timezone.utc) if user.reset_otp_expiry.tzinfo is None else user.reset_otp_expiry
 
     if now > expiry:
         return jsonify({"error": "OTP has expired. Please request a new one."}), 400
 
-    # Update Password & Clear OTP
     user.password_hash = generate_password_hash(new_password)
     user.reset_otp = None
     user.reset_otp_expiry = None
@@ -426,11 +409,13 @@ def reset_password():
 
 @app.route('/api/v1/auth/google', methods=['POST'])
 def google_auth():
-    data = request.get_json()
+    data = request.get_json() or {}
     token = data.get('token')
     
-    # ⚠️ This must match the Web Client ID in your LoginScreen.js
     CLIENT_ID = "106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com"
+
+    if not token:
+        return jsonify({"error": "Google token is missing"}), 400
 
     try:
         # 1. Verify token with Google's servers
@@ -439,22 +424,20 @@ def google_auth():
         email = idinfo['email']
         name = idinfo.get('name', 'My Shop')
         
-        # 2. Check if user already exists in your database
+        # 2. Check if user exists
         user = User.query.filter_by(email=email).first()
         
         if not user:
-            # Registration Flow: Create a new user automatically
             shop_name = data.get('shop_name') or f"{name.split(' ')[0]}'s Shop"
-            
             user = User(
                 email=email,
                 shop_name=shop_name,
-                password_hash="GOOGLE_SSO_USER" # Disable traditional password login for this account
+                password_hash="GOOGLE_SSO_USER"
             )
             db.session.add(user)
             db.session.commit()
 
-        # 3. Generate your standard app JWT access token (using email as identity)
+        # 3. Generate JWT access token
         access_token = create_access_token(identity=user.email)
         
         return jsonify({
@@ -464,13 +447,15 @@ def google_auth():
             "email": user.email
         }), 200
 
-    except ValueError:
-        # Invalid token
-        return jsonify({"error": "Invalid Google token"}), 401
+    except ValueError as ve:
+        print(f"❌ Google Token Verification ValueError: {ve}")
+        return jsonify({"error": "Invalid Google token", "details": str(ve)}), 401
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Unexpected Error during Google Auth: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
-    
+
 @app.route('/api/v1/auth/profile', methods=['GET'])
 @jwt_required()
 def get_profile():
@@ -480,11 +465,15 @@ def get_profile():
     if not user:
         return jsonify({"error": "User not found"}), 404
         
+    # 🚀 FIX 1: Safely return phone, address, and upi_id if columns exist
     return jsonify({
         "email": user.email,
         "shop_name": user.shop_name,
-        "phone": user.phone or ""
+        "phone": getattr(user, 'phone', '') or "",
+        "address": getattr(user, 'address', '') or "",
+        "upi_id": getattr(user, 'upi_id', '') or ""
     }), 200
+
 
 @app.route('/api/v1/auth/profile', methods=['PUT'])
 @jwt_required()
@@ -495,18 +484,59 @@ def update_profile():
     if not user:
         return jsonify({"error": "User not found"}), 404
         
-    data = request.json
+    data = request.json or {}
     
     user.shop_name = data.get('shop_name', user.shop_name)
     user.phone = data.get('phone', user.phone)
+    
+    # 🚀 FIX 2: Save address and upi_id from mobile request
+    if hasattr(user, 'address') and 'address' in data:
+        user.address = data['address']
+    if hasattr(user, 'upi_id') and 'upi_id' in data:
+        user.upi_id = data['upi_id']
     
     db.session.commit()
     
     return jsonify({
         "message": "Profile updated successfully", 
         "shop_name": user.shop_name,
-        "phone": user.phone
+        "phone": user.phone,
+        "address": getattr(user, 'address', ''),
+        "upi_id": getattr(user, 'upi_id', '')
     }), 200
+
+
+@app.route('/api/v1/feedback', methods=['POST'])
+def submit_feedback():
+    data = request.json or {}
+    user_identifier = data.get('user_id')
+    message = data.get('message')
+
+    if not user_identifier or not message:
+        return jsonify({"error": "User ID and message are required"}), 400
+
+    try:
+        # 🚀 FIX 3: Convert string/email user_id into valid Integer foreign key
+        user_id = None
+        if isinstance(user_identifier, int) or (isinstance(user_identifier, str) and user_identifier.isdigit()):
+            user_id = int(user_identifier)
+        else:
+            user = User.query.filter_by(email=str(user_identifier)).first()
+            if user:
+                user_id = user.id
+
+        if not user_id:
+            first_user = User.query.first()
+            user_id = first_user.id if first_user else 1
+
+        new_feedback = Feedback(user_id=user_id, message=message)
+        db.session.add(new_feedback)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Feedback received"}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Feedback Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # ==========================================
@@ -517,7 +547,6 @@ def update_profile():
 @jwt_required()
 def get_all_users():
     current_user_email = get_jwt_identity()
-    
     ADMIN_EMAIL = "superadmin@gmail.com" 
     
     if current_user_email != ADMIN_EMAIL:
@@ -541,9 +570,5 @@ def get_all_users():
 
 
 if __name__ == '__main__':
-    # ⚠️ debug=True enables Werkzeug's interactive debugger - anyone who can
-    # reach this port and trigger an unhandled exception gets a Python
-    # console with your credentials in scope. Set FLASK_DEBUG=1 in .env only
-    # while actively debugging on a trusted network.
     debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
     app.run(host='0.0.0.0', port=5050, debug=debug_mode)

@@ -3,32 +3,26 @@
 {% block content %}
 <div class="space-y-6">
     <!-- Stat Cards Header -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Merchants</span>
-                <span class="text-2xl">🏬</span>
-            </div>
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Merchants</span>
             <p class="text-3xl font-extrabold text-gray-900 mt-2">{{ total_merchants }}</p>
-            <p class="text-xs text-gray-500 mt-1">Total registered shops</p>
         </div>
 
         <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Platform GMV</span>
-                <span class="text-2xl">💰</span>
-            </div>
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Platform GMV</span>
             <p class="text-3xl font-extrabold text-emerald-600 mt-2">₹{{ "{:,.2f}".format(total_gmv) }}</p>
-            <p class="text-xs text-gray-500 mt-1">Total processed sales volume</p>
         </div>
 
         <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Market Khata</span>
-                <span class="text-2xl">📖</span>
-            </div>
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Monthly Recurring Revenue (MRR)</span>
+            <p class="text-3xl font-extrabold text-indigo-600 mt-2">₹{{ "{:,.2f}".format(mrr) }}</p>
+            <p class="text-xs text-gray-400 mt-1">ARR: ₹{{ "{:,.2f}".format(arr) }}</p>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Market Khata</span>
             <p class="text-3xl font-extrabold text-red-500 mt-2">₹{{ "{:,.2f}".format(total_khata) }}</p>
-            <p class="text-xs text-gray-500 mt-1">Active customer credit across network</p>
         </div>
     </div>
 
@@ -60,8 +54,12 @@
                 <tbody class="divide-y divide-gray-100 text-sm">
                     {% for m in merchants %}
                     <tr class="hover:bg-gray-50 transition">
-                        <td class="py-4 px-6 font-semibold text-gray-900">{{ m.shop_name or 'Unnamed Store' }}</td>
-                        <td class="py-4 px-6 text-gray-600">
+                        <td class="py-4 px-6 font-semibold text-gray-900">
+                            <a href="{{ url_for('admin_web.merchant_detail', user_id=m.id) }}" class="hover:text-emerald-600 transition">
+                                {{ m.shop_name or 'Unnamed Store' }} ↗
+                            </a>
+                        </td>
+                        <td class="py-4 px-6">
                             <div>{{ m.email }}</div>
                             <div class="text-xs text-gray-400">{{ m.phone or 'No phone' }}</div>
                         </td>

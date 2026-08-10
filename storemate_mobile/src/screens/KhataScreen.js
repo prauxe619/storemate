@@ -109,7 +109,11 @@ const KhataScreen = ({ onClose }) => {
       message += `Please visit the store to clear your dues.\n\n`;
     }
 
-    message += `Thank you from ${shopConfig.name}!`;
+    message += `Thank you from ${shopConfig.name}!\n\n`;
+
+    // 🚀 PHASE 3: WhatsApp Virality Loop
+    message += `---\n`;
+    message += `Sent via StoreMate — The Free AI Operating System for Shops. Click here to digitize your store: https://storemate.in/app`;
 
     let formattedPhone = phone.replace(/\D/g, '');
     if (formattedPhone.length === 10) formattedPhone = `91${formattedPhone}`;
