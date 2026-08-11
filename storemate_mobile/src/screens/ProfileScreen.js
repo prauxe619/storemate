@@ -345,7 +345,7 @@ const ProfileScreen = () => {
           <View style={styles.toolsSection}>
             <Text style={styles.sectionTitle}>Business Tools</Text>
 
-            {email === 'superadmin@gmail.com' && (
+            {email === 'connect.manim@gmail.com' && (
               <TouchableOpacity style={[styles.exportCard, styles.adminCard]} onPress={() => setShowAdmin(true)} activeOpacity={0.85}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.exportTitle, { color: '#B7791F' }]}>👑 Super Admin Dashboard</Text>

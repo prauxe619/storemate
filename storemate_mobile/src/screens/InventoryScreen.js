@@ -10,6 +10,7 @@ import { Camera, CameraType } from 'react-native-camera-kit';
 import { uploadInvoice } from '../services/ocrService';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Q } from '@nozbe/watermelondb';
+import TelemetryService from '../services/TelemetryService';
 import RNFS from 'react-native-fs';
 
 const InventoryScreen = ({ items, onClose }) => {
@@ -66,6 +67,13 @@ const InventoryScreen = ({ items, onClose }) => {
           item.sellingPrice = parseFloat(sellingPrice);
           item.quantity = parseFloat(quantity); // 🚀 UPGRADED: Allows decimals like 1.5
           item.isSynced = false;
+
+          // 🚀 TRACK PRODUCT ADDITION
+          TelemetryService.trackEvent('product_added', 'inventory', {
+            product_name: productName,
+            selling_price: parseFloat(sellingPrice),
+            quantity: parseFloat(quantity)
+          });
         });
       });
       // Clear form after saving
@@ -229,18 +237,29 @@ const InventoryScreen = ({ items, onClose }) => {
       setScanMode(null);
       setProcessingOCR(true);
 
+      const startTime = Date.now();
       const ocrResult = await uploadInvoice(imageUri);
+      const latencyMs = Date.now() - startTime;
       
       if (!ocrResult) return; 
       
       if (ocrResult.extracted_data && ocrResult.extracted_data.length > 0) {
         setScannedItems(ocrResult.extracted_data);
         setShowReviewModal(true);
+        // 🚀 LOG SUCCESSFUL OCR SCAN
+        TelemetryService.trackEvent('ocr_scan_success', 'ocr', {
+          items_extracted: ocrResult.extracted_data.length,
+          latency_ms: latencyMs
+        });
       } else {
         Alert.alert("No Items Found", "The AI couldn't read the items clearly.");
+        // 🚀 LOG OCR READ FAILURE
+        TelemetryService.logError('ocr', 'AI could not read invoice items clearly');
       }
     } catch (error) {
       Alert.alert("Upload Failed", error.message || "Could not open the gallery.");
+      // 🚀 LOG OCR SYSTEM CRASH / TIMEOUT
+      TelemetryService.logError('ocr', error.message || 'Gallery OCR upload failed', error.stack);
     } finally {
       setProcessingOCR(false);
       // 🚀 Clean up the gallery duplicate

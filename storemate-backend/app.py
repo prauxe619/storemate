@@ -2,43 +2,89 @@ import os
 import re
 import io
 import json
+import secrets
 import traceback
-from flask import Flask, request, jsonify
+import random
+import datetime
+from datetime import timedelta
+
+from flask import Flask, request, jsonify, render_template
 from PIL import Image
 from google import genai
 from google.genai import types
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from datetime import timedelta
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests
-import random
-import datetime
 from flask_mail import Mail, Message
-
+from geo_utils import get_client_ip, resolve_ip_location
 # Local Imports
 from models import db, InventoryItem, LedgerEntry, SalesTransaction, User, Feedback
 from ai_service import process_invoice_image 
 from src.hybrid_parser import parse_with_rules
 from admin_web import admin_web_bp, limiter
+from telemetry import telemetry_bp
+from admin_analytics_bp import admin_analytics_bp
 
-# Load environment variables
+
+# ==========================================
+# 1. INITIALIZATION & ENVIRONMENT SETUP
+# ==========================================
 load_dotenv()
 
-# Ensure an 'uploads' directory exists
+app = Flask(__name__)
+
+# Ensure upload directory exists
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "YOUR_SUPER_SECRET_SESSION_KEY")
-
-# Register Web Admin Blueprint
-limiter.init_app(app)
-app.register_blueprint(admin_web_bp)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Configure Flask-Mail
+# Check Debug Mode
+IS_DEBUG = os.getenv('FLASK_DEBUG', '0') == '1'
+
+# ==========================================
+# 2. HARDENED SECURITY & SECRETS VALIDATION
+# ==========================================
+
+# A. Flask Session Secret (Fixed Snyk Hardcoded Non-Crypto Secret finding)
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
+if not app.secret_key:
+    if not IS_DEBUG:
+        raise RuntimeError("CRITICAL SECURITY RISK: FLASK_SECRET_KEY environment variable is missing!")
+    app.secret_key = secrets.token_hex(32)
+
+# B. JWT Authentication Secret
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+if not app.config['JWT_SECRET_KEY']:
+    if not IS_DEBUG:
+        raise RuntimeError("CRITICAL SECURITY RISK: JWT_SECRET_KEY environment variable is missing!")
+    app.config['JWT_SECRET_KEY'] = secrets.token_hex(32)
+
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
+
+# C. Database Connection URI
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+if not app.config['SQLALCHEMY_DATABASE_URI']:
+    if not IS_DEBUG:
+        raise RuntimeError("CRITICAL SECURITY RISK: DATABASE_URL environment variable is missing!")
+    # Local dev fallback constructed dynamically
+    db_user = os.getenv('DB_USER', 'storemate_admin')
+    db_pass = os.getenv('DB_PASS')
+
+    if not db_pass:
+        raise RuntimeError("DB_PASS environment variable is not set")
+    db_host = os.getenv('DB_HOST', 'localhost:5433')
+    db_name = os.getenv('DB_NAME', 'storemate_dev')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://{db_user}:{db_pass}@{db_host}/{db_name}"
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ==========================================
+# 3. EXTENSIONS & SERVICES INITIALIZATION
+# ==========================================
+
+# Flask-Mail Configuration
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
@@ -47,26 +93,23 @@ app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
 
 mail = Mail(app)
-
-# PostgreSQL credentials
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-    'DATABASE_URL',
-    'postgresql://storemate_admin:secretpassword123@localhost:5433/storemate_dev'
-)
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Setup JWT Authentication
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
-
-if not app.config['JWT_SECRET_KEY']:
-    raise RuntimeError("JWT_SECRET_KEY environment variable is not configured")
-
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30) 
-
 jwt = JWTManager(app)
 
+# Initialize Rate Limiter & Web Admin Blueprint
+limiter.init_app(app)
+app.register_blueprint(admin_web_bp)
+app.register_blueprint(telemetry_bp)
+app.register_blueprint(admin_analytics_bp)
+
 # Initialize Gemini AI Client
-ai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+google_api_key = os.getenv("GOOGLE_API_KEY")
+if not google_api_key:
+    print("⚠️ WARNING: GOOGLE_API_KEY is not configured in .env file.")
+ai_client = genai.Client(api_key=google_api_key) if google_api_key else None
+
+# ==========================================
+# 4. JWT ERROR HANDLING CALLBACKS
+# ==========================================
 
 @jwt.unauthorized_loader
 def unauthorized(reason):
@@ -83,9 +126,12 @@ def expired(jwt_header, jwt_payload):
     print("JWT Expired")
     return jsonify(error="Token expired"), 401
 
+# ==========================================
+# 5. DATABASE BINDING
+# ==========================================
+
 db.init_app(app)
 
-# Create tables if they don't exist
 with app.app_context():
     db.create_all()
 
@@ -102,49 +148,78 @@ def home():
 # ==========================================
 
 @app.route('/api/sync', methods=['POST'])
+@jwt_required()
 def sync_data():
+    current_user_email = get_jwt_identity()
+    user = User.query.filter_by(email=current_user_email).first()
+    
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
     data = request.json
     if not data:
-        return jsonify({"error": "No data"}), 400
+        return jsonify({"error": "No payload data provided"}), 400
 
     try:
-        def sanitize_data(model_class, incoming_data):
-            valid_keys = [c.name for c in model_class.__table__.columns]
-            return {k: v for k, v in incoming_data.items() if k in valid_keys}
+        # MASS ASSIGNMENT DEFENSE: Strictly define the exact fields allowed to be updated.
+        ALLOWED_INVENTORY = ['id', 'barcode', 'product_name', 'quantity', 'purchase_price', 'selling_price', 'updated_at']
+        ALLOWED_LEDGER = ['id', 'customer_id', 'amount', 'entry_type', 'created_at']
+        ALLOWED_SALES = ['id', 'total_amount', 'payment_type', 'created_at']
+
+        def sanitize_data(incoming_data, allowed_fields):
+            return {k: v for k, v in incoming_data.items() if k in allowed_fields}
 
         # 1. Sync Inventory
         for item_data in data.get('inventory', []):
-            item = db.session.get(InventoryItem, item_data.get('id'))
+            clean_data = sanitize_data(item_data, ALLOWED_INVENTORY)
+            item = db.session.get(InventoryItem, clean_data.get('id'))
+            
             if item:
-                for key, value in sanitize_data(InventoryItem, item_data).items():
-                    setattr(item, key, value)
+                # BOLA/IDOR DEFENSE: Ensure this item actually belongs to the user trying to modify it
+                if getattr(item, 'user_id', user.id) == user.id:
+                    for key, value in clean_data.items():
+                        setattr(item, key, value)
             else:
-                clean_data = sanitize_data(InventoryItem, item_data)
+                clean_data['user_id'] = user.id
                 db.session.add(InventoryItem(**clean_data))
 
         # 2. Sync Ledger
         for entry_data in data.get('ledger', []):
-            if not db.session.get(LedgerEntry, entry_data.get('id')):
-                clean_data = sanitize_data(LedgerEntry, entry_data)
+            clean_data = sanitize_data(entry_data, ALLOWED_LEDGER)
+            entry = db.session.get(LedgerEntry, clean_data.get('id'))
+            
+            if entry:
+                if getattr(entry, 'user_id', user.id) == user.id:
+                    for key, value in clean_data.items():
+                        setattr(entry, key, value)
+            else:
+                clean_data['user_id'] = user.id
                 db.session.add(LedgerEntry(**clean_data))
 
         # 3. Sync Sales
         sales_count = 0
         for sale_data in data.get('sales', []):
-            if not db.session.get(SalesTransaction, sale_data.get('id')):
-                clean_data = sanitize_data(SalesTransaction, sale_data)
+            clean_data = sanitize_data(sale_data, ALLOWED_SALES)
+            sale = db.session.get(SalesTransaction, clean_data.get('id'))
+            
+            if sale:
+                if getattr(sale, 'user_id', user.id) == user.id:
+                    for key, value in clean_data.items():
+                        setattr(sale, key, value)
+            else:
+                clean_data['user_id'] = user.id
                 db.session.add(SalesTransaction(**clean_data))
                 sales_count += 1
 
         db.session.commit()
-        print(f"✅ Synced: {len(data.get('inventory', []))} items, {len(data.get('ledger', []))} khata, {sales_count} sales.")
-        return jsonify({"status": "success", "message": "Database updated"}), 200
+        print(f"✅ Secure Sync: {len(data.get('inventory', []))} items, {len(data.get('ledger', []))} khata, {sales_count} sales for user {user.id}.")
+        return jsonify({"status": "success", "message": "Database updated securely"}), 200
 
     except Exception as e:
         db.session.rollback()
-        print("❌ SYNC CRASHED!")
+        print("❌ SECURE SYNC CRASHED!")
         traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": "Internal processing error"}), 500
 
 
 # ==========================================
@@ -324,6 +399,7 @@ def register():
     return jsonify({"message": "Shop registered successfully"}), 201
 
 
+
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
     data = request.json or {}
@@ -331,24 +407,22 @@ def login():
     password = data.get('password')
 
     user = User.query.filter_by(email=email).first()
+    if not user or not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    # 📍 Capture IP and resolve region on login
+    client_ip = get_client_ip(request)
+    loc_data = resolve_ip_location(client_ip)
     
-    if not user:
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    if user.password_hash == "GOOGLE_SSO_USER":
-        return jsonify({
-            "error": "This account uses Google Login. Tap 'Continue with Google', or tap 'Forgot Password' to create a password for this account."
-        }), 400
-
-    if not check_password_hash(user.password_hash, password):
-        return jsonify({"error": "Invalid email or password"}), 401
+    user.last_ip = client_ip
+    user.city = loc_data['city']
+    user.state = loc_data['state']
+    user.country = loc_data['country']
+    
+    db.session.commit()
 
     access_token = create_access_token(identity=email)
-    
-    return jsonify({
-        "access_token": access_token,
-        "shop_name": user.shop_name
-    }), 200
+    return jsonify({"access_token": access_token, "shop_name": user.shop_name}), 200
 
 
 @app.route('/api/v1/auth/forgot-password', methods=['POST'])
@@ -412,7 +486,10 @@ def google_auth():
     data = request.get_json() or {}
     token = data.get('token')
     
-    CLIENT_ID = "106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com"
+    CLIENT_ID = os.getenv("GOOGLE_WEB_CLIENT_ID")
+
+    if not CLIENT_ID:
+        return jsonify({"error": "Google OAuth is not configured"}), 500
 
     if not token:
         return jsonify({"error": "Google token is missing"}), 400
@@ -465,7 +542,6 @@ def get_profile():
     if not user:
         return jsonify({"error": "User not found"}), 404
         
-    # 🚀 FIX 1: Safely return phone, address, and upi_id if columns exist
     return jsonify({
         "email": user.email,
         "shop_name": user.shop_name,
@@ -489,7 +565,6 @@ def update_profile():
     user.shop_name = data.get('shop_name', user.shop_name)
     user.phone = data.get('phone', user.phone)
     
-    # 🚀 FIX 2: Save address and upi_id from mobile request
     if hasattr(user, 'address') and 'address' in data:
         user.address = data['address']
     if hasattr(user, 'upi_id') and 'upi_id' in data:
@@ -516,7 +591,6 @@ def submit_feedback():
         return jsonify({"error": "User ID and message are required"}), 400
 
     try:
-        # 🚀 FIX 3: Convert string/email user_id into valid Integer foreign key
         user_id = None
         if isinstance(user_identifier, int) or (isinstance(user_identifier, str) and user_identifier.isdigit()):
             user_id = int(user_identifier)
@@ -547,7 +621,7 @@ def submit_feedback():
 @jwt_required()
 def get_all_users():
     current_user_email = get_jwt_identity()
-    ADMIN_EMAIL = "superadmin@gmail.com" 
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "connect.manim@gmail.com")
     
     if current_user_email != ADMIN_EMAIL:
         return jsonify({"error": "Access Denied. Super Admins only."}), 403
@@ -568,6 +642,17 @@ def get_all_users():
         "users": user_list
     }), 200
 
+# 1. Telemetry Control Center Dashboard
+@app.route('/admin/telemetry-dashboard')
+def admin_dashboard_ui():
+    return render_template('admin_dashboard.html')
+
+# 2. Main Merchant Management Dashboard
+@app.route('/admin/dashboard')
+def admin_merchant_dashboard():
+    return render_template('dashboard.html')
+
+#________________________________________________________________________________________
 
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'

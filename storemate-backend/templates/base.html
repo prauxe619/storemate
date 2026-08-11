@@ -9,21 +9,30 @@
 </head>
 <body class="bg-gray-100 font-sans antialiased">
     <nav class="bg-slate-900 border-b border-slate-800">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+            <div class="flex items-center space-x-6">
                 <div class="flex items-center space-x-3">
                     <span class="text-2xl">🏪</span>
                     <span class="text-white font-bold text-xl tracking-wide">StoreMate <span class="text-emerald-500 text-sm font-semibold">Admin</span></span>
                 </div>
+                <!-- Navigation Links -->
                 {% if session.get('admin_email') %}
-                <div class="flex items-center space-x-4">
-                    <span class="text-gray-300 text-sm">{{ session.get('admin_email') }}</span>
-                    <a href="{{ url_for('admin_web.logout') }}" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition">Logout</a>
+                <div class="flex space-x-4">
+                    <a href="{{ url_for('admin_web.dashboard') }}" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Merchants Overview</a>
+                    <a href="{{ url_for('admin_dashboard_ui') }}" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Live Telemetry Dashboard</a>
                 </div>
                 {% endif %}
             </div>
+            {% if session.get('admin_email') %}
+            <div class="flex items-center space-x-4">
+                <span class="text-gray-300 text-sm">{{ session.get('admin_email') }}</span>
+                <a href="{{ url_for('admin_web.logout') }}" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition">Logout</a>
+            </div>
+            {% endif %}
         </div>
-    </nav>
+    </div>
+</nav>
 
     <main class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {% with messages = get_flashed_messages(with_categories=true) %}

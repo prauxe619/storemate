@@ -1,30 +1,33 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 🚀 CONSOLIDATED INTENT QUERIES -->
     <queries>
+        <!-- WhatsApp Integration -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="whatsapp" />
         </intent>
-    </queries>
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <queries>
+        <!-- Speech Recognition Service -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 
+    <!-- 🚀 REQUIRED PERMISSIONS -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
       android:icon="@mipmap/ic_launcher"
-      android:roundIcon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
+      
+      <!-- 🚀 MITM DEFENSE: Enforce HTTPS-only traffic -->
+      android:usesCleartextTraffic="false"
       android:supportsRtl="true">
       
       <activity

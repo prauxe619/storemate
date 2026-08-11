@@ -7,7 +7,7 @@ import { database } from '../core/database';
 import { Q } from '@nozbe/watermelondb';
 import { Camera, CameraType } from 'react-native-camera-kit';
 import { SpeechEngine } from '../core/speech/SpeechEngine';
-
+import TelemetryService from '../services/TelemetryService';
 import { BASE_URL } from '../config/api';
 
 const sendWhatsAppReceipt = (cart, totalAmount, customerPhone, paymentMethod, customerName, oldBalance = 0, discount = 0) => {
@@ -181,6 +181,7 @@ const POSScreen = ({ onClose }) => {
 
   const processPOSVoiceCommand = async (text) => {
     setAiStatus("Thinking...");
+    const startTime = Date.now();
     try {
       const inventoryNames = inventoryRef.current.map(i => i.productName);
 
@@ -192,7 +193,15 @@ const POSScreen = ({ onClose }) => {
       if (!response.ok) throw new Error("API Network Error");
       
       const aiData = await response.json();
+      const latencyMs = Date.now() - startTime;
       const { intent, product, qty, discount_percent, customer_name } = aiData;
+      TelemetryService.logVoice(
+        text,
+        aiData.intent,
+        aiData.intent,
+        'SUCCESS',
+        latencyMs
+      );
 
       // 🚀 Automatically populate customer name if mentioned (e.g. "Rahul ke khate mein")
       if (customer_name) {
@@ -222,7 +231,8 @@ const POSScreen = ({ onClose }) => {
         setAiStatus("Command not recognized.");
       }
     } catch (error) {
-      setAiStatus("Connection failed.");
+      const latencyMs = Date.now() - startTime;
+      TelemetryService.logVoice(text, 'unknown', 'unknown', 'FAILED', latencyMs, error.message);
     }
   };
 
@@ -332,6 +342,13 @@ const POSScreen = ({ onClose }) => {
       if (customerPhone.length >= 10) {
         sendWhatsAppReceipt(cart, total, customerPhone, paymentMethod, customerName, oldBalance, discount);
       }
+      // 🚀 TRACK COMPLETED SALE EVENT
+      TelemetryService.trackEvent('sale_created', 'pos', {
+        amount: total,
+        payment_type: paymentMethod,
+        item_count: cart.length,
+        has_discount: discount > 0
+      });
 
       Alert.alert("Checkout Complete", paymentMethod === 'KHATA' ? `₹${total} put on Khata.` : `₹${total} paid via Cash.`);
       setCart([]); setTotal(0); setDiscount(0); setCustomerPhone(''); setCustomerName('');

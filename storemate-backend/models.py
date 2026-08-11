@@ -40,6 +40,13 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     shop_name = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(20), nullable=True)
+    
+    # 📍 Location & Telemetry Metadata
+    last_ip = db.Column(db.String(45), nullable=True)
+    city = db.Column(db.String(100), default='Unknown City', nullable=True)
+    state = db.Column(db.String(100), default='Unknown State', nullable=True)
+    country = db.Column(db.String(100), default='India', nullable=True)
+
     reset_otp = db.Column(db.String(6), nullable=True)
     reset_otp_expiry = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True)
@@ -47,12 +54,28 @@ class User(db.Model):
 
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
+    __table_args__ = {'extend_existing': True} # Prevents Double-Registration Crashes
+    
     id = db.Column(db.Integer, primary_key=True)
-    admin_id = db.Column(db.Integer, nullable=True) # ID of the admin performing the action
-    action = db.Column(db.String(100), nullable=False) # e.g., "MERCHANT_SUSPENDED"
-    target_id = db.Column(db.Integer, nullable=True) # ID of the merchant affected
+    
+    # 👤 Who performed the action?
+    admin_id = db.Column(db.Integer, nullable=True) 
+    admin_email = db.Column(db.String(120), nullable=True)
     ip_address = db.Column(db.String(45), nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # ⚡ What did they do?
+    action = db.Column(db.String(100), nullable=False)
+    
+    # 🎯 Who/What was affected?
+    target_type = db.Column(db.String(32), nullable=True) 
+    target_id = db.Column(db.String(64), nullable=True) # String to support WatermelonDB IDs
+    
+    # 📝 Extra diagnostic data
+    details = db.Column(db.JSON, nullable=True) 
+    
+    # 🕒 When did it happen?
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
 
 class Subscription(db.Model):
     __tablename__ = 'subscriptions'

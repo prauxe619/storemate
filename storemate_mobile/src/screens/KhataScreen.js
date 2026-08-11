@@ -3,6 +3,7 @@ import { SafeAreaView, View, Text, StyleSheet, FlatList, TouchableOpacity, Modal
 import { database } from '../core/database';
 import { Q } from '@nozbe/watermelondb'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import TelemetryService from '../services/TelemetryService';
 
 const KhataScreen = ({ onClose }) => {
   const [customers, setCustomers] = useState([]);
@@ -119,6 +120,11 @@ const KhataScreen = ({ onClose }) => {
     if (formattedPhone.length === 10) formattedPhone = `91${formattedPhone}`;
 
     const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+
+    // 🚀 TRACK WHATSAPP REMINDER
+    TelemetryService.trackEvent('whatsapp_reminder_sent', 'khata', {
+      balance_amount: balance
+    });
     Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open WhatsApp."));
   };
 
@@ -174,6 +180,10 @@ const KhataScreen = ({ onClose }) => {
           entry.isSynced = false;
           entry.createdAt = Date.now();
           entry.customerPhone = selectedCustomer.phone; 
+        });
+        // 🚀 TRACK KHATA PAYMENT COLLECTION
+        TelemetryService.trackEvent('khata_payment_received', 'khata', {
+          amount: amount
         });
       });
       Alert.alert('✅ Payment Logged', `₹${amount} cleared for ${selectedCustomer.name}.`);

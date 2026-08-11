@@ -6,6 +6,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { checkForExistingBackup, restoreFromDrive } from '../services/BackupService';
+import TelemetryService from '../services/TelemetryService';
 import { BASE_URL } from '../config/api';
 
 const LoginScreen = ({ onLoginSuccess }) => { 
@@ -117,6 +118,8 @@ const LoginScreen = ({ onLoginSuccess }) => {
         await AsyncStorage.setItem('userToken', data.access_token);
         await AsyncStorage.setItem('shopName', data.shop_name);
         await AsyncStorage.setItem('userEmail', email);
+        TelemetryService.setAuthToken(data.access_token);
+        TelemetryService.trackEvent('user_login', 'auth', { email });
         await checkAndPromptRestore();
       } else {
         Alert.alert("Success", "Shop registered! You can now log in.");
@@ -165,6 +168,8 @@ const LoginScreen = ({ onLoginSuccess }) => {
       await AsyncStorage.setItem('userToken', data.access_token);
       await AsyncStorage.setItem('shopName', data.shop_name);
       await AsyncStorage.setItem('userEmail', data.email);
+      TelemetryService.setAuthToken(data.access_token);
+      TelemetryService.trackEvent('google_login', 'auth', { email: data.email });
       
       // Because we added the Drive Scope in Step 1, this will now successfully trigger!
       await checkAndPromptRestore();

@@ -1,6 +1,9 @@
 module.exports = {
   presets: ['module:@react-native/babel-preset'],
-  plugins: [
-    ['@babel/plugin-proposal-decorators', { version: 'legacy' }] // <-- This line changed!
-  ]
+  env: {
+    production: {
+      // 🚀 STRIPS ALL CONSOLE LOGS IN RELEASE BUILDS
+      plugins: ['transform-remove-console'],
+    },
+  },
 };

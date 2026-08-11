@@ -118,6 +118,12 @@ const ManualEntryScreen = ({ onClose, onSaved, initialQuery = '' }) => {
       });
       onSaved && onSaved(entry);
       onClose && onClose();
+
+      // 🚀 TRACK MANUAL ENTRY CREATION
+      TelemetryService.trackEvent('manual_entry_created', 'khata', {
+        type: entryType,
+        amount: amount
+      });
     } catch (error) {
       Alert.alert('Could not save', error.message);
     } finally {

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, createContext } from 'react';
 import { StatusBar, Text, View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import JailMonkey from 'jail-monkey';
+import RNExitApp from 'react-native-exit-app';
 import { startHourlyBackupScheduler, stopHourlyBackupScheduler } from './src/services/BackupService';
 import NetworkHeader from './src/components/NetworkHeader';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
@@ -43,11 +45,39 @@ const MyLightTheme = {
 export const AuthContext = createContext<any>(null);
 
 export default function App() {
-  // Fix 2: Added explicit types so TypeScript accepts strings instead of just null
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [userToken, setUserToken] = useState<string | null>(null);
 
+  // 🚀 PHASE 2 DEFENSE: Run Security Audit on Boot
   useEffect(() => {
+    const runSecurityAudit = () => {
+      // Check if rooted, jailbroken, or running on an external SD card
+      if (JailMonkey.isJailBroken() || JailMonkey.isOnExternalStorage()) {
+        Alert.alert(
+          "Security Violation",
+          "StoreMate cannot run on rooted or compromised devices in order to protect your financial data.",
+          [{ text: "OK", onPress: () => RNExitApp.exitApp() }],
+          { cancelable: false }
+        );
+        return;
+      }
+      
+      // Prevent GPS spoofing / mock location developer tools
+      if (JailMonkey.canMockLocation()) {
+         Alert.alert(
+          "Security Violation",
+          "Please disable 'Mock Locations' in your developer settings to use StoreMate.",
+          [{ text: "OK", onPress: () => RNExitApp.exitApp() }],
+          { cancelable: false }
+        );
+         return;
+      }
+    };
+
+    // Run the audit
+    runSecurityAudit();
+
+    // Proceed with standard login check
     const checkLoginStatus = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');

@@ -2,8 +2,10 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from functools import wraps
 from models import db, User, SalesTransaction, LedgerEntry, AuditLog, Subscription
 from werkzeug.security import check_password_hash
+from flask_jwt_extended import create_access_token
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from admin_analytics_bp import is_super_admin, log_admin_action
 
 limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
 admin_web_bp = Blueprint('admin_web', __name__, template_folder='templates')
@@ -21,7 +23,8 @@ def roles_required(*roles):
                 
             if admin_role not in roles:
                 flash("Insufficient privileges for this action.", "error")
-                return redirect(url_for('admin_web.dashboard'))
+                # 🚀 FIX: Redirect to login, NOT dashboard, to break the infinite loop!
+                return redirect(url_for('admin_web.login')) 
                 
             return f(*args, **kwargs)
         return decorated_function
@@ -34,40 +37,51 @@ def log_audit_action(action, target_id=None):
     db.session.add(log)
     db.session.commit()
 
-@admin_web_bp.route('/admin/login', methods=['GET', 'POST'])
+
+@admin_web_bp.route('/login', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
 def login():
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
-        user = User.query.filter_by(email=email).first()
-        
-        if user and user.role in ['SUPER_ADMIN', 'ADMIN'] and check_password_hash(user.password_hash, password):
-            if getattr(user, 'is_active', True) == False:
-                flash("This admin account has been suspended.", "error")
-                return render_template('login.html')
+    if request.method == 'GET':
+        return render_template('login.html')
 
-            session['admin_email'] = user.email
-            session['admin_id'] = user.id
-            session['admin_role'] = user.role 
-            
-            log_audit_action("ADMIN_LOGGED_IN")
-            return redirect(url_for('admin_web.dashboard'))
-        
-        flash("Invalid admin credentials.", "error")
-        
-    return render_template('login.html')
+    email = request.form.get('email')
+    password = request.form.get('password')
 
-@admin_web_bp.route('/admin/logout')
-def logout():
-    log_audit_action("ADMIN_LOGGED_OUT")
-    session.clear()
+    user = User.query.filter_by(email=email).first()
+
+    if user and check_password_hash(user.password_hash, password) and is_super_admin(email):
+        # 1. Set Session Cookies for HTML Templates
+        session['admin_email'] = email
+        session['admin_id'] = user.id
+        session['admin_role'] = user.role  # 🚀 FIX: Save the role to the session
+        
+        # 2. Log Action
+        log_admin_action(admin_email=email, action="ADMIN_LOGGED_IN", target_type="User", target_id=user.id)
+        
+        # 3. Create JWT for API-based Telemetry
+        access_token = create_access_token(identity=email)
+        
+        # Flash success message and redirect
+        flash("Successfully authenticated as Super Admin", "success")
+        response = redirect(url_for('admin_web.dashboard'))
+        response.set_cookie('jwt_token', access_token) # Store JWT in cookie for API calls
+        return response
+
+    flash("Invalid credentials or non-admin account.", "error")
     return redirect(url_for('admin_web.login'))
 
+@admin_web_bp.route('/logout')
+def logout():
+    session.clear()
+    flash("Logged out successfully.", "info")
+    response = redirect(url_for('admin_web.login'))
+    response.delete_cookie('jwt_token')
+    return response
+
 @admin_web_bp.route('/admin/dashboard')
-@roles_required('SUPER_ADMIN', 'ADMIN')
+@roles_required('SUPERADMIN', 'ADMIN') # 🚀 FIX: Matched exactly to the database role string
 def dashboard():
-    total_merchants = User.query.filter(~User.role.in_(['SUPER_ADMIN', 'ADMIN'])).count()
+    total_merchants = User.query.filter(~User.role.in_(['SUPERADMIN', 'ADMIN'])).count()
     
     total_gmv_result = db.session.query(db.func.sum(SalesTransaction.total_amount)).scalar()
     total_gmv = total_gmv_result or 0.0
@@ -82,7 +96,7 @@ def dashboard():
     mrr = mrr_result or 0.0
     arr = mrr * 12
 
-    merchants = User.query.filter(~User.role.in_(['SUPER_ADMIN', 'ADMIN'])).limit(20).all()
+    merchants = User.query.filter(~User.role.in_(['SUPERADMIN', 'ADMIN'])).limit(20).all()
 
     return render_template(
         'dashboard.html',
@@ -96,7 +110,7 @@ def dashboard():
 
 # 🚀 PHASE 2: Detailed Merchant CRM Inspection Drawer
 @admin_web_bp.route('/admin/merchant/<int:user_id>')
-@roles_required('SUPER_ADMIN', 'ADMIN')
+@roles_required('SUPERADMIN', 'ADMIN')
 def merchant_detail(user_id):
     merchant = User.query.get_or_404(user_id)
     
@@ -107,7 +121,7 @@ def merchant_detail(user_id):
     transaction_count = SalesTransaction.query.filter_by(user_id=user_id).count()
     
     # Fetch recent audit logs for this store
-    logs = AuditLog.query.filter_by(target_id=user_id).order_by(AuditLog.timestamp.desc()).limit(10).all()
+    logs = AuditLog.query.filter_by(target_id=str(user_id)).order_by(AuditLog.created_at.desc()).limit(10).all()
 
     return render_template(
         'merchant_detail.html',
@@ -118,7 +132,7 @@ def merchant_detail(user_id):
     )
 
 @admin_web_bp.route('/admin/merchant/<int:user_id>/toggle-status', methods=['POST'])
-@roles_required('SUPER_ADMIN')
+@roles_required('SUPERADMIN')
 def toggle_merchant_status(user_id):
     user = User.query.get_or_404(user_id)
     if user.id == session.get('admin_id'):
@@ -129,7 +143,7 @@ def toggle_merchant_status(user_id):
     user.is_active = new_status
     
     action = "MERCHANT_REACTIVATED" if new_status else "MERCHANT_SUSPENDED"
-    log_audit_action(action, target_id=user.id)
+    log_audit_action(action, target_id=str(user.id))
     
     flash(f"Updated status for {user.shop_name or user.email}", "success")
     return redirect(url_for('admin_web.dashboard'))

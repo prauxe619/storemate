@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { executeAIAction, confirmPendingSale } from '../core/ai/IntentHandler'; 
 import { SpeechEngine } from '../core/speech/SpeechEngine';
 import { BASE_URL } from '../config/api';
+import TelemetryService from '../services/TelemetryService';
 
 const HomeScreen = () => {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -85,6 +86,7 @@ const HomeScreen = () => {
       setIsSyncing(false);
     } catch (e) {
       setIsSyncing(false);
+      TelemetryService.logError('offline_sync', e.message, e.stack);
     }
   };
 
@@ -93,6 +95,10 @@ const HomeScreen = () => {
     
     const loadProfileData = async () => {
       try {
+        const storedToken = await AsyncStorage.getItem('userToken');
+          if (storedToken) {
+            TelemetryService.setAuthToken(storedToken);
+          }
         const storedName = await AsyncStorage.getItem('shopName');
         const storedAvatar = await AsyncStorage.getItem('avatarUri'); 
         const storedPhone = await AsyncStorage.getItem('userPhone');
@@ -200,6 +206,19 @@ const HomeScreen = () => {
       if (!response.ok) throw new Error("API Network Error");
       
       const aiData = await response.json();
+
+      const latencyMs = Date.now() - startTime; // 🚀 Calculate latency
+
+      // 🚀 LOG SUCCESSFUL VOICE COMMAND
+      TelemetryService.logVoice(
+        text,
+        aiData.intent || 'unknown',
+        aiData.intent || 'unknown',
+        'SUCCESS',
+        latencyMs,
+        null,
+        aiData.confidence || 0.9
+      );
 
       // SECURITY BOUNDARY:
       // Never pass the raw remote response directly into the database
@@ -319,10 +338,23 @@ const HomeScreen = () => {
       fetchMetrics(); 
 
     } catch (error) {
-      console.error("AI Pipeline Error:", error);
-      setAiStatus("Connection failed. Try again.");
-    }
-  };
+    const latencyMs = Date.now() - startTime;
+    console.error("AI Pipeline Error:", error);
+    setAiStatus("Connection failed. Try again.");
+
+    // 🚀 LOG FAILED VOICE COMMAND
+    TelemetryService.logVoice(
+      text,
+      'unknown',
+      'unknown',
+      'FAILED',
+      latencyMs,
+      error.message || "Network Error"
+    );
+
+    TelemetryService.logError('voice_ai', error.message, error.stack);
+  }
+};
 
   const safeMicPress = async () => {
     try {
