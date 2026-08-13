@@ -1,85 +1,59 @@
-annotated-doc==0.0.4
-annotated-types==0.7.0
-anyio==4.14.2
-bcrypt==5.0.0
-blinker==1.9.0
-certifi==2026.6.17
-cffi==2.1.0
-charset-normalizer==3.4.9
-click==8.4.2
-colorama==0.4.6
-cryptography==49.0.0
-Deprecated==1.3.1
-distro==1.9.0
-dotenv==0.9.9
-ecdsa==0.19.2
-exceptiongroup==1.3.1
-fastapi==0.139.0
-filelock==3.31.0
-Flask==3.1.3
-Flask-JWT-Extended==4.7.4
-Flask-Limiter==4.1.1
-Flask-Mail==0.10.0
+# =========================
+# WEB / API
+# =========================
+Flask==3.1.1
+Flask-Cors==6.0.1
 Flask-SQLAlchemy==3.1.1
-fsspec==2026.6.0
-google-auth==2.55.2
-google-genai==2.12.0
-greenlet==3.5.3
-h11==0.16.0
-hf-xet==1.5.2
-httpcore==1.0.9
-httpx==0.28.1
-huggingface_hub==1.24.0
-idna==3.18
-itsdangerous==2.2.0
-Jinja2==3.1.6
-limits==5.8.0
-markdown-it-py==4.2.0
-MarkupSafe==3.0.3
-mdurl==0.1.2
-mpmath==1.3.0
-networkx==3.4.2
+Flask-Mail==0.10.0
+Flask-JWT-Extended==4.7.4
+Flask-Limiter==3.12
+
+# =========================
+# DATABASE
+# =========================
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.10
+
+# =========================
+# SERVER
+# =========================
+gunicorn==23.0.0
+
+# =========================
+# ENVIRONMENT / HTTP
+# =========================
+python-dotenv==1.1.1
+requests==2.32.5
+
+# =========================
+# IMAGE PROCESSING
+# =========================
+Pillow==11.3.0
+opencv-python-headless==4.12.0.88
+
+# =========================
+# NUMERICAL / FUZZY MATCHING
+# =========================
 numpy==2.2.6
-opencv-python==5.0.0.93
-ordered-set==4.1.0
-packaging==26.2
-passlib==1.7.4
-pillow==12.3.0
-psycopg2-binary==2.9.12
-pyasn1==0.6.4
-pyasn1_modules==0.4.2
-pycparser==3.0
-pydantic==2.13.4
-pydantic_core==2.46.4
-Pygments==2.20.0
-PyJWT==2.13.0
-pytesseract==0.3.13
-python-dotenv==1.2.2
-python-jose==3.5.0
-python-multipart==0.0.32
-PyYAML==6.0.3
-RapidFuzz==3.14.5
-regex==2026.7.19
-requests==2.34.2
-rich==15.0.0
-rsa==4.9.1
-safetensors==0.8.0
-shellingham==1.5.4
-six==1.17.0
-sniffio==1.3.1
-SQLAlchemy==2.0.51
-starlette==1.3.1
-sympy==1.14.0
-tenacity==9.1.4
-tokenizers==0.22.2
-torch==2.13.0
-tqdm==4.69.0
-transformers==5.14.1
-typer==0.27.0
-typing-inspection==0.4.2
-typing_extensions==4.16.0
-urllib3==2.7.0
-uvicorn==0.51.0
-websockets==16.1
-Werkzeug==3.1.8
-wrapt==2.3.0
+rapidfuzz==3.13.0
+
+# =========================
+# DONUT / TRANSFORMERS
+# =========================
+transformers==4.55.0
+sentencepiece==0.2.0
+protobuf==5.29.5
+
+# CPU-only PyTorch for Railway
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.3.1+cpu
+
+# =========================
+# GOOGLE GEMINI
+# =========================
+google-genai==2.18.0
+
+# =========================
+# JWT
+# =========================
+PyJWT==2.11.0

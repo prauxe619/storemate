@@ -1,92 +1,43 @@
-import ipaddress
 import requests
-
 
 def get_client_ip(request):
     """
-    Get the original client IP when the app is behind Railway/proxies.
+    Extracts the real client IP address, even behind Nginx, cloud proxies, or local networks.
     """
-
-    # Railway/proxy normally provides X-Forwarded-For.
-    x_forwarded_for = request.headers.get("X-Forwarded-For")
-
+    x_forwarded_for = request.headers.get('X-Forwarded-For')
     if x_forwarded_for:
-        # First IP is generally the original client.
-        return x_forwarded_for.split(",")[0].strip()
-
-    return request.remote_addr
-
-
-def is_private_or_local_ip(ip_address):
-    """
-    Safely determine whether an IP is private/local.
-    """
-
-    if not ip_address:
-        return True
-
-    try:
-        ip = ipaddress.ip_address(ip_address)
-
-        return (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-        )
-
-    except ValueError:
-        return True
-
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.remote_addr
+    return ip
 
 def resolve_ip_location(ip_address):
     """
-    Resolve public IP to city, state and country.
-
-    Returns quickly if the IP is private/local.
+    Resolves an IP address to City, State (Region), and Country using a lightweight, non-blocking lookup.
     """
-
-    # Development / private network
-    if is_private_or_local_ip(ip_address):
+    # 1. Development / Private IP handling
+    if not ip_address or ip_address in ['127.0.0.1', 'localhost'] or ip_address.startswith(('192.168.', '10.', '172.')):
         return {
-            "city": "Local",
-            "state": "Local",
-            "country": "Local",
+            "city": "Gurgaon",
+            "state": "Haryana",
+            "country": "India",
             "is_local_dev": True
         }
 
+    # 2. Public IP Lookup (Fast 2-second timeout to prevent API lag)
     try:
-        url = (
-            f"https://ip-api.com/json/{ip_address}"
-            "?fields=status,city,regionName,country"
-        )
-
-        response = requests.get(
-            url,
-            timeout=2.0
-        )
-
+        url = f"http://ip-api.com/json/{ip_address}?fields=status,city,regionName,country"
+        response = requests.get(url, timeout=2.0)
         if response.status_code == 200:
-
             data = response.json()
-
-            if data.get("status") == "success":
+            if data.get('status') == 'success':
                 return {
-                    "city": data.get("city") or "Unknown City",
-                    "state": data.get("regionName") or "Unknown State",
-                    "country": data.get("country") or "Unknown Country",
+                    "city": data.get("city", "Unknown City"),
+                    "state": data.get("regionName", "Unknown State"),
+                    "country": data.get("country", "India"),
                     "is_local_dev": False
                 }
-
-    except requests.RequestException as e:
-        print(f"⚠️ GeoIP lookup failed: {e}")
-
     except Exception as e:
-        print(f"⚠️ GeoIP unexpected error: {e}")
+        print(f"⚠️ GeoIP Lookup Timeout or Failure: {e}")
 
-    return {
-        "city": "Unknown City",
-        "state": "Unknown State",
-        "country": "Unknown Country",
-        "is_local_dev": False
-    }
+    return {"city": "Unknown City", "state": "Unknown State", "country": "India", "is_local_dev": False}

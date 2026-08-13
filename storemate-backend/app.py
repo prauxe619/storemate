@@ -2,13 +2,14 @@ import os
 import re
 import io
 import json
+from io import BytesIO
 import secrets
 import traceback
 import random
 import datetime
 from datetime import timedelta
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -86,8 +87,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Flask-Mail Configuration
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
+try:
+    app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', '587'))
+except (TypeError, ValueError):
+    print("⚠️ Invalid MAIL_PORT. Falling back to 587.")
+    app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = os.getenv(
+    'MAIL_USE_TLS', 'true'
+).strip().lower() in ('true', '1', 'yes', 'on')
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
@@ -137,11 +144,12 @@ with app.app_context():
 
 @app.route("/")
 def home():
-    return {
-        "status": "running",
-        "service": "StoreMate Backend (Optimized Dual-Engine)",
-        "version": "3.0"
-    }
+    # If already logged in as admin, go directly to dashboard
+    if session.get('admin_email') and session.get('admin_role'):
+        return redirect(url_for('admin_web.dashboard'))
+
+    # Otherwise show admin login
+    return redirect(url_for('admin_web.login'))
 
 # ==========================================
 # ☁️ SYNC ROUTE
@@ -266,6 +274,7 @@ def clean_donut_output(donut_data):
 
 
 @app.route('/api/v1/invoices/upload', methods=['POST'])
+@jwt_required() # 🚀 SECURITY: Block unauthorized API abuse
 def upload_invoice():
     file_key = 'file' if 'file' in request.files else ('invoice' if 'invoice' in request.files else None)
     
@@ -276,10 +285,15 @@ def upload_invoice():
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
+    # 🚀 SAFE HANDLING: Read into memory so BOTH Cloud and Local can read it safely
+    file_bytes = file.read()
+    
     # STAGE 1: Try Fast Gemini Cloud Engine (Strict Schema)
     try:
         print("\n📸 Invoice received! Optimizing image for AI...")
-        image = Image.open(file.stream)
+        # Create a fresh stream from the bytes for PIL
+        image_stream = BytesIO(file_bytes)
+        image = Image.open(image_stream)
         image.thumbnail((1500, 1500)) 
 
         prompt = """
@@ -296,11 +310,14 @@ def upload_invoice():
                 response_mime_type="application/json",
                 response_schema={
                     "type": "OBJECT",
+                    "required": ["extracted_data"], # 🚀 ENFORCEMENT: Root key is mandatory
                     "properties": {
                         "extracted_data": {
                             "type": "ARRAY",
                             "items": {
                                 "type": "OBJECT",
+                                # 🚀 ENFORCEMENT: All 4 keys must be returned for every item
+                                "required": ["productName", "quantity", "purchasePrice", "sellingPrice"],
                                 "properties": {
                                     "productName": {"type": "STRING"},
                                     "quantity": {"type": "NUMBER"},
@@ -328,8 +345,9 @@ def upload_invoice():
         
         # STAGE 2: Local Donut ML Fallback
         try:
-            file.stream.seek(0)
-            raw_donut_json = process_invoice_image(file.stream)
+            # Create a fresh, untouched stream from the original bytes for Donut ML
+            fallback_stream = BytesIO(file_bytes)
+            raw_donut_json = process_invoice_image(fallback_stream)
             formatted_items = clean_donut_output(raw_donut_json)
             
             print(f"✅ Local Fallback Extracted {len(formatted_items)} items!")
@@ -339,7 +357,6 @@ def upload_invoice():
             print("\n❌ Both Cloud and Local Extraction Failed:")
             traceback.print_exc()
             return jsonify({"error": "Invoice extraction failed", "details": str(local_err)}), 500
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -652,6 +669,9 @@ def admin_dashboard_ui():
 def admin_merchant_dashboard():
     return render_template('dashboard.html')
 
+@app.route('/health')
+def health():
+    return {'status': 'ok'}, 200
 #________________________________________________________________________________________
 
 if __name__ == '__main__':
