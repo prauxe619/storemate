@@ -1,8 +1,5 @@
-import { Alert, Platform } from 'react-native';
-
-// 🤖 10.0.2.2 directs the Android Emulator to your laptop's localhost
-//const BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:5050' : 'http://localhost:5050';
-const BASE_URL = 'http://192.168.31.65:5050';
+import { Alert } from 'react-native';
+import { BASE_URL } from '../config/api';
 
 export const uploadInvoice = async (imageUri) => {
   try {
