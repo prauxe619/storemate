@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const BASE_URL = 'https://storemate-backend-production.up.railway.app';
+import { BASE_URL } from '../../config/api';
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
