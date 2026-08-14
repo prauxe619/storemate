@@ -21,6 +21,7 @@ import RNExitApp from 'react-native-exit-app';
 import {
   startHourlyBackupScheduler,
   stopHourlyBackupScheduler,
+  backupNow,
 } from './src/services/BackupService';
 
 import NetworkHeader from './src/components/NetworkHeader';
@@ -344,6 +345,14 @@ export default function App() {
       );
 
       try {
+        // 🚀 ADD THIS BLOCK: Force a final backup before logging out!
+        try {
+          await backupNow();
+          console.log("Final backup completed successfully before logout.");
+        } catch (backupError) {
+          console.log("Final backup skipped or failed (offline):", backupError);
+        }
+
         GoogleSignin.configure({
           webClientId:
             '106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com',
