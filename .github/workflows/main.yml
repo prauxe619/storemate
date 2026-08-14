@@ -45,7 +45,7 @@ jobs:
         run: |
           cd android
           ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=storemate-release-key.keystore \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/storemate-release-key.keystore \
             -Pandroid.injected.signing.store.password=storemate123 \
             -Pandroid.injected.signing.key.alias=storemate-key \
             -Pandroid.injected.signing.key.password=storemate123
