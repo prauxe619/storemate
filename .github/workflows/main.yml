@@ -36,19 +36,21 @@ jobs:
 
       - name: Generate Release Keystore
         run: |
+          mkdir -p android/app
           keytool -genkeypair -v -storetype PKCS12 -keystore android/app/storemate-release-key.keystore \
           -alias storemate-key -keyalg RSA -keysize 2048 -validity 10000 \
           -dname "CN=StoreMate, OU=Dev, O=StoreMate, L=Gurugram, S=Haryana, C=IN" \
           -storepass storemate123 -keypass storemate123
 
       - name: Build Release APK
+        env:
+          MYAPP_UPLOAD_STORE_FILE: storemate-release-key.keystore
+          MYAPP_UPLOAD_STORE_PASSWORD: storemate123
+          MYAPP_UPLOAD_KEY_ALIAS: storemate-key
+          MYAPP_UPLOAD_KEY_PASSWORD: storemate123
         run: |
           cd android
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$(pwd)/app/storemate-release-key.keystore \
-            -Pandroid.injected.signing.store.password=storemate123 \
-            -Pandroid.injected.signing.key.alias=storemate-key \
-            -Pandroid.injected.signing.key.password=storemate123
+          ./gradlew assembleRelease
 
       - name: Upload Storemate APK
         uses: actions/upload-artifact@v4
