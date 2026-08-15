@@ -21,7 +21,6 @@ import RNExitApp from 'react-native-exit-app';
 import {
   startHourlyBackupScheduler,
   stopHourlyBackupScheduler,
-  backupNow,
 } from './src/services/BackupService';
 
 import NetworkHeader from './src/components/NetworkHeader';
@@ -331,115 +330,153 @@ export default function App() {
   ]);
 
 
-  /*
-   * ==========================================================
-   * LOGOUT
-   * ==========================================================
-   */
+ /*
+ * ============================================================
+ * LOGOUT
+ * ============================================================
+ *
+ * IMPORTANT:
+ * Logout must NEVER:
+ *
+ * - call backupNow()
+ * - call Google Drive
+ * - call GoogleSignin.signIn()
+ *
+ * StoreMate authentication and Google Drive authentication
+ * are completely separate.
+ */
 
-  const logout =
-    async () => {
+const logout =
+  async () => {
 
-      setIsLoading(
-        true
-      );
+    setIsLoading(true);
+
+    try {
+
+      /*
+       * DO NOT backup here.
+       *
+       * A logout operation must work even when:
+       * - internet is unavailable
+       * - Google is not signed in
+       * - Google Drive is unavailable
+       *
+       * Local WatermelonDB remains untouched.
+       */
+
+      /*
+       * If a Google account is already connected,
+       * signing it out is optional.
+       *
+       * IMPORTANT:
+       * We only sign out an EXISTING Google session.
+       * We NEVER call GoogleSignin.signIn().
+       */
 
       try {
-        // 🚀 ADD THIS BLOCK: Force a final backup before logging out!
-        try {
-          await backupNow();
-          console.log("Final backup completed successfully before logout.");
-        } catch (backupError) {
-          console.log("Final backup skipped or failed (offline):", backupError);
-        }
 
-        GoogleSignin.configure({
-          webClientId:
-            '106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com',
-        });
-
-        /*
-         * Cast to any for compatibility
-         * with Google Sign-In versions.
-         */
         const gs =
           GoogleSignin as any;
 
+        let signedIn =
+          false;
+
         if (
-          typeof gs.hasPlayServices ===
+          typeof gs.isSignedIn ===
           'function'
         ) {
-          let signedIn =
-            false;
 
-          if (
-            typeof gs.isSignedIn ===
-            'function'
-          ) {
-            signedIn =
-              await gs.isSignedIn();
-          } else if (
-            typeof gs.getCurrentUser ===
-            'function'
-          ) {
-            signedIn =
-              !!(
-                await gs.getCurrentUser()
-              );
-          }
+          signedIn =
+            await gs.isSignedIn();
 
-          if (
-            signedIn
-          ) {
-            await gs.signOut();
-          }
+        } else if (
+          typeof gs.getCurrentUser ===
+          'function'
+        ) {
+
+          const currentUser =
+            await gs.getCurrentUser();
+
+          signedIn =
+            !!currentUser;
         }
 
-        /*
-         * Clear local StoreMate
-         * session/profile cache.
-         *
-         * NOTE:
-         * This removes the session tokens but 
-         * safely leaves the local WatermelonDB intact.
-         */
-        const keysToClear = [
-          'userToken',
-          'shopName',
-          'userEmail',
-          'userPhone',
-          'userAddress',
-          'avatarUri',
-          'shopUpi',
-          'driveBackup_restorePromptShown',
-        ];
+        if (
+          signedIn &&
+          typeof gs.signOut ===
+            'function'
+        ) {
 
-        await Promise.all(
-          keysToClear.map(
-            key =>
-              AsyncStorage.removeItem(
-                key
-              )
-          )
-        );
+          await gs.signOut();
+        }
 
       } catch (
-        error
+        googleLogoutError
       ) {
-        console.error(
-          'Logout Cleanup Error:',
-          error
-        );
-      } finally {
-        setUserToken(
-          null
-        );
 
-        setIsLoading(
-          false
+        /*
+         * Google logout failure must NEVER
+         * prevent StoreMate logout.
+         */
+
+        console.log(
+          'Google session cleanup skipped:',
+          googleLogoutError
         );
       }
-    };
+
+
+      /*
+       * Clear StoreMate local session/profile.
+       *
+       * IMPORTANT:
+       * WatermelonDB is NOT deleted.
+       *
+       * Therefore the shop's local data remains
+       * available for the next authenticated session.
+       */
+
+      const keysToClear = [
+        'userToken',
+        'shopName',
+        'userEmail',
+        'userPhone',
+        'userAddress',
+        'avatarUri',
+        'shopUpi',
+        'driveBackup_restorePromptShown',
+      ];
+
+      await Promise.all(
+        keysToClear.map(
+          key =>
+            AsyncStorage.removeItem(
+              key
+            )
+        )
+      );
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        'Logout Cleanup Error:',
+        error
+      );
+
+    } finally {
+
+      /*
+       * This immediately sends the app
+       * back to LoginScreen.
+       */
+
+      setUserToken(null);
+
+      setIsLoading(false);
+    }
+  };
 
 
   /*

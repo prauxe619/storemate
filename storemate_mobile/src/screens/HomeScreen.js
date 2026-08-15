@@ -51,7 +51,7 @@ import {
 import { SpeechEngine } from '../core/speech/SpeechEngine';
 
 import { BASE_URL } from '../config/api';
-
+import { parseVoiceCommand } from '../core/ai/VoiceCommandRouter';
 import TelemetryService from '../services/TelemetryService';
 
 
@@ -61,24 +61,8 @@ const HomeScreen = () => {
    * =========================================================
    * SAFE AREA
    * =========================================================
-   *
-   * insets.top:
-   *   Status bar / notch / camera cutout
-   *
-   * insets.bottom:
-   *   Android navigation buttons / gesture area
-   *
-   * IMPORTANT:
-   * Do not assume Android navigation bar height.
-   * Android can have:
-   *
-   * - 3-button navigation
-   * - 2-button navigation
-   * - gesture navigation
-   * - persistent navigation bar
-   * - hidden navigation bar
-   * - large screen devices
    */
+
   const insets =
     useSafeAreaInsets();
 
@@ -95,18 +79,6 @@ const HomeScreen = () => {
   } = useWindowDimensions();
 
 
-  /*
-   * Responsive horizontal padding.
-   *
-   * Small phones:
-   * 14
-   *
-   * Normal phones:
-   * 16
-   *
-   * Large phones/tablets:
-   * 24
-   */
   const screenPadding =
     windowWidth < 360
       ? 14
@@ -229,10 +201,86 @@ const HomeScreen = () => {
 
 
   /*
-   * Prevent duplicate voice events.
+   * =========================================================
+   * VOICE LOCK
+   * =========================================================
    */
+
   const isProcessingCommand =
     useRef(false);
+
+
+  /*
+   * =========================================================
+   * IMPORTANT:
+   * HOME SPEECH OWNERSHIP
+   *
+   * Home and POS use the same global SpeechEngine.
+   *
+   * POS is displayed inside a Modal, but HomeScreen itself
+   * remains mounted underneath it.
+   *
+   * Therefore we keep a synchronous ref so Home's speech
+   * callbacks immediately know when another screen owns
+   * the microphone.
+   * =========================================================
+   */
+
+  const isModalOpen =
+    useRef(false);
+
+
+  useEffect(() => {
+
+    isModalOpen.current =
+      showPOS ||
+      showKhata ||
+      showManualEntry ||
+      showOnboardingModal;
+
+  }, [
+    showPOS,
+    showKhata,
+    showManualEntry,
+    showOnboardingModal,
+  ]);
+
+
+  /*
+   * =========================================================
+   * STOP HOME SPEECH WHEN ANY MODAL OPENS
+   *
+   * This is important because simply ignoring callbacks is
+   * not enough if Home was already listening when POS opens.
+   * =========================================================
+   */
+
+  useEffect(() => {
+
+    const modalIsOpen =
+      showPOS ||
+      showKhata ||
+      showManualEntry ||
+      showOnboardingModal;
+
+    if (modalIsOpen) {
+
+      setIsListening(false);
+
+      isProcessingCommand.current =
+        false;
+
+      SpeechEngine.stop().catch(
+        () => {}
+      );
+    }
+
+  }, [
+    showPOS,
+    showKhata,
+    showManualEntry,
+    showOnboardingModal,
+  ]);
 
 
   /*
@@ -255,9 +303,7 @@ const HomeScreen = () => {
             pulseAnim,
             {
               toValue: 1,
-
               duration: 1400,
-
               useNativeDriver:
                 true,
             }
@@ -473,6 +519,7 @@ const HomeScreen = () => {
     /*
      * Load saved profile.
      */
+
     const loadProfileData =
       async () => {
 
@@ -616,6 +663,18 @@ const HomeScreen = () => {
       SpeechEngine.onPartialResult(
         text => {
 
+          /*
+           * IMPORTANT:
+           * If POS / Khata / Manual Entry / Onboarding
+           * is open, Home does not receive speech.
+           */
+          if (
+            isModalOpen.current
+          ) {
+            return;
+          }
+
+
           setTranscribedText(
             text
           );
@@ -628,52 +687,52 @@ const HomeScreen = () => {
 
 
     const finalSub =
-      SpeechEngine.onFinalResult(
-        async text => {
+  SpeechEngine.onFinalResult(
+    async text => {
+      if (
+        isModalOpen.current
+      ) {
+        return;
+      }
 
-          /*
-           * Prevent duplicate POST
-           * requests from Android
-           * speech callbacks.
-           */
-          if (
-            isProcessingCommand.current
-          ) {
-            return;
-          }
+      if (
+        isProcessingCommand.current
+      ) {
+        return;
+      }
 
+      isProcessingCommand.current =
+        true;
 
-          isProcessingCommand.current =
-            true;
+      setTranscribedText(text);
+      setIsListening(false);
 
-
-          setTranscribedText(
-            text
-          );
-
-          setIsListening(
-            false
-          );
-
-
-          try {
-
-            await processVoiceCommand(
-              text
-            );
-
-          } finally {
-
-            isProcessingCommand.current =
-              false;
-          }
-        }
-      );
+      try {
+        await processVoiceCommand(
+          text
+        );
+      } finally {
+        isProcessingCommand.current =
+          false;
+      }
+    }
+  );
 
 
     const errorSub =
       SpeechEngine.onError(
         code => {
+
+          /*
+           * Ignore Home speech errors if another screen
+           * currently owns the microphone.
+           */
+          if (
+            isModalOpen.current
+          ) {
+            return;
+          }
+
 
           setIsListening(
             false
@@ -729,7 +788,9 @@ const HomeScreen = () => {
 
 
     /*
-     * Cleanup listeners.
+     * =======================================================
+     * CLEANUP
+     * =======================================================
      */
 
     return () => {
@@ -741,6 +802,13 @@ const HomeScreen = () => {
       finalSub.remove();
 
       errorSub.remove();
+
+      /*
+       * Stop any Home speech session when Home unmounts.
+       */
+      SpeechEngine.stop().catch(
+        () => {}
+      );
     };
 
   }, []);
@@ -753,59 +821,84 @@ const HomeScreen = () => {
    */
 
   const processVoiceCommand =
-    async text => {
+  async text => {
+
+    const startTime =
+      Date.now();
+
+    setAiStatus(
+      'Thinking...'
+    );
+
+    try {
 
       /*
-       * IMPORTANT FIX:
+       * =====================================================
+       * 1. LOAD LOCAL INVENTORY
+       * =====================================================
        *
-       * The original file used startTime
-       * without declaring it.
-       *
-       * This caused:
-       *
-       * ReferenceError:
-       * startTime is not defined
-       *
-       * Start timing BEFORE the network request.
+       * This is always available offline.
        */
-      const startTime =
-        Date.now();
+      const inventoryItems =
+        await database
+          .get(
+            'inventory_items'
+          )
+          .query()
+          .fetch();
+
+      const inventoryNames =
+        inventoryItems
+          .map(
+            item =>
+              String(
+                item.productName ||
+                  ''
+              )
+                .trim()
+                .slice(
+                  0,
+                  150
+                )
+          )
+          .filter(
+            Boolean
+          )
+          .slice(
+            0,
+            1000
+          );
 
 
-      setAiStatus(
-        'Thinking...'
-      );
+      /*
+       * =====================================================
+       * 2. LOAD LOCAL CUSTOMER NAMES
+       * =====================================================
+       *
+       * This is important for commands such as:
+       *
+       * "create Ravi account"
+       * "Ravi ka naya khata banao"
+       * "Ravi se 500 mila"
+       */
+      const ledgerEntries =
+        await database
+          .get(
+            'ledger_entries'
+          )
+          .query()
+          .fetch();
 
-
-      try {
-
-        /*
-         * Fetch inventory for
-         * local RapidFuzz matching.
-         */
-
-        const inventoryItems =
-          await database
-            .get(
-              'inventory_items'
-            )
-            .query()
-            .fetch();
-
-
-        const inventoryNames =
-          inventoryItems
+      const customerNames = [
+        ...new Set(
+          ledgerEntries
             .map(
-              item =>
+              entry =>
                 String(
-                  item.productName ||
+                  entry.customerId ||
                     ''
                 )
                   .trim()
-                  .slice(
-                    0,
-                    150
-                  )
             )
             .filter(
               Boolean
@@ -813,217 +906,20 @@ const HomeScreen = () => {
             .slice(
               0,
               1000
-            );
+            )
+        ),
+      ];
 
 
-        /*
-         * Sanitize voice text.
-         */
-
-        const safeVoiceText =
-          typeof text ===
-          'string'
-            ? text
-                .replace(
-                  /[\u0000-\u001F\u007F]/g,
-                  ''
-                )
-                .trim()
-                .slice(
-                  0,
-                  500
-                )
-            : '';
-
-
-        if (!safeVoiceText) {
-
-          setAiStatus(
-            "I didn't hear a command."
-          );
-
-          return;
-        }
-
-
-        /*
-         * ===================================================
-         * AI API REQUEST
-         * ===================================================
-         */
-
-        const controller = new AbortController();
-
-        const timeoutId = setTimeout(() => {
-          controller.abort();
-        }, 30000); // 30 seconds
-
-        let response;
-
-        try {
-          console.log(
-            '🎤 AI REQUEST:',
-            `${BASE_URL}/api/v1/ai/parse-intent`
-          );
-
-          console.log(
-            '🎤 AI TEXT:',
-            safeVoiceText
-          );
-
-          response = await fetch(
-            `${BASE_URL}/api/v1/ai/parse-intent`,
-            {
-              method: 'POST',
-
-              headers: {
-                'Content-Type': 'application/json',
-              },
-
-              body: JSON.stringify({
-                text: safeVoiceText,
-                inventory_names: inventoryNames,
-              }),
-
-              signal: controller.signal,
-            }
-          );
-
-          console.log(
-            '🎤 AI HTTP STATUS:',
-            response.status
-          );
-
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-
-        if (!response.ok) {
-
-          throw new Error(
-            'API Network Error'
-          );
-        }
-
-
-        const aiData =
-          await response.json();
-
-
-        /*
-         * Calculate latency AFTER
-         * receiving the response.
-         */
-
-        const latencyMs =
-          Date.now() -
-          startTime;
-
-
-        /*
-         * Log successful voice command.
-         */
-
-        TelemetryService.logVoice(
-          text,
-          aiData.intent ||
-            'unknown',
-          aiData.intent ||
-            'unknown',
-          'SUCCESS',
-          latencyMs,
-          null,
-          aiData.confidence ||
-            0.9
-        );
-
-
-        /*
-         * ===================================================
-         * SECURITY BOUNDARY
-         * ===================================================
-         *
-         * Never send raw remote AI
-         * response directly to the
-         * database action handler.
-         */
-
-        if (
-          !aiData ||
-          typeof aiData !==
-            'object' ||
-          Array.isArray(
-            aiData
-          )
-        ) {
-
-          throw new Error(
-            'Invalid AI response'
-          );
-        }
-
-
-        const allowedIntents =
-          new Set([
-            'inventory.add',
-            'sale.create',
-            'khata.credit',
-            'inventory.update_price',
-            'customer.create',
-            'query.sales',
-            'query.khata',
-            'query.inventory',
-            'ui.open_billing',
-            'ui.show_low_stock',
-            'ui.show_sales',
-            'pos.add_item',
-            'pos.apply_discount',
-            'pos.checkout',
-            'unknown',
-          ]);
-
-
-        const rawIntent =
-          typeof aiData.intent ===
-          'string'
-            ? aiData.intent
-                .trim()
-            : 'unknown';
-
-
-        if (
-          !allowedIntents.has(
-            rawIntent
-          )
-        ) {
-
-          throw new Error(
-            'Unsupported AI intent'
-          );
-        }
-
-
-        /*
-         * Sanitize remote text.
-         */
-
-        const cleanRemoteText =
-          (
-            value,
-            maxLength
-          ) => {
-
-            if (
-              typeof value !==
-              'string'
-            ) {
-
-              return '';
-            }
-
-
-            return value
+      /*
+       * =====================================================
+       * 3. SANITIZE VOICE TEXT
+       * =====================================================
+       */
+      const safeVoiceText =
+        typeof text ===
+        'string'
+          ? text
               .replace(
                 /[\u0000-\u001F\u007F]/g,
                 ''
@@ -1031,166 +927,520 @@ const HomeScreen = () => {
               .trim()
               .slice(
                 0,
-                maxLength
-              );
-          };
-
-
-        /*
-         * Safely parse numeric
-         * values.
-         */
-
-        const safeNumber =
-          (
-            value,
-            maximum
-          ) => {
-
-            if (
-              value ===
-                null ||
-              value ===
-                undefined ||
-              value ===
-                '' ||
-              (
-                typeof value !==
-                  'number' &&
-                typeof value !==
-                  'string'
+                500
               )
-            ) {
-
-              return null;
-            }
+          : '';
 
 
-            const parsed =
-              Number(
-                value
-              );
+      if (
+        !safeVoiceText
+      ) {
+
+        setAiStatus(
+          "I didn't hear a command."
+        );
+
+        return;
+      }
 
 
-            if (
-              !Number.isFinite(
-                parsed
-              ) ||
-              parsed <= 0 ||
-              parsed > maximum
-            ) {
+      /*
+       * =====================================================
+       * 4. OFFLINE-FIRST VOICE ROUTER
+       * =====================================================
+       *
+       * IMPORTANT:
+       *
+       * Local parser runs FIRST.
+       *
+       * High-confidence commands such as:
+       *
+       *   create Ravi account
+       *   Ravi ka naya khata banao
+       *   add 10 sugar
+       *   sell 2 sugar
+       *   Ravi se 500 mila
+       *
+       * should be handled locally without internet.
+       *
+       * Only commands that local parsing cannot understand
+       * are allowed to use the backend when internet exists.
+       */
+      const aiData =
+        await parseVoiceCommand({
+          text:
+            safeVoiceText,
 
-              return null;
-            }
+          inventoryNames:
+            inventoryNames,
+
+          customerNames:
+            customerNames,
+        });
 
 
-            return parsed;
-          };
+      const latencyMs =
+        Date.now() -
+        startTime;
 
 
-        /*
-         * Build a completely new,
-         * allowlisted object.
-         */
+      /*
+       * =====================================================
+       * 5. SECURITY BOUNDARY
+       * =====================================================
+       */
+      if (
+        !aiData ||
+        typeof aiData !==
+          'object' ||
+        Array.isArray(
+          aiData
+        )
+      ) {
 
-        const safeAIData = {
+        throw new Error(
+          'Invalid voice parser response'
+        );
+      }
 
-          intent:
-            rawIntent,
 
-          product:
-            cleanRemoteText(
-              aiData.product,
-              150
-            ),
+      /*
+       * =====================================================
+       * 6. ALLOWED INTENTS
+       * =====================================================
+       *
+       * inventory.create was missing before.
+       */
+      const allowedIntents =
+        new Set([
+          'inventory.add',
+          'inventory.create',
+          'sale.create',
+          'khata.credit',
+          'inventory.update_price',
+          'customer.create',
 
-          customer_name:
-            cleanRemoteText(
-              aiData.customer_name,
-              100
-            ),
+          'query.sales',
+          'query.khata',
+          'query.inventory',
 
-          reason:
-            cleanRemoteText(
-              aiData.reason,
-              250
-            ),
+          'ui.open_billing',
+          'ui.show_low_stock',
+          'ui.show_sales',
 
-          time_period:
-            cleanRemoteText(
-              aiData.time_period,
-              50
-            ),
+          'pos.add_item',
+          'pos.apply_discount',
+          'pos.checkout',
 
-          qty:
-            safeNumber(
-              aiData.qty,
-              100000
-            ),
+          'unknown',
+        ]);
 
-          amount:
-            safeNumber(
-              aiData.amount,
-              100000000
-            ),
 
-          new_price:
-            safeNumber(
-              aiData.new_price,
-              100000000
-            ),
+      const rawIntent =
+        typeof aiData.intent ===
+        'string'
+          ? aiData.intent
+              .trim()
+              .toLowerCase()
+          : 'unknown';
 
-          payment_type:
-            (
-              aiData.payment_type ===
-                'CASH' ||
-              aiData.payment_type ===
-                'KHATA'
+
+      if (
+        !allowedIntents.has(
+          rawIntent
+        )
+      ) {
+
+        throw new Error(
+          `Unsupported voice intent: ${rawIntent}`
+        );
+      }
+
+
+      /*
+       * =====================================================
+       * 7. TEXT SANITIZER
+       * =====================================================
+       */
+      const cleanRemoteText =
+        (
+          value,
+          maxLength
+        ) => {
+
+          if (
+            typeof value !==
+            'string'
+          ) {
+
+            return '';
+          }
+
+
+          return value
+            .replace(
+              /[\u0000-\u001F\u007F]/g,
+              ''
             )
-              ? aiData.payment_type
-              : null,
+            .trim()
+            .slice(
+              0,
+              maxLength
+            );
         };
 
 
-        setAiStatus(
-          'Updating database...'
-        );
+      /*
+       * =====================================================
+       * 8. NUMBER SANITIZER
+       * =====================================================
+       */
+      const safeNumber =
+        (
+          value,
+          maximum
+        ) => {
+
+          if (
+            value ===
+              null ||
+            value ===
+              undefined ||
+            value ===
+              '' ||
+            (
+              typeof value !==
+                'number' &&
+              typeof value !==
+                'string'
+            )
+          ) {
+
+            return null;
+          }
 
 
-        const resultMessage =
-          await executeAIAction(
-            safeAIData
-          );
+          const parsed =
+            Number(
+              value
+            );
+
+
+          if (
+            !Number.isFinite(
+              parsed
+            ) ||
+            parsed <= 0 ||
+            parsed > maximum
+          ) {
+
+            return null;
+          }
+
+
+          return parsed;
+        };
+
+
+      /*
+       * =====================================================
+       * 9. DISCOUNT SANITIZER
+       * =====================================================
+       */
+      const safeDiscount =
+        (
+          value
+        ) => {
+
+          if (
+            value ===
+              null ||
+            value ===
+              undefined ||
+            value ===
+              ''
+          ) {
+
+            return null;
+          }
+
+
+          const parsed =
+            Number(
+              value
+            );
+
+
+          if (
+            !Number.isFinite(
+              parsed
+            ) ||
+            parsed < 0 ||
+            parsed > 100
+          ) {
+
+            return null;
+          }
+
+
+          return parsed;
+        };
+
+
+      /*
+       * =====================================================
+       * 10. BUILD SAFE ACTION DATA
+       * =====================================================
+       */
+      const safeAIData = {
+
+        /*
+         * Intent
+         */
+        intent:
+          rawIntent,
 
 
         /*
-         * ===================================================
-         * PAYMENT CONFIRMATION
-         * ===================================================
+         * Product
          */
+        product:
+          cleanRemoteText(
+            aiData.product,
+            150
+          ),
 
+
+        /*
+         * Customer
+         */
+        customer_name:
+          cleanRemoteText(
+            aiData.customer_name,
+            100
+          ),
+
+
+        /*
+         * Explanation / error reason
+         */
+        reason:
+          cleanRemoteText(
+            aiData.reason,
+            250
+          ),
+
+
+        /*
+         * Time period
+         */
+        time_period:
+          cleanRemoteText(
+            aiData.time_period,
+            50
+          ),
+
+
+        /*
+         * Quantity
+         */
+        qty:
+          safeNumber(
+            aiData.qty,
+            100000
+          ),
+
+
+        /*
+         * Money amount
+         */
+        amount:
+          safeNumber(
+            aiData.amount,
+            100000000
+          ),
+
+
+        /*
+         * Product selling price
+         */
+        new_price:
+          safeNumber(
+            aiData.new_price,
+            100000000
+          ),
+
+
+        /*
+         * Discount
+         */
+        discount_percent:
+          safeDiscount(
+            aiData.discount_percent
+          ),
+
+
+        /*
+         * Unit
+         *
+         * Examples:
+         * kg
+         * g
+         * liter
+         * pcs
+         */
+        unit:
+          cleanRemoteText(
+            aiData.unit,
+            20
+          ),
+
+
+        /*
+         * Payment type
+         */
+        payment_type:
+          (
+            aiData.payment_type ===
+              'CASH' ||
+            aiData.payment_type ===
+              'KHATA'
+          )
+            ? aiData.payment_type
+            : null,
+      };
+
+
+      /*
+       * =====================================================
+       * 11. IMPORTANT SAFETY CHECK
+       * =====================================================
+       *
+       * Never execute an unknown command as a sale.
+       */
+      if (
+        safeAIData.intent ===
+        'unknown'
+      ) {
+
+        /*
+         * If parser found a product but no action,
+         * explain what the user needs to say.
+         */
         if (
-          resultMessage &&
-          typeof resultMessage ===
-            'object' &&
-          resultMessage.needsConfirmation
+          safeAIData.product
         ) {
 
           setAiStatus(
-            resultMessage.message
+            `I found "${safeAIData.product}", but I need an action. Try "add 2 ${safeAIData.product}" or "sell 1 ${safeAIData.product}".`
           );
 
+        } else {
 
-          Alert.alert(
-            'Cash or Khata?',
-            resultMessage.message,
-            [
-              {
-                text:
-                  '💵 Cash',
+          setAiStatus(
+            'Command not recognized. Try "add 2 sugar", "sell 1 sugar", or "create Ravi account".'
+          );
+        }
 
-                onPress:
-                  async () => {
+
+        TelemetryService.logVoice(
+          safeVoiceText,
+          'unknown',
+          'unknown',
+          'FAILED',
+          latencyMs,
+          'Unknown command',
+          aiData.confidence ||
+            0
+        );
+
+        return;
+      }
+
+
+      /*
+       * =====================================================
+       * 12. LOG SUCCESS
+       * =====================================================
+       */
+      TelemetryService.logVoice(
+        safeVoiceText,
+        safeAIData.intent,
+        safeAIData.intent,
+        'SUCCESS',
+        latencyMs,
+        null,
+        aiData.confidence ||
+          0.9
+      );
+
+
+      /*
+       * =====================================================
+       * 13. EXECUTE LOCAL DATABASE ACTION
+       * =====================================================
+       *
+       * executeAIAction must operate against WatermelonDB.
+       *
+       * Therefore this part works without internet.
+       */
+      setAiStatus(
+        'Updating database...'
+      );
+
+
+      const resultMessage =
+        await executeAIAction(
+          safeAIData
+        );
+
+
+      /*
+       * =====================================================
+       * 14. PAYMENT CONFIRMATION
+       * =====================================================
+       *
+       * If a sale needs Cash/Udhaar confirmation,
+       * preserve the existing confirmation flow.
+       */
+      if (
+        resultMessage &&
+        typeof resultMessage ===
+          'object' &&
+        resultMessage.needsConfirmation
+      ) {
+
+        setAiStatus(
+          resultMessage.message
+        );
+
+
+        Alert.alert(
+          'Cash or Khata?',
+          resultMessage.message,
+          [
+            {
+              text:
+                '💵 Cash',
+
+              onPress:
+                async () => {
+
+                  /*
+                   * Prevent double execution.
+                   */
+                  if (
+                    isProcessingCommand.current
+                  ) {
+                    return;
+                  }
+
+
+                  isProcessingCommand.current =
+                    true;
+
+
+                  try {
 
                     const finalMsg =
                       await confirmPendingSale(
@@ -1204,16 +1454,53 @@ const HomeScreen = () => {
                     );
 
 
-                    fetchMetrics();
-                  },
-              },
+                    await fetchMetrics();
 
-              {
-                text:
-                  '📖 Udhaar',
+                  } catch (
+                    confirmationError
+                  ) {
 
-                onPress:
-                  async () => {
+                    console.error(
+                      'Cash confirmation error:',
+                      confirmationError
+                    );
+
+
+                    setAiStatus(
+                      confirmationError?.message ||
+                        'Could not complete cash sale.'
+                    );
+
+                  } finally {
+
+                    isProcessingCommand.current =
+                      false;
+                  }
+                },
+            },
+
+            {
+              text:
+                '📖 Udhaar',
+
+              onPress:
+                async () => {
+
+                  /*
+                   * Prevent double execution.
+                   */
+                  if (
+                    isProcessingCommand.current
+                  ) {
+                    return;
+                  }
+
+
+                  isProcessingCommand.current =
+                    true;
+
+
+                  try {
 
                     const finalMsg =
                       await confirmPendingSale(
@@ -1227,74 +1514,141 @@ const HomeScreen = () => {
                     );
 
 
-                    fetchMetrics();
-                  },
-              },
+                    await fetchMetrics();
 
-              {
-                text:
-                  'Cancel',
+                  } catch (
+                    confirmationError
+                  ) {
 
-                style:
-                  'cancel',
-              },
-            ]
-          );
+                    console.error(
+                      'Khata confirmation error:',
+                      confirmationError
+                    );
 
 
-          return;
-        }
+                    setAiStatus(
+                      confirmationError?.message ||
+                        'Could not complete Khata sale.'
+                    );
 
+                  } finally {
+
+                    isProcessingCommand.current =
+                      false;
+                  }
+                },
+            },
+
+            {
+              text:
+                'Cancel',
+
+              style:
+                'cancel',
+            },
+          ]
+        );
+
+
+        return;
+      }
+
+
+      /*
+       * =====================================================
+       * 15. NORMAL SUCCESS MESSAGE
+       * =====================================================
+       */
+      if (
+        typeof resultMessage ===
+        'string'
+      ) {
 
         setAiStatus(
           resultMessage
         );
 
-
-        fetchMetrics();
-
-      } catch (error) {
-
-        /*
-         * ===================================================
-         * ERROR HANDLING
-         * ===================================================
-         */
-
-        const latencyMs =
-          Date.now() -
-          startTime;
-
-
-        console.error(
-          'AI Pipeline Error:',
-          error
-        );
-
+      } else if (
+        resultMessage &&
+        typeof resultMessage.message ===
+          'string'
+      ) {
 
         setAiStatus(
-          'Connection failed. Try again.'
+          resultMessage.message
         );
 
+      } else {
 
-        TelemetryService.logVoice(
-          text,
-          'unknown',
-          'unknown',
-          'FAILED',
-          latencyMs,
-          error.message ||
-            'Network Error'
-        );
-
-
-        TelemetryService.logError(
-          'voice_ai',
-          error.message,
-          error.stack
+        setAiStatus(
+          'Done.'
         );
       }
-    };
+
+
+      /*
+       * =====================================================
+       * 16. REFRESH HOME METRICS
+       * =====================================================
+       */
+      await fetchMetrics();
+
+    } catch (
+      error
+    ) {
+
+      const latencyMs =
+        Date.now() -
+        startTime;
+
+
+      console.error(
+        'Voice Pipeline Error:',
+        error
+      );
+
+
+      /*
+       * =====================================================
+       * IMPORTANT:
+       *
+       * Do NOT tell the user "Connection failed"
+       * for every error.
+       *
+       * Many failures are local database/parser errors
+       * and have nothing to do with internet.
+       * =====================================================
+       */
+      const errorMessage =
+        error?.message ||
+        'Could not process that command.';
+
+
+      setAiStatus(
+        errorMessage
+      );
+
+
+      TelemetryService.logVoice(
+        safeVoiceText ||
+          text ||
+          '',
+        'unknown',
+        'unknown',
+        'FAILED',
+        latencyMs,
+        errorMessage,
+        0
+      );
+
+
+      TelemetryService.logError(
+        'voice_ai',
+        errorMessage,
+        error?.stack
+      );
+    }
+  };
 
 
   /*
@@ -1305,6 +1659,17 @@ const HomeScreen = () => {
 
   const safeMicPress =
     async () => {
+
+      /*
+       * Home must never start its microphone while another
+       * modal/screen owns it.
+       */
+      if (
+        isModalOpen.current
+      ) {
+        return;
+      }
+
 
       try {
 
@@ -1585,6 +1950,14 @@ const HomeScreen = () => {
   const handlePOSClose =
     () => {
 
+      /*
+       * Make sure Home does not continue listening after
+       * POS has closed.
+       */
+      SpeechEngine.stop().catch(
+        () => {}
+      );
+
       setShowPOS(
         false
       );
@@ -1622,22 +1995,12 @@ const HomeScreen = () => {
         styles.container,
 
         {
-          /*
-           * Status bar / notch.
-           *
-           * We don't use a fixed
-           * top padding.
-           */
           paddingTop:
             Math.max(
               insets.top,
               10
             ),
 
-          /*
-           * Android navigation /
-           * gesture area.
-           */
           paddingBottom:
             Math.max(
               insets.bottom,
@@ -1647,9 +2010,7 @@ const HomeScreen = () => {
       ]}
     >
 
-      {/* =================================================
-          OFFLINE BANNER
-          ================================================= */}
+      {/* OFFLINE BANNER */}
 
       {isOffline && (
 
@@ -1678,9 +2039,7 @@ const HomeScreen = () => {
       )}
 
 
-      {/* =================================================
-          TOP BAR
-          ================================================= */}
+      {/* TOP BAR */}
 
       <View
         style={[
@@ -1803,9 +2162,7 @@ const HomeScreen = () => {
       </View>
 
 
-      {/* =================================================
-          MAIN SCROLL
-          ================================================= */}
+      {/* MAIN SCROLL */}
 
       <ScrollView
         contentContainerStyle={[
@@ -1831,9 +2188,7 @@ const HomeScreen = () => {
       >
 
 
-        {/* =================================================
-            BALANCE CARD
-            ================================================= */}
+        {/* BALANCE CARD */}
 
         <View
           style={[
@@ -1952,9 +2307,7 @@ const HomeScreen = () => {
         </View>
 
 
-        {/* =================================================
-            QUICK ACTIONS
-            ================================================= */}
+        {/* QUICK ACTIONS */}
 
         <View
           style={[
@@ -2120,9 +2473,7 @@ const HomeScreen = () => {
         </View>
 
 
-        {/* =================================================
-            AI VOICE CARD
-            ================================================= */}
+        {/* AI VOICE CARD */}
 
         <View
           style={[
@@ -2287,9 +2638,7 @@ const HomeScreen = () => {
         </View>
 
 
-        {/* =================================================
-            LOW STOCK
-            ================================================= */}
+        {/* LOW STOCK */}
 
         <View
           style={[
@@ -2309,21 +2658,7 @@ const HomeScreen = () => {
       </ScrollView>
 
 
-      {/* =================================================
-          FLOATING ACTION BUTTON
-          =================================================
-          
-          Dynamic bottom inset ensures:
-          
-          Gesture navigation:
-            moves correctly
-          
-          3-button navigation:
-            moves above buttons
-          
-          Hidden navigation:
-            naturally comes closer to bottom
-      */}
+      {/* FAB */}
 
       <TouchableOpacity
         style={[
@@ -2361,9 +2696,7 @@ const HomeScreen = () => {
       </TouchableOpacity>
 
 
-      {/* =================================================
-          POS
-          ================================================= */}
+      {/* POS */}
 
       <Modal
         visible={
@@ -2386,9 +2719,7 @@ const HomeScreen = () => {
       </Modal>
 
 
-      {/* =================================================
-          KHATA
-          ================================================= */}
+      {/* KHATA */}
 
       <Modal
         visible={
@@ -2398,6 +2729,10 @@ const HomeScreen = () => {
         animationType="slide"
 
         onRequestClose={() => {
+
+          SpeechEngine.stop().catch(
+            () => {}
+          );
 
           setShowKhata(
             false
@@ -2410,6 +2745,10 @@ const HomeScreen = () => {
         <KhataScreen
           onClose={() => {
 
+            SpeechEngine.stop().catch(
+              () => {}
+            );
+
             setShowKhata(
               false
             );
@@ -2421,9 +2760,7 @@ const HomeScreen = () => {
       </Modal>
 
 
-      {/* =================================================
-          MANUAL ENTRY
-          ================================================= */}
+      {/* MANUAL ENTRY */}
 
       <Modal
         visible={
@@ -2432,11 +2769,17 @@ const HomeScreen = () => {
 
         animationType="slide"
 
-        onRequestClose={() =>
+        onRequestClose={() => {
+
+          SpeechEngine.stop().catch(
+            () => {}
+          );
+
           setShowManualEntry(
             false
-          )
-        }
+          );
+
+        }}
       >
 
         <ManualEntryScreen
@@ -2445,11 +2788,17 @@ const HomeScreen = () => {
             manualEntryPrefill
           }
 
-          onClose={() =>
+          onClose={() => {
+
+            SpeechEngine.stop().catch(
+              () => {}
+            );
+
             setShowManualEntry(
               false
-            )
-          }
+            );
+
+          }}
 
           onSaved={() => {
 
@@ -2465,9 +2814,7 @@ const HomeScreen = () => {
       </Modal>
 
 
-      {/* =================================================
-          ONBOARDING MODAL
-          ================================================= */}
+      {/* ONBOARDING MODAL */}
 
       <Modal
         visible={
@@ -2716,25 +3063,12 @@ const HomeScreen = () => {
 const styles =
   StyleSheet.create({
 
-    /*
-     * =======================================================
-     * ROOT
-     * =======================================================
-     */
-
     container: {
       flex: 1,
-
       backgroundColor:
         '#F5F7F6',
     },
 
-
-    /*
-     * =======================================================
-     * OFFLINE
-     * =======================================================
-     */
 
     offlineBanner: {
       backgroundColor:
@@ -2758,117 +3092,82 @@ const styles =
 
     offlineDot: {
       width: 6,
-
       height: 6,
-
       borderRadius: 3,
-
       backgroundColor:
         '#E0433B',
-
       marginRight: 8,
     },
 
     offlineText: {
       color:
         '#FFFFFF',
-
       fontWeight:
         '600',
-
       fontSize: 12.5,
-
       letterSpacing:
         0.2,
-
       textAlign:
         'center',
     },
 
 
-    /*
-     * =======================================================
-     * TOP BAR
-     * =======================================================
-     */
-
     topBar: {
       flexDirection:
         'row',
-
       alignItems:
         'center',
-
       paddingVertical:
         12,
-
       backgroundColor:
         '#FFFFFF',
-
       borderBottomWidth:
         1,
-
       borderBottomColor:
         '#EAECEC',
     },
 
     avatarCircle: {
       width: 42,
-
       height: 42,
-
       borderRadius: 21,
-
       backgroundColor:
         '#0C9C4C',
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
-
       overflow:
         'hidden',
-
       flexShrink:
         0,
     },
 
     avatarImage: {
       width: 42,
-
       height: 42,
-
       borderRadius: 21,
     },
 
     avatarText: {
       color:
         '#FFFFFF',
-
       fontSize: 18,
-
       fontWeight:
         '800',
     },
 
     storeInfo: {
       flex: 1,
-
       marginLeft: 12,
-
       minWidth: 0,
-
       marginRight: 8,
     },
 
     storeName: {
       color:
         '#1B1F23',
-
       fontSize: 17,
-
       fontWeight:
         '800',
     },
@@ -2876,45 +3175,30 @@ const styles =
     syncStatus: {
       color:
         '#6B7280',
-
       fontSize: 12,
-
       marginTop: 1,
     },
 
     syncIconBtn: {
       width: 36,
-
       height: 36,
-
       borderRadius: 18,
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
-
       backgroundColor:
         '#F5F7F6',
-
       flexShrink:
         0,
     },
 
     syncIconText: {
       fontSize: 17,
-
       color:
         '#0C9C4C',
     },
 
-
-    /*
-     * =======================================================
-     * SCROLL
-     * =======================================================
-     */
 
     scrollContent: {
       paddingTop:
@@ -2922,71 +3206,49 @@ const styles =
     },
 
 
-    /*
-     * =======================================================
-     * BALANCE CARD
-     * =======================================================
-     */
-
     balanceCard: {
       flexDirection:
         'row',
-
       backgroundColor:
         '#FFFFFF',
-
       marginTop:
         16,
-
       borderRadius:
         16,
-
       borderWidth:
         1,
-
       borderColor:
         '#EAECEC',
-
       shadowColor:
         '#000000',
-
       shadowOpacity:
         0.04,
-
       shadowRadius:
         8,
-
       shadowOffset: {
         width:
           0,
-
         height:
           2,
       },
-
       elevation:
         1,
-
       overflow:
         'hidden',
     },
 
     balanceHalf: {
       flex: 1,
-
       paddingVertical:
         20,
-
       paddingHorizontal:
         16,
-
       minWidth:
         0,
     },
 
     balanceDivider: {
       width: 1,
-
       backgroundColor:
         '#EAECEC',
     },
@@ -2994,25 +3256,19 @@ const styles =
     balanceLabel: {
       color:
         '#6B7280',
-
       fontSize: 11,
-
       fontWeight:
         '700',
-
       letterSpacing:
         0.5,
-
       marginBottom:
         6,
     },
 
     balanceValue: {
       fontSize: 23,
-
       fontWeight:
         '800',
-
       flexShrink:
         1,
     },
@@ -3020,60 +3276,41 @@ const styles =
     balanceSubLabel: {
       color:
         '#9CA3AF',
-
       fontSize: 12,
-
       marginTop:
         4,
     },
 
 
-    /*
-     * =======================================================
-     * ACTION GRID
-     * =======================================================
-     */
-
     actionGrid: {
       flexDirection:
         'row',
-
       justifyContent:
         'space-between',
-
       marginTop:
         18,
-
       marginBottom:
         6,
-
       gap:
         4,
     },
 
     actionTile: {
       flex: 1,
-
       alignItems:
         'center',
-
       minWidth:
         0,
     },
 
     actionIconWrap: {
       width: 48,
-
       height: 48,
-
       borderRadius: 24,
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
-
       marginBottom:
         6,
     },
@@ -3085,38 +3322,24 @@ const styles =
     actionLabel: {
       color:
         '#1B1F23',
-
       fontSize: 11,
-
       fontWeight:
         '600',
-
       textAlign:
         'center',
     },
 
 
-    /*
-     * =======================================================
-     * AI CARD
-     * =======================================================
-     */
-
     aiCard: {
       backgroundColor:
         '#FFFFFF',
-
       marginTop:
         18,
-
       padding: 16,
-
       borderRadius:
         16,
-
       borderWidth:
         1,
-
       borderColor:
         '#EAECEC',
     },
@@ -3129,17 +3352,14 @@ const styles =
     aiHeaderRow: {
       flexDirection:
         'row',
-
       alignItems:
         'center',
     },
 
     aiTextWrap: {
       flex: 1,
-
       marginLeft:
         14,
-
       minWidth:
         0,
     },
@@ -3147,9 +3367,7 @@ const styles =
     aiTitle: {
       color:
         '#1B1F23',
-
       fontSize: 15,
-
       fontWeight:
         '800',
     },
@@ -3157,9 +3375,7 @@ const styles =
     aiSubtitle: {
       color:
         '#6B7280',
-
       fontSize: 12.5,
-
       marginTop:
         2,
     },
@@ -3167,35 +3383,25 @@ const styles =
     speechPreview: {
       color:
         '#1B1F23',
-
       fontSize: 13.5,
-
       fontStyle:
         'italic',
-
       marginTop:
         12,
-
       backgroundColor:
         '#F5F7F6',
-
       padding: 10,
-
       borderRadius:
         10,
     },
 
     micWrap: {
       width: 56,
-
       height: 56,
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
-
       flexShrink:
         0,
     },
@@ -3203,13 +3409,9 @@ const styles =
     pulseRing: {
       position:
         'absolute',
-
       width: 50,
-
       height: 50,
-
       borderRadius: 25,
-
       backgroundColor:
         '#E0433B',
     },
@@ -3217,16 +3419,11 @@ const styles =
     micButton: {
       backgroundColor:
         '#0C9C4C',
-
       width: 50,
-
       height: 50,
-
       borderRadius: 25,
-
       justifyContent:
         'center',
-
       alignItems:
         'center',
     },
@@ -3243,13 +3440,10 @@ const styles =
     typeInsteadButton: {
       marginTop:
         10,
-
       alignSelf:
         'flex-start',
-
       paddingVertical:
         4,
-
       paddingRight:
         8,
     },
@@ -3257,19 +3451,11 @@ const styles =
     typeInsteadLink: {
       color:
         '#0C9C4C',
-
       fontSize: 13,
-
       fontWeight:
         '700',
     },
 
-
-    /*
-     * =======================================================
-     * LOW STOCK
-     * =======================================================
-     */
 
     lowStockWrapper: {
       marginTop:
@@ -3277,50 +3463,31 @@ const styles =
     },
 
 
-    /*
-     * =======================================================
-     * FAB
-     * =======================================================
-     */
-
     fab: {
       position:
         'absolute',
-
       right: 20,
-
       width: 58,
-
       height: 58,
-
       borderRadius: 29,
-
       backgroundColor:
         '#0C9C4C',
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
-
       shadowColor:
         '#0C9C4C',
-
       shadowOpacity:
         0.4,
-
       shadowRadius:
         10,
-
       shadowOffset: {
         width:
           0,
-
         height:
           5,
       },
-
       elevation:
         5,
     },
@@ -3328,26 +3495,16 @@ const styles =
     fabIcon: {
       color:
         '#FFFFFF',
-
       fontSize: 30,
-
       fontWeight:
         '400',
-
       marginTop:
         -2,
     },
 
 
-    /*
-     * =======================================================
-     * ONBOARDING MODAL
-     * =======================================================
-     */
-
     modalKeyboardContainer: {
       flex: 1,
-
       backgroundColor:
         'rgba(0,0,0,0.5)',
     },
@@ -3355,13 +3512,10 @@ const styles =
     modalOverlay: {
       flexGrow:
         1,
-
       justifyContent:
         'center',
-
       alignItems:
         'center',
-
       paddingHorizontal:
         16,
     },
@@ -3369,55 +3523,39 @@ const styles =
     modalContainer: {
       backgroundColor:
         '#FFFFFF',
-
       maxWidth:
         400,
-
       borderRadius:
         20,
-
       padding: 24,
-
       alignItems:
         'center',
-
       shadowColor:
         '#000',
-
       shadowOpacity:
         0.1,
-
       shadowRadius:
         10,
-
       shadowOffset: {
         width:
           0,
-
         height:
           4,
       },
-
       elevation:
         5,
     },
 
     modalHeaderIcon: {
       width: 64,
-
       height: 64,
-
       borderRadius: 32,
-
       backgroundColor:
         '#E7F7EE',
-
       justifyContent:
         'center',
-
       alignItems:
         'center',
-
       marginBottom:
         16,
     },
@@ -3428,32 +3566,24 @@ const styles =
 
     modalTitle: {
       fontSize: 20,
-
       fontWeight:
         '800',
-
       color:
         '#1B1F23',
-
       marginBottom:
         8,
-
       textAlign:
         'center',
     },
 
     modalSubtitle: {
       fontSize: 13.5,
-
       color:
         '#6B7280',
-
       textAlign:
         'center',
-
       marginBottom:
         20,
-
       lineHeight:
         18,
     },
@@ -3461,15 +3591,11 @@ const styles =
     inputLabel: {
       alignSelf:
         'flex-start',
-
       fontSize: 12.5,
-
       fontWeight:
         '600',
-
       color:
         '#6B7280',
-
       marginBottom:
         6,
     },
@@ -3477,29 +3603,20 @@ const styles =
     modalInput: {
       width:
         '100%',
-
       borderWidth:
         1,
-
       borderColor:
         '#EAECEC',
-
       borderRadius:
         10,
-
       padding: 14,
-
       fontSize: 15,
-
       backgroundColor:
         '#F9FAFB',
-
       color:
         '#1B1F23',
-
       marginBottom:
         16,
-
       minHeight:
         50,
     },
@@ -3507,25 +3624,18 @@ const styles =
     modalSaveBtn: {
       width:
         '100%',
-
       backgroundColor:
         '#0C9C4C',
-
       paddingVertical:
         15,
-
       minHeight:
         52,
-
       borderRadius:
         12,
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
-
       marginTop:
         6,
     },
@@ -3533,12 +3643,9 @@ const styles =
     modalSaveBtnText: {
       color:
         '#FFFFFF',
-
       fontSize: 16,
-
       fontWeight:
         '700',
-
       textAlign:
         'center',
     },

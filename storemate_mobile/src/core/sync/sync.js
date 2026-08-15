@@ -62,7 +62,10 @@ export const syncWithCloud = async () => {
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) throw new Error('Server rejected the sync.');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Server Error ${response.status}: ${errorText}`);
+    }
 
     // 4. If Python says OK, mark all as synced locally!
     await database.write(async () => {

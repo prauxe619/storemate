@@ -294,15 +294,19 @@ const LoginScreen = ({
           );
 
           Alert.alert(
-            'Success 🎉',
-            'Password updated successfully!'
-          );
+              'Success 🎉',
+              'Password updated successfully!'
+            );
 
-          /*
-           * D. Check Drive backup
-           */
+            /*
+            * Password reset login is still a normal
+            * StoreMate login.
+            *
+            * Do NOT automatically authenticate
+            * with Google Drive.
+            */
 
-          await checkAndPromptRestore();
+            onLoginSuccess();
         } catch (error) {
           Alert.alert(
             'Error',
@@ -381,37 +385,61 @@ const LoginScreen = ({
         }
 
         if (
-          authMode === 'login'
-        ) {
-          await AsyncStorage.setItem(
-            'userToken',
-            data.access_token
-          );
+            authMode === 'login'
+          ) {
 
-          await AsyncStorage.setItem(
-            'shopName',
-            data.shop_name
-          );
+            /*
+            * ============================================
+            * NORMAL STOREMATE LOGIN
+            * ============================================
+            *
+            * This login is completely independent
+            * from Google Drive.
+            *
+            * NEVER call:
+            *
+            * checkForExistingBackup()
+            * checkAndPromptRestore()
+            * GoogleSignin.signIn()
+            *
+            * here.
+            */
 
-          await AsyncStorage.setItem(
-            'userEmail',
-            email
-          );
+            await AsyncStorage.setItem(
+              'userToken',
+              data.access_token
+            );
 
-          TelemetryService.setAuthToken(
-            data.access_token
-          );
+            await AsyncStorage.setItem(
+              'shopName',
+              data.shop_name
+            );
 
-          TelemetryService.trackEvent(
-            'user_login',
-            'auth',
-            {
-              email,
-            }
-          );
+            await AsyncStorage.setItem(
+              'userEmail',
+              email
+            );
 
-          await checkAndPromptRestore();
-        } else {
+            TelemetryService.setAuthToken(
+              data.access_token
+            );
+
+            TelemetryService.trackEvent(
+              'user_login',
+              'auth',
+              {
+                email,
+              }
+            );
+
+            /*
+            * Go directly into StoreMate.
+            *
+            * NO GOOGLE POPUP.
+            */
+
+            onLoginSuccess();
+          } else {
           Alert.alert(
             'Success',
             'Shop registered! You can now log in.'
