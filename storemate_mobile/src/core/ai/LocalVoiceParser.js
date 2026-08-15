@@ -19,12 +19,11 @@
 
 /*
  * ============================================================
- * SYNONYMS
+ * SYNONYMS & NUMBER WORDS
  * ============================================================
  */
 
 const SYNONYMS = {
-
   /* Sales */
   cell: 'sell',
   sel: 'sell',
@@ -78,6 +77,43 @@ const SYNONYMS = {
   das: '10',
 };
 
+/*
+ * Converts compound spoken numbers like:
+ * "do sau" -> 200
+ * "paanch hazaar" -> 5000
+ * "hundred" -> 100
+ * into a single digit token, run BEFORE synonym replacement.
+ */
+const normalizeSpokenNumbers = text => {
+  const HINDI_DIGITS = {
+    ek: 1, do: 2, teen: 3, char: 4, chaar: 4, panch: 5, paanch: 5,
+    chhe: 6, che: 6, saat: 7, aath: 8, nau: 9, das: 10,
+  };
+  const MULTIPLIERS = { sau: 100, hundred: 100, hazaar: 1000, hazar: 1000, thousand: 1000, lakh: 100000, lac: 100000 };
+
+  const words = text.split(' ');
+  const out = [];
+
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const next = words[i + 1];
+
+    if (HINDI_DIGITS[w] && MULTIPLIERS[next]) {
+      out.push(String(HINDI_DIGITS[w] * MULTIPLIERS[next]));
+      i++;
+      continue;
+    }
+
+    if (MULTIPLIERS[w]) {
+      out.push(String(MULTIPLIERS[w]));
+      continue;
+    }
+
+    out.push(w);
+  }
+
+  return out.join(' ');
+};
 
 /*
  * ============================================================
@@ -194,33 +230,18 @@ const titleCase = value =>
  */
 
 const normalizeText = text => {
+  const rawBase = cleanText(text).toLowerCase().replace(/['’]/g, '').replace(/\s+/g, ' ');
 
-  const raw =
-    cleanText(text)
-      .toLowerCase()
-      .replace(
-        /[’']/g,
-        ''
-      )
-      .replace(
-        /\s+/g,
-        ' '
-      );
+  // 🚀 Convert number words before evaluating synonyms
+  const numberNormalized = normalizeSpokenNumbers(rawBase);
 
-
-  const clean =
-    raw
-      .split(' ')
-      .map(
-        word =>
-          SYNONYMS[word] ||
-          word
-      )
-      .join(' ');
-
+  const clean = numberNormalized
+    .split(' ')
+    .map(word => SYNONYMS[word] || word)
+    .join(' ');
 
   return {
-    raw,
+    raw: numberNormalized,
     clean,
   };
 };
@@ -509,26 +530,6 @@ const cleanCustomerName = value => {
  * ============================================================
  * CUSTOMER CREATION
  * ============================================================
- *
- * Supported examples:
- *
- * create Ravi account
- * create a Ravi account
- * create new Ravi account
- * create Ravi customer
- * create account for Ravi
- * create a new account for Ravi
- * add Ravi account
- * new Ravi account
- * please create Ravi account
- * Ravi ka account banao
- * Ravi ka naya khata banao
- * Ravi ka khata bana do
- * Ravi ke naam ka khata banao
- * naya khata Ravi ka banao
- * Ravi account banao
- * Ravi customer banao
- * ============================================================
  */
 
 const extractCustomerCreation = raw => {
@@ -544,81 +545,15 @@ const extractCustomerCreation = raw => {
 
 
   const patterns = [
-
-    /*
-     * Please create Ravi account
-     */
-
     /^(?:please|pls)\s+(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
-
-
-    /*
-     * Create Ravi account
-     * Create a Ravi account
-     * Create new Ravi account
-     */
-
     /^(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
-
-
-    /*
-     * Create account for Ravi
-     * Create a new account for Ravi
-     */
-
     /^(?:please\s+)?(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(?:account|customer|khata)\s+(?:for|of)\s+(.+)$/i,
-
-
-    /*
-     * New Ravi account
-     */
-
     /^(?:new|naya)\s+(.+?)\s+(?:account|customer|khata)$/i,
-
-
-    /*
-     * Ravi account banao
-     * Ravi customer banao
-     * Ravi khata banao
-     */
-
     /^(.+?)\s+(?:account|customer|khata)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-
-    /*
-     * Ravi ka account banao
-     * Ravi k account banao
-     * Ravi ke khate banao
-     */
-
     /^(.+?)\s+(?:ka|k|ke|ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-
-    /*
-     * Ravi ka naya khata banao
-     */
-
     /^(.+?)\s+(?:ka|k|ke|ki)\s+naya\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-
-    /*
-     * Ravi ke naam ka khata banao
-     */
-
     /^(.+?)\s+(?:ke\s+naam\s+ka|ke\s+naam\s+ke|ke\s+naam\s+ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-
-    /*
-     * Naya khata Ravi ka banao
-     */
-
     /^(?:naya|new)\s+(?:account|customer|khata|khate)\s+(.+?)\s+(?:ka|k|ke|ki)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do)$/i,
-
-
-    /*
-     * Account banao Ravi ka
-     */
-
     /^(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao)\s+(.+?)\s+(?:ka|k|ke|ki)$/i,
   ];
 
@@ -655,22 +590,6 @@ const extractCustomerCreation = raw => {
   }
 
 
-  /*
-   * ==========================================================
-   * FALLBACK CUSTOMER EXTRACTION
-   * ==========================================================
-   *
-   * This handles natural speech such as:
-   *
-   * "please make a new khata for Ravi"
-   * "create new customer Ravi"
-   * "please add Ravi as customer"
-   *
-   * We only use this fallback when a clear customer/account
-   * command word is present.
-   * ==========================================================
-   */
-
   const hasCustomerCommand =
     /\b(create|make|open|add|new|customer|account|khata|khate|banao|bnao|bana|banado|banaao)\b/i.test(
       normalized
@@ -683,90 +602,35 @@ const extractCustomerCreation = raw => {
     return null;
   }
 
-
-  /*
-   * "create new customer Ravi"
-   */
-
   let fallback =
     normalized.match(
       /^(?:please\s+)?(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(?:customer|account|khata|khate)\s+(.+)$/i
     );
 
-
-  if (
-    fallback &&
-    fallback[1]
-  ) {
-    const customerName =
-      cleanCustomerName(
-        fallback[1]
-      );
-
-
-    if (
-      customerName
-    ) {
-      return customerName;
-    }
+  if (fallback && fallback[1]) {
+    const customerName = cleanCustomerName(fallback[1]);
+    if (customerName) return customerName;
   }
-
-
-  /*
-   * "create Ravi as customer"
-   */
 
   fallback =
     normalized.match(
       /^(?:please\s+)?(?:create|make|open|add)\s+(.+?)\s+as\s+(?:a\s+)?(?:customer|account)$/i
     );
 
-
-  if (
-    fallback &&
-    fallback[1]
-  ) {
-    const customerName =
-      cleanCustomerName(
-        fallback[1]
-      );
-
-
-    if (
-      customerName
-    ) {
-      return customerName;
-    }
+  if (fallback && fallback[1]) {
+    const customerName = cleanCustomerName(fallback[1]);
+    if (customerName) return customerName;
   }
-
-
-  /*
-   * "please add Ravi as a customer"
-   */
 
   fallback =
     normalized.match(
       /^(?:please\s+)?add\s+(.+?)\s+as\s+(?:a\s+)?customer$/i
     );
 
-
-  if (
-    fallback &&
-    fallback[1]
-  ) {
-    const customerName =
-      cleanCustomerName(
-        fallback[1]
-      );
-
-
-    if (
-      customerName
-    ) {
-      return customerName;
-    }
+  if (fallback && fallback[1]) {
+    const customerName = cleanCustomerName(fallback[1]);
+    if (customerName) return customerName;
   }
-
 
   return null;
 };
@@ -774,148 +638,97 @@ const extractCustomerCreation = raw => {
 
 /*
  * ============================================================
- * PAYMENT RECEIVED
+ * PAYMENT RECEIVED OR FLAT UDHAAR (BIDIRECTIONAL)
  * ============================================================
  */
 
-const extractPayment = (
-  clean,
-  raw,
-  customerNames
-) => {
+const extractPayment = (clean, raw, customerNames) => {
+  const knownCustomer = matchKnownCustomer(raw, customerNames);
+  const amountMatch = clean.match(/(?:₹|rs\.?|rupees?)?\s*(\d+(?:\.\d+)?)/i);
 
-  const knownCustomer =
-    matchKnownCustomer(
-      raw,
-      customerNames
-    );
+  // Broadened trigger words — covers natural Hindi/Hinglish khata phrasing
+  const KHATA_TRIGGER = /\b(received|jama|paid|payment|mil|mile|diye|diya|se|ne|dalo|daalo|chadhao|udhaar|credit|de do|khate|khata|account)\b/i;
 
-
-  const amountMatch =
-    clean.match(
-      /(?:₹|rs\.?|rupees?)?\s*(\d+(?:\.\d+)?)/i
-    );
-
-
-  if (
-    knownCustomer &&
-    amountMatch &&
-    /\b(received|jama|paid|payment|mil|mile|diye|diya|se|ne)\b/i.test(
-      clean
-    )
-  ) {
-
-    return {
-      customer_name:
-        knownCustomer,
-
-      amount:
-        Number(
-          amountMatch[1]
-        ),
-    };
+  if (knownCustomer && amountMatch && KHATA_TRIGGER.test(clean)) {
+    // Determine direction based on keywords
+    const isReceived = /\b(received|jama|paid|payment|mil|mile|se|from)\b/i.test(clean);
+    return { customer_name: knownCustomer, amount: Number(amountMatch[1]), isReceived };
   }
 
+  // 🚀 New Broad Patterns (works even without pre-existing customer)
+  const namePatterns = [
+    {
+      // "800 rupees on Rakesh account" / "800 rupees on Rakesh"
+      pattern: /(\d+(?:\.\d+)?)\s*(?:rupees?|rs\.?|₹)?\s*(?:on|for)\s+([a-zA-Z][a-zA-Z .'-]*?)\s*(?:account|khata)?$/i,
+      isReceived: false
+    },
+    {
+      // "Rakesh ke khate mein 100 dalo" / "...daalo" / "...chadhao"
+      pattern: /^([a-zA-Z][a-zA-Z .'-]*?)\s+(?:ke|ka|ki)\s+khat[ae]\s+mein\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:dalo|daalo|chadhao|de\s*do)?$/i,
+      isReceived: false
+    },
+    {
+      // "credit 500 to Rakesh" / "credit 500 on Rakesh"
+      pattern: /^credit\s+(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:to|on)\s+([a-zA-Z][a-zA-Z .'-]*)$/i,
+      isReceived: false
+    },
+    {
+      // "Rakesh ko 500 udhaar do" / "Rakesh ko 500 diye"
+      pattern: /^([a-zA-Z][a-zA-Z .'-]*?)\s+ko\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:udhaar\s*(?:de\s*do|do)|diye|diya)?$/i,
+      isReceived: false
+    },
+    {
+      // "Rakesh se 500 mile" / "Rakesh ne 500 diye"
+      pattern: /^([a-zA-Z][a-zA-Z .'-]*?)\s+(?:se|ne)\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:mile|mil|gaye|diye|diya|received|jama)?$/i,
+      isReceived: true
+    }
+  ];
 
-  const patterns = [
+  for (const { pattern, isReceived } of namePatterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
 
-    /*
-     * Ravi ne 500 received
-     */
+    // Figure out which capture group is the number vs the name
+    const g1IsNumber = /^\d/.test(match[1]);
+    const amount = Number(g1IsNumber ? match[1] : match[2]);
+    const rawName = g1IsNumber ? match[2] : match[1];
 
+    if (Number.isFinite(amount) && amount > 0 && rawName) {
+      return { customer_name: titleCase(rawName.trim()), amount, isReceived };
+    }
+  }
+
+  // Fallback broad patterns for English
+  const fallbackPatterns = [
     /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?(?:ne|se)\s+(\d+(?:\.\d+)?)\s+received$/i,
-
-
-    /*
-     * Ravi 500 received
-     */
-
     /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?(\d+(?:\.\d+)?)\s+received$/i,
-
-
-    /*
-     * Ravi received 500
-     */
-
     /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?received\s+(\d+(?:\.\d+)?)$/i,
-
-
-    /*
-     * Received 500 from Ravi
-     */
-
     /^received\s+(\d+(?:\.\d+)?)\s+from\s+([a-zA-Z][a-zA-Z .'-]*)$/i,
   ];
 
+  for (const pattern of fallbackPatterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
 
-  for (
-    const pattern of patterns
-  ) {
+    let customerName = null;
+    let amount = null;
 
-    const match =
-      clean.match(
-        pattern
-      );
-
-
-    if (!match) {
-      continue;
-    }
-
-
-    let customerName =
-      null;
-
-    let amount =
-      null;
-
-
-    if (
-      pattern.source.startsWith(
-        '^received'
-      )
-    ) {
-
-      amount =
-        Number(
-          match[1]
-        );
-
-      customerName =
-        match[2];
-
+    if (pattern.source.startsWith('^received')) {
+      amount = Number(match[1]);
+      customerName = match[2];
     } else {
-
-      customerName =
-        match[1];
-
-      amount =
-        Number(
-          match[2]
-        );
+      customerName = match[1];
+      amount = Number(match[2]);
     }
 
-
-    if (
-      Number.isFinite(
-        amount
-      ) &&
-      amount > 0
-    ) {
-
+    if (Number.isFinite(amount) && amount > 0) {
       return {
-        customer_name:
-          customerName
-            ? titleCase(
-                customerName
-              )
-            : knownCustomer,
-
+        customer_name: customerName ? titleCase(customerName) : knownCustomer,
         amount,
+        isReceived: true
       };
     }
   }
-
 
   return null;
 };
@@ -1007,21 +820,6 @@ const productFromInventory = (
  * ============================================================
  * PRODUCT FALLBACK
  * ============================================================
- *
- * IMPORTANT:
- *
- * Customer/account words are removed here.
- *
- * This prevents:
- *
- * "create Ravi account"
- *
- * from becoming:
- *
- * product = "Ravi"
- *
- * if customer detection ever fails.
- * ============================================================
  */
 
 const productFromWords = (
@@ -1051,15 +849,10 @@ const productFromWords = (
             return false;
           }
 
-
-          if (
-            /^\d+(?:\.\d+)?$/.test(
-              word
-            )
-          ) {
+          // 🚀 Filter out numbers, even with currency symbols attached
+          if (/^(?:₹|rs\.?|rupees?)?\d+(?:\.\d+)?$/i.test(word)) {
             return false;
           }
-
 
           if (
             STOP_WORDS.has(
@@ -1203,7 +996,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * PAYMENT RECEIVED
+   * PAYMENT OR FLAT UDHAAR
    * ==========================================================
    */
 
@@ -1220,20 +1013,23 @@ export function parseVoiceCommandLocally(
     payment.customer_name
   ) {
 
-    return makeResult({
-
-      intent:
-        'khata.credit',
-
-      customer_name:
-        payment.customer_name,
-
-      amount:
-        payment.amount,
-
-      confidence:
-        0.97,
-    });
+    if (payment.isReceived) {
+      return makeResult({
+        intent: 'khata.credit',
+        customer_name: payment.customer_name,
+        amount: payment.amount,
+        confidence: 0.97,
+      });
+    } else {
+      // Extended Udhaar
+      return makeResult({
+        intent: 'sale.create',
+        customer_name: payment.customer_name,
+        amount: payment.amount,
+        payment_type: 'KHATA',
+        confidence: 0.97,
+      });
+    }
   }
 
 
@@ -1379,36 +1175,8 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * INVENTORY ADD
-   * ==========================================================
-   */
-
-  if (
-    /\b(add|jodo|daalo|dalo|stock|plus)\b/i.test(
-      clean
-    )
-  ) {
-
-    return makeResult({
-
-      intent:
-        'inventory.add',
-
-      product,
-
-      qty,
-
-      confidence:
-        product
-          ? 0.96
-          : 0.75,
-    });
-  }
-
-
-  /*
-   * ==========================================================
    * KHATA QUERY
+   * (Moved above Inventory Add to prevent false hijacking)
    * ==========================================================
    */
 
@@ -1443,6 +1211,35 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
+   * INVENTORY ADD
+   * ==========================================================
+   */
+
+  if (
+    /\b(add|jodo|daalo|dalo|stock|plus)\b/i.test(
+      clean
+    )
+  ) {
+
+    return makeResult({
+
+      intent:
+        'inventory.add',
+
+      product,
+
+      qty,
+
+      confidence:
+        product
+          ? 0.96
+          : 0.75,
+    });
+  }
+
+
+  /*
+   * ==========================================================
    * UNKNOWN
    * ==========================================================
    */
@@ -1461,6 +1258,5 @@ export function parseVoiceCommandLocally(
       0.40,
   });
 }
-
 
 export default parseVoiceCommandLocally;
