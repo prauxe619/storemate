@@ -13,10 +13,12 @@ class InventoryItem(db.Model):
     purchase_price = db.Column(db.Float)
     selling_price = db.Column(db.Float)
     updated_at = db.Column(db.BigInteger)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 class LedgerEntry(db.Model):
     __tablename__ = 'ledger_entries'
     id = db.Column(db.String(255), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     customer_id = db.Column(db.String(255))
     amount = db.Column(db.Float)
     entry_type = db.Column(db.String(50))

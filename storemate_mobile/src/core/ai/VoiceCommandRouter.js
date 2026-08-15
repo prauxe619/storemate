@@ -7,13 +7,12 @@
  *
  * 1. Always create a local interpretation first.
  * 2. Offline -> use local immediately.
- * 3. Online -> try backend AI.
- * 4. NEVER allow backend AI to override high-confidence
- *    local safety classifications for financial/customer
- *    commands.
+ * 3. Online -> try backend AI only when appropriate.
+ * 4. NEVER allow backend AI to override a high-confidence
+ *    local transactional interpretation.
  *
  * This is intentionally conservative because voice commands
- * can modify inventory and money records.
+ * can modify inventory, sales, money and customer records.
  * ============================================================
  */
 
@@ -51,17 +50,23 @@ const isUsableNetwork = state =>
 
 /*
  * ============================================================
- * SENSITIVE INTENTS
+ * LOCAL PRIORITY INTENTS
  * ============================================================
  *
- * These commands can change:
+ * These commands can directly change:
  *
- * - money
+ * - customers
  * - Khata
- * - customer records
+ * - payments
  * - inventory
+ * - prices
+ * - sales
  *
- * For these, a strong local interpretation gets priority.
+ * If the local parser confidently understands one of these,
+ * the backend AI is NOT allowed to reinterpret it.
+ *
+ * This is important for offline-first behavior and prevents
+ * online AI from changing a correctly detected command.
  * ============================================================
  */
 
@@ -69,6 +74,10 @@ const LOCAL_PRIORITY_INTENTS = new Set([
   'customer.create',
   'khata.credit',
   'query.khata',
+  'inventory.create',
+  'inventory.add',
+  'inventory.update_price',
+  'sale.create',
 ]);
 
 
@@ -120,7 +129,9 @@ export async function parseVoiceCommand({
 
 
   /*
-   * Empty command.
+   * ==========================================================
+   * EMPTY COMMAND
+   * ==========================================================
    */
 
   if (!safeText) {
@@ -138,7 +149,10 @@ export async function parseVoiceCommand({
    * LOCAL PARSE FIRST
    * ==========================================================
    *
-   * This is always available.
+   * This ALWAYS runs.
+   *
+   * Therefore voice commands do not depend on internet
+   * availability for basic command recognition.
    */
 
   const localResult =
@@ -151,18 +165,22 @@ export async function parseVoiceCommand({
 
   /*
    * ==========================================================
-   * SENSITIVE LOCAL COMMANDS
+   * LOCAL TRANSACTIONAL PRIORITY
    * ==========================================================
    *
-   * Do NOT allow an online AI response to reinterpret:
+   * Example:
    *
-   * "Create Suresh account"
+   * "create Ravi account"
    *
-   * as:
+   * Local parser:
    *
-   * sale.create / inventory.add
+   * customer.create
+   * customer_name = Ravi
    *
-   * Same for payment commands.
+   * We immediately return it.
+   *
+   * Backend AI never gets the opportunity to reinterpret
+   * it as a product or sale.
    */
 
   if (
@@ -176,6 +194,7 @@ export async function parseVoiceCommand({
 
     return {
       ...localResult,
+
       source:
         'local_priority',
     };
@@ -186,6 +205,12 @@ export async function parseVoiceCommand({
    * ==========================================================
    * CHECK NETWORK
    * ==========================================================
+   *
+   * If there is no internet:
+   *
+   * LOCAL RESULT IS RETURNED IMMEDIATELY.
+   *
+   * No backend call is attempted.
    */
 
   try {
@@ -206,7 +231,9 @@ export async function parseVoiceCommand({
   } catch {
 
     /*
-     * If NetInfo itself fails, remain offline-first.
+     * NetInfo failure must NEVER break voice commands.
+     *
+     * Remain offline-first.
      */
 
     return localResult;
@@ -217,6 +244,13 @@ export async function parseVoiceCommand({
    * ==========================================================
    * BACKEND REQUEST
    * ==========================================================
+   *
+   * Only reached when:
+   *
+   * 1. Local parser did not produce a high-confidence
+   *    transactional intent.
+   *
+   * 2. Internet appears available.
    */
 
   const controller =
@@ -272,7 +306,9 @@ export async function parseVoiceCommand({
 
 
     /*
-     * Backend failure -> local.
+     * ========================================================
+     * BACKEND FAILURE -> LOCAL
+     * ========================================================
      */
 
     if (
@@ -293,6 +329,10 @@ export async function parseVoiceCommand({
       );
 
 
+    /*
+     * Invalid backend response -> local.
+     */
+
     if (!remote) {
 
       return localResult;
@@ -300,13 +340,14 @@ export async function parseVoiceCommand({
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * SECOND SAFETY CHECK
-     * ==========================================================
+     * ========================================================
      *
-     * If local parser confidently identified a command as a
-     * customer/payment command, NEVER replace it with a
-     * conflicting remote interpretation.
+     * This protects against a situation where the local
+     * confidence was slightly below the first threshold but
+     * still strong enough that we don't want the backend
+     * changing the meaning of a transactional command.
      */
 
     if (
@@ -320,8 +361,10 @@ export async function parseVoiceCommand({
 
       return {
         ...localResult,
+
         source:
           'local_priority',
+
         remoteIntent:
           remote.intent,
       };
@@ -329,19 +372,32 @@ export async function parseVoiceCommand({
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * REMOTE RESULT
-     * ==========================================================
+     * ========================================================
+     *
+     * Only commands that local parsing could not confidently
+     * classify reach this point.
      */
 
-    return remote;
+    return {
+      ...remote,
+
+      source:
+        remote.source ||
+        'remote',
+    };
 
   } catch {
 
     /*
-     * Timeout / DNS / server down / no internet.
+     * ========================================================
+     * NETWORK / TIMEOUT / DNS FAILURE
+     * ========================================================
      *
-     * Local parser remains the fallback.
+     * Always fall back to local interpretation.
+     *
+     * This is the critical offline-first behavior.
      */
 
     return localResult;

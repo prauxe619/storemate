@@ -1,8 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useContext,
-} from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 
 import {
   View,
@@ -24,6 +20,7 @@ import {
 import AdminDashboard from './AdminDashboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
+import { Q } from '@nozbe/watermelondb';
 import { database } from '../core/database';
 import { AuthContext } from '../../App';
 import Share from 'react-native-share';
@@ -33,529 +30,946 @@ import { SecureStorage } from '../utils/secureStorage';
 import { backupNow } from '../services/BackupService';
 import { BASE_URL } from '../config/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getCurrentUserId } from '../core/auth/localUser';
+
+const PROFILE_KEY_PREFIX = 'storemate_profile_';
+
+const profileStorageKey = userId =>
+  `${PROFILE_KEY_PREFIX}${String(userId).trim()}`;
 
 const ProfileScreen = () => {
   const { logout } = useContext(AuthContext);
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [email, setEmail] = useState('');
+  const [shopName, setShopName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [avatarUri, setAvatarUri] = useState(null);
+  const [upiId, setUpiId] = useState('');
+
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [isFeedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   /*
-   * Reads the actual Android/iOS system safe areas.
-   *
-   * This dynamically handles:
-   * - status bar
-   * - notch
-   * - gesture navigation
-   * - 3-button navigation
-   * - persistent navigation bar
-   * - devices where navigation controls appear/disappear
+   * ============================================================
+   * INITIAL LOAD
+   * ============================================================
    */
-  const insets = useSafeAreaInsets();
-
-  const {
-    width: windowWidth,
-  } = useWindowDimensions();
-
-  // Core State
-  const [isLoading, setIsLoading] =
-    useState(true);
-
-  const [isSaving, setIsSaving] =
-    useState(false);
-
-  const [isExporting, setIsExporting] =
-    useState(false);
-
-  const [isBackingUp, setIsBackingUp] =
-    useState(false);
-
-  const [isEditing, setIsEditing] =
-    useState(false);
-
-  // Profile Data State
-  const [email, setEmail] =
-    useState('');
-
-  const [shopName, setShopName] =
-    useState('');
-
-  const [phone, setPhone] =
-    useState('');
-
-  const [address, setAddress] =
-    useState('');
-
-  const [avatarUri, setAvatarUri] =
-    useState(null);
-
-  const [upiId, setUpiId] =
-    useState('');
-
-  // Modals & Feedback State
-  const [showAdmin, setShowAdmin] =
-    useState(false);
-
-  const [showAnalytics, setShowAnalytics] =
-    useState(false);
-
-  const [
-    isFeedbackModalVisible,
-    setFeedbackModalVisible,
-  ] = useState(false);
-
-  const [feedbackText, setFeedbackText] =
-    useState('');
-
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
 
   useEffect(() => {
-    fetchProfile();
+    let mounted = true;
+
+    const load = async () => {
+      await fetchProfile(mounted);
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const fetchProfile = async () => {
+  /*
+   * ============================================================
+   * FETCH PROFILE
+   * ============================================================
+   *
+   * IMPORTANT:
+   *
+   * Profile data is ONLY loaded from:
+   *
+   * storemate_profile_<currentUserId>
+   *
+   * We intentionally DO NOT read:
+   *
+   * shopName
+   * userPhone
+   * userAddress
+   * avatarUri
+   * shopUpi
+   *
+   * from global AsyncStorage keys.
+   *
+   * Those old global keys could belong to another user.
+   * ============================================================
+   */
+
+  const fetchProfile = async mounted => {
     try {
-      const localShop =
-        await AsyncStorage.getItem(
-          'shopName'
-        );
+      const userId = await getCurrentUserId();
+
+      if (!userId) {
+        console.warn('Profile: no active user found.');
+
+        if (mounted) {
+          setCurrentUserId(null);
+          setIsLoading(false);
+        }
+
+        return;
+      }
+
+      if (mounted) {
+        setCurrentUserId(userId);
+      }
+
+      const key = profileStorageKey(userId);
+
+      let localProfile = {};
+
+      /*
+       * ========================================================
+       * USER-SPECIFIC LOCAL PROFILE
+       * ========================================================
+       */
+
+      const storedProfile =
+        await AsyncStorage.getItem(key);
+
+      if (storedProfile) {
+        try {
+          const parsed =
+            JSON.parse(storedProfile);
+
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            !Array.isArray(parsed)
+          ) {
+            localProfile = parsed;
+          }
+        } catch (error) {
+          console.warn(
+            'Profile data parse failed:',
+            error
+          );
+        }
+      }
+
+      /*
+       * ========================================================
+       * LOAD LOCAL DATA FIRST
+       * ========================================================
+       *
+       * Offline-first.
+       */
 
       const localEmail =
-        await AsyncStorage.getItem(
-          'userEmail'
-        );
+        String(localProfile.email || '').trim();
+
+      const localShopName =
+        String(localProfile.shopName || '').trim();
 
       const localPhone =
-        await AsyncStorage.getItem(
-          'userPhone'
-        );
+        String(localProfile.phone || '').trim();
 
       const localAddress =
-        await AsyncStorage.getItem(
-          'userAddress'
-        );
+        String(localProfile.address || '').trim();
 
       const localAvatar =
-        await AsyncStorage.getItem(
-          'avatarUri'
-        );
+        localProfile.avatarUri || null;
 
-      const localUpi =
-        await AsyncStorage.getItem(
-          'shopUpi'
-        );
+      const localUpiId =
+        String(localProfile.upiId || '').trim();
 
-      if (localUpi) {
-        setUpiId(localUpi);
-      }
-
-      if (localShop) {
-        setShopName(localShop);
-      }
-
-      if (localEmail) {
+      if (mounted) {
         setEmail(localEmail);
-      }
-
-      if (localPhone) {
+        setShopName(localShopName);
         setPhone(localPhone);
-      }
-
-      if (localAddress) {
         setAddress(localAddress);
+        setAvatarUri(localAvatar);
+        setUpiId(localUpiId);
       }
 
-      if (localAvatar) {
-        setAvatarUri(localAvatar);
-      }
+      /*
+       * ========================================================
+       * SERVER PROFILE
+       * ========================================================
+       *
+       * Local profile is already loaded.
+       *
+       * Server data is only an enhancement when online.
+       */
 
       const token =
-        await SecureStorage.getToken() ||
-        await AsyncStorage.getItem(
-          'userToken'
-        );
+        (await SecureStorage.getToken()) ||
+        (await AsyncStorage.getItem('userToken'));
 
       if (!token) {
         return;
       }
 
-      const response = await fetch(
-        `${BASE_URL}/api/v1/auth/profile`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type':
-              'application/json',
-            'Authorization':
-              `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data =
-          await response.json();
-
-        if (data.email) {
-          setEmail(data.email);
-        }
-
-        if (data.shop_name) {
-          setShopName(
-            data.shop_name
-          );
-        }
-
-        // Only overwrite local phone
-        // when backend actually has one.
-        if (data.phone) {
-          setPhone(data.phone);
-
-          await AsyncStorage.setItem(
-            'userPhone',
-            data.phone
-          );
-        }
-
-        if (data.email) {
-          await AsyncStorage.setItem(
-            'userEmail',
-            data.email
-          );
-        }
-
-        if (data.shop_name) {
-          await AsyncStorage.setItem(
-            'shopName',
-            data.shop_name
-          );
-        }
-      }
-    } catch (error) {
-      console.log(
-        'Server unreachable. Using offline profile data.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handlePickAvatar =
-    async () => {
       try {
-        const result =
-          await launchImageLibrary({
-            mediaType: 'photo',
-            quality: 0.5,
-          });
-
-        if (
-          result.didCancel ||
-          result.errorCode ||
-          !result.assets
-        ) {
-          return;
-        }
-
-        const uri =
-          result.assets[0].uri;
-
-        setAvatarUri(uri);
-
-        await AsyncStorage.setItem(
-          'avatarUri',
-          uri
-        );
-      } catch (error) {
-        Alert.alert(
-          'Error',
-          'Could not pick an image.'
-        );
-      }
-    };
-
-  const handleSave =
-    async () => {
-      if (!shopName.trim()) {
-        return Alert.alert(
-          'Validation',
-          'Shop name cannot be empty.'
-        );
-      }
-
-      setIsSaving(true);
-
-      try {
-        await AsyncStorage.setItem(
-          'shopName',
-          shopName
-        );
-
-        await AsyncStorage.setItem(
-          'userPhone',
-          phone
-        );
-
-        await AsyncStorage.setItem(
-          'userAddress',
-          address
-        );
-
-        await AsyncStorage.setItem(
-          'shopUpi',
-          upiId
-        );
-
-        const token =
-          await SecureStorage.getToken() ||
-          await AsyncStorage.getItem(
-            'userToken'
-          );
-
-        await fetch(
-          `${BASE_URL}/api/v1/auth/profile`,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type':
-                'application/json',
-              'Authorization':
-                `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              shop_name:
-                shopName,
-              phone,
-              upi_id:
-                upiId,
-              address,
-            }),
-          }
-        );
-
-        setIsEditing(false);
-
-        Alert.alert(
-          'Success',
-          'Profile updated perfectly.'
-        );
-      } catch (error) {
-        setIsEditing(false);
-
-        Alert.alert(
-          'Saved Locally',
-          'Profile updated on this device. Will sync when online.'
-        );
-      } finally {
-        setIsSaving(false);
-      }
-    };
-
-  const handleDriveBackup =
-    async () => {
-      setIsBackingUp(true);
-
-      try {
-        await backupNow();
-
-        Alert.alert(
-          'Backup Successful ☁️',
-          'Your Inventory, Sales, and Khata records are securely saved to your Google Drive.'
-        );
-      } catch (error) {
-        Alert.alert(
-          'Backup Error',
-          error.message ||
-            'Failed to back up to Google Drive.'
-        );
-      } finally {
-        setIsBackingUp(false);
-      }
-    };
-
-  const handleExportCSV =
-    async () => {
-      try {
-        setIsExporting(true);
-
-        const ledgerEntries =
-          await database
-            .get('ledger_entries')
-            .query()
-            .fetch();
-
-        if (
-          !ledgerEntries ||
-          ledgerEntries.length === 0
-        ) {
-          Alert.alert(
-            'No Data',
-            'There are no ledger entries to export yet.'
-          );
-
-          setIsExporting(false);
-
-          return;
-        }
-
-        const csvHeader =
-          'Customer Name,Amount (INR),Entry Type,Date\n';
-
-        const csvRows =
-          ledgerEntries
-            .map(entry => {
-              const dateFormatted =
-                new Date(
-                  entry.createdAt ||
-                    Date.now()
-                ).toLocaleDateString(
-                  'en-IN'
-                );
-
-              return `"${entry.customerId}",${entry.amount},${entry.entryType},"${dateFormatted}"`;
-            })
-            .join('\n');
-
-        const path =
-          `${RNFS.CachesDirectoryPath}/Storemate_Ledger.csv`;
-
-        await RNFS.writeFile(
-          path,
-          csvHeader + csvRows,
-          'utf8'
-        );
-
-        await Share.open({
-          url: `file://${path}`,
-          type: 'text/csv',
-          filename:
-            'Storemate_Ledger',
-        });
-      } catch (error) {
-        if (
-          error.message !==
-          'User did not share'
-        ) {
-          try {
-            const textRows =
-              await database
-                .get(
-                  'ledger_entries'
-                )
-                .query()
-                .fetch();
-
-            const simpleText =
-              textRows
-                .map(
-                  e =>
-                    `${e.customerId} | ₹${e.amount} | ${e.entryType}`
-                )
-                .join('\n');
-
-            await RNShare.share({
-              message:
-                `📊 Storemate Ledger Report\n\n${simpleText}`,
-            });
-          } catch (
-            fallbackError
-          ) {
-            Alert.alert(
-              'Export Failed',
-              'Could not open the share menu on this device.'
-            );
-          }
-        }
-      } finally {
-        setIsExporting(false);
-      }
-    };
-
-  const handleFeedbackSubmit =
-    async () => {
-      if (!feedbackText.trim()) {
-        return Alert.alert(
-          'Empty',
-          'Please type a message first.'
-        );
-      }
-
-      setIsSubmitting(true);
-
-      try {
-        const userId =
-          await AsyncStorage.getItem(
-            'userId'
-          ) ||
-          await AsyncStorage.getItem(
-            'userEmail'
-          );
-
         const response =
           await fetch(
-            `${BASE_URL}/api/v1/feedback`,
+            `${BASE_URL}/api/v1/auth/profile`,
             {
-              method: 'POST',
+              method: 'GET',
+
               headers: {
                 'Content-Type':
                   'application/json',
+
+                Authorization:
+                  `Bearer ${token}`,
               },
-              body: JSON.stringify({
-                user_id: userId,
-                message:
-                  feedbackText,
-              }),
             }
           );
 
-        if (response.ok) {
-          Alert.alert(
-            'Sent!',
-            'Thanks for your feedback. We will look into it.'
-          );
-
-          setFeedbackText('');
-
-          setFeedbackModalVisible(
-            false
-          );
-        } else {
-          throw new Error(
-            'Failed to send'
-          );
+        if (!response.ok) {
+          return;
         }
-      } catch (error) {
-        Alert.alert(
-          'Error',
-          'Could not send feedback. Check your internet connection.'
-        );
-      } finally {
-        setIsSubmitting(false);
-      }
-    };
 
-  const handleLogout =
-    () => {
-      Alert.alert(
-        'Logout',
-        'Are you sure you want to securely log out of your shop?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Logout',
-            style: 'destructive',
-            onPress: () =>
-              logout(),
-          },
-        ]
+        const data =
+          await response.json();
+
+        /*
+         * NEVER replace valid local values with
+         * empty server values.
+         */
+
+        const updatedEmail =
+          String(
+            data?.email ||
+              localEmail ||
+              ''
+          ).trim();
+
+        const updatedShopName =
+          String(
+            data?.shop_name ||
+              localShopName ||
+              ''
+          ).trim();
+
+        const updatedPhone =
+          String(
+            data?.phone ||
+              localPhone ||
+              ''
+          ).trim();
+
+        const updatedAddress =
+          String(
+            data?.address ||
+              localAddress ||
+              ''
+          ).trim();
+
+        const updatedUpi =
+          String(
+            data?.upi_id ||
+              localUpiId ||
+              ''
+          ).trim();
+
+        const updatedAvatar =
+          localAvatar;
+
+        const updatedProfile = {
+          email:
+            updatedEmail,
+
+          shopName:
+            updatedShopName,
+
+          phone:
+            updatedPhone,
+
+          address:
+            updatedAddress,
+
+          avatarUri:
+            updatedAvatar,
+
+          upiId:
+            updatedUpi,
+        };
+
+        /*
+         * Save ONLY under the current user's key.
+         */
+
+        await AsyncStorage.setItem(
+          key,
+          JSON.stringify(updatedProfile)
+        );
+
+        if (mounted) {
+          setEmail(updatedEmail);
+          setShopName(updatedShopName);
+          setPhone(updatedPhone);
+          setAddress(updatedAddress);
+          setAvatarUri(updatedAvatar);
+          setUpiId(updatedUpi);
+        }
+
+      } catch (serverError) {
+        /*
+         * No internet/server unavailable.
+         *
+         * This is completely valid.
+         *
+         * Local profile remains active.
+         */
+
+        console.log(
+          'Server unavailable. Using offline profile data.'
+        );
+      }
+
+    } catch (error) {
+      console.error(
+        'fetchProfile failed:',
+        error
       );
-    };
+    } finally {
+      if (mounted) {
+        setIsLoading(false);
+      }
+    }
+  };
 
   /*
-   * Loading screen also respects the
-   * device safe area.
+   * ============================================================
+   * SAVE LOCAL PROFILE
+   * ============================================================
    */
+
+  const saveLocalProfile = async profile => {
+    if (!currentUserId) {
+      throw new Error(
+        'No active StoreMate user.'
+      );
+    }
+
+    const key =
+      profileStorageKey(
+        currentUserId
+      );
+
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify({
+        email:
+          String(profile.email || '').trim(),
+
+        shopName:
+          String(profile.shopName || '').trim(),
+
+        phone:
+          String(profile.phone || '').trim(),
+
+        address:
+          String(profile.address || '').trim(),
+
+        avatarUri:
+          profile.avatarUri || null,
+
+        upiId:
+          String(profile.upiId || '').trim(),
+      })
+    );
+  };
+
+  /*
+   * ============================================================
+   * PICK AVATAR
+   * ============================================================
+   */
+
+  const handlePickAvatar = async () => {
+    try {
+      if (!currentUserId) {
+        Alert.alert(
+          'Session Error',
+          'No active StoreMate user was found.'
+        );
+
+        return;
+      }
+
+      const result =
+        await launchImageLibrary({
+          mediaType: 'photo',
+          quality: 0.5,
+        });
+
+      if (
+        result.didCancel ||
+        result.errorCode ||
+        !result.assets ||
+        !result.assets.length
+      ) {
+        return;
+      }
+
+      const uri =
+        result.assets[0]?.uri;
+
+      if (!uri) {
+        return;
+      }
+
+      setAvatarUri(uri);
+
+      /*
+       * Save immediately to THIS USER'S profile.
+       */
+
+      await saveLocalProfile({
+        email,
+        shopName,
+        phone,
+        address,
+        avatarUri: uri,
+        upiId,
+      });
+
+    } catch (error) {
+      console.error(
+        'Avatar selection failed:',
+        error
+      );
+
+      Alert.alert(
+        'Error',
+        'Could not pick an image.'
+      );
+    }
+  };
+
+  /*
+   * ============================================================
+   * SAVE PROFILE
+   * ============================================================
+   */
+
+  const handleSave = async () => {
+    if (!shopName.trim()) {
+      return Alert.alert(
+        'Validation',
+        'Shop name cannot be empty.'
+      );
+    }
+
+    if (!currentUserId) {
+      return Alert.alert(
+        'Session Error',
+        'No active StoreMate user was found. Please log in again.'
+      );
+    }
+
+    setIsSaving(true);
+
+    const profile = {
+      email:
+        email.trim(),
+
+      shopName:
+        shopName.trim(),
+
+      phone:
+        phone.trim(),
+
+      address:
+        address.trim(),
+
+      avatarUri,
+
+      upiId:
+        upiId.trim(),
+    };
+
+    try {
+      /*
+       * ======================================================
+       * OFFLINE-FIRST
+       * ======================================================
+       *
+       * Local save ALWAYS happens first.
+       */
+
+      await saveLocalProfile(
+        profile
+      );
+
+      /*
+       * ======================================================
+       * SERVER UPDATE
+       * ======================================================
+       */
+
+      const token =
+        (await SecureStorage.getToken()) ||
+        (await AsyncStorage.getItem('userToken'));
+
+      if (token) {
+        try {
+          const response =
+            await fetch(
+              `${BASE_URL}/api/v1/auth/profile`,
+              {
+                method: 'PUT',
+
+                headers: {
+                  'Content-Type':
+                    'application/json',
+
+                  Authorization:
+                    `Bearer ${token}`,
+                },
+
+                body:
+                  JSON.stringify({
+                    shop_name:
+                      profile.shopName,
+
+                    phone:
+                      profile.phone,
+
+                    upi_id:
+                      profile.upiId,
+
+                    address:
+                      profile.address,
+                  }),
+              }
+            );
+
+          if (!response.ok) {
+            throw new Error(
+              `Profile server update failed (${response.status})`
+            );
+          }
+
+        } catch (serverError) {
+          /*
+           * Local profile has already been saved.
+           *
+           * Therefore the user does not lose data
+           * when offline.
+           */
+
+          console.log(
+            'Profile saved locally; server update deferred:',
+            serverError.message
+          );
+        }
+      }
+
+      setIsEditing(false);
+
+      Alert.alert(
+        'Saved',
+        'Profile updated on this device. It will sync when online.'
+      );
+
+    } catch (error) {
+      console.error(
+        'handleSave failed:',
+        error
+      );
+
+      Alert.alert(
+        'Save Failed',
+        error.message ||
+          'Could not save your profile.'
+      );
+
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * GOOGLE DRIVE BACKUP
+   * ============================================================
+   */
+
+  const handleDriveBackup = async () => {
+    if (isBackingUp) {
+      return;
+    }
+
+    if (!currentUserId) {
+      Alert.alert(
+        'Session Error',
+        'No active StoreMate user was found.'
+      );
+
+      return;
+    }
+
+    setIsBackingUp(true);
+
+    try {
+      const result =
+        await backupNow();
+
+      const profileStatus =
+        result?.profileIncluded === false
+          ? 'Profile: ⚠'
+          : 'Profile: ✓';
+
+      const avatarStatus =
+        result?.avatarIncluded === false
+          ? 'Photo: ⚠'
+          : 'Photo: ✓';
+
+      const inventoryCount =
+        result?.counts?.inventory ??
+        result?.inventoryCount ??
+        '—';
+
+      const ledgerCount =
+        result?.counts?.ledger ??
+        result?.ledgerCount ??
+        '—';
+
+      const salesCount =
+        result?.counts?.sales ??
+        result?.salesCount ??
+        '—';
+
+      Alert.alert(
+        'Backup Successful ☁️',
+        'Your shop data is safely saved to Google Drive.'
+      );
+
+    } catch (error) {
+      console.error(
+        'BACKUP ERROR:',
+        error
+      );
+
+      Alert.alert(
+        'Backup Error',
+        error?.message ||
+          'Failed to back up to Google Drive.'
+      );
+
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * CSV EXPORT
+   * ============================================================
+   */
+
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+
+      if (!currentUserId) {
+        throw new Error(
+          'No active StoreMate user.'
+        );
+      }
+
+      const ledgerEntries =
+        await database
+          .get('ledger_entries')
+          .query(
+            Q.where(
+              'owner_id',
+              currentUserId
+            )
+          )
+          .fetch();
+
+      if (
+        !ledgerEntries ||
+        ledgerEntries.length === 0
+      ) {
+        Alert.alert(
+          'No Data',
+          'There are no ledger entries to export yet.'
+        );
+
+        return;
+      }
+
+      const csvHeader =
+        'Customer Name,Amount (INR),Entry Type,Date\n';
+
+      const csvRows =
+        ledgerEntries
+          .map(entry => {
+            const dateFormatted =
+              new Date(
+                entry.createdAt ||
+                  Date.now()
+              ).toLocaleDateString(
+                'en-IN'
+              );
+
+            const customerName =
+              String(
+                entry.customerId ||
+                  ''
+              ).replace(
+                /"/g,
+                '""'
+              );
+
+            const amount =
+              Number(
+                entry.amount ||
+                  0
+              );
+
+            const entryType =
+              String(
+                entry.entryType ||
+                  ''
+              ).replace(
+                /"/g,
+                '""'
+              );
+
+            return (
+              `"${customerName}",` +
+              `${amount},` +
+              `"${entryType}",` +
+              `"${dateFormatted}"`
+            );
+          })
+          .join('\n');
+
+      const path =
+        `${RNFS.CachesDirectoryPath}/Storemate_Ledger.csv`;
+
+      await RNFS.writeFile(
+        path,
+        csvHeader + csvRows,
+        'utf8'
+      );
+
+      await Share.open({
+        url:
+          `file://${path}`,
+
+        type:
+          'text/csv',
+
+        filename:
+          'Storemate_Ledger',
+      });
+
+    } catch (error) {
+
+      if (
+        error?.message ===
+        'User did not share'
+      ) {
+        return;
+      }
+
+      try {
+        if (!currentUserId) {
+          throw new Error(
+            'No active StoreMate user.'
+          );
+        }
+
+        const textRows =
+          await database
+            .get('ledger_entries')
+            .query(
+              Q.where(
+                'owner_id',
+                currentUserId
+              )
+            )
+            .fetch();
+
+        const simpleText =
+          textRows
+            .map(
+              entry =>
+                `${entry.customerId} | ₹${entry.amount} | ${entry.entryType}`
+            )
+            .join('\n');
+
+        await RNShare.share({
+          message:
+            `📊 Storemate Ledger Report\n\n${simpleText}`,
+        });
+
+      } catch {
+        Alert.alert(
+          'Export Failed',
+          'Could not open the share menu on this device.'
+        );
+      }
+
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * FEEDBACK
+   * ============================================================
+   */
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackText.trim()) {
+      return Alert.alert(
+        'Empty',
+        'Please type a message first.'
+      );
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const userId =
+        currentUserId ||
+        (await AsyncStorage.getItem(
+          'userEmail'
+        ));
+
+      const token =
+        (await SecureStorage.getToken()) ||
+        (await AsyncStorage.getItem('userToken'));
+
+      const response =
+        await fetch(
+          `${BASE_URL}/api/v1/feedback`,
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json',
+
+              ...(token
+                ? {
+                    Authorization:
+                      `Bearer ${token}`,
+                  }
+                : {}),
+            },
+
+            body:
+              JSON.stringify({
+                user_id:
+                  userId,
+
+                message:
+                  feedbackText.trim(),
+              }),
+          }
+        );
+
+      if (response.ok) {
+        Alert.alert(
+          'Sent!',
+          'Thanks for your feedback. We will look into it.'
+        );
+
+        setFeedbackText('');
+
+        setFeedbackModalVisible(false);
+
+      } else {
+        throw new Error(
+          `Failed to send (${response.status})`
+        );
+      }
+
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Could not send feedback. Check your internet connection.'
+      );
+
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * LOGOUT
+   * ============================================================
+   */
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+
+      'Are you sure you want to securely log out of your shop?',
+
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+
+        {
+          text: 'Logout',
+          style: 'destructive',
+
+          onPress: async () => {
+            /*
+             * AuthContext.logout() is responsible for:
+             *
+             * 1. clearing the active session
+             * 2. clearing the token
+             * 3. navigating to login
+             *
+             * We DO NOT delete user-specific profile data,
+             * inventory, Khata or sales here.
+             */
+
+            try {
+              await logout();
+            } catch (error) {
+              console.error(
+                'Logout failed:',
+                error
+              );
+
+              Alert.alert(
+                'Logout Error',
+                error?.message ||
+                  'Could not log out safely.'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  /*
+   * ============================================================
+   * LOADING
+   * ============================================================
+   */
+
   if (isLoading) {
     return (
       <View
@@ -564,6 +978,7 @@ const ProfileScreen = () => {
           {
             paddingTop:
               insets.top,
+
             paddingBottom:
               insets.bottom,
           },
@@ -577,27 +992,23 @@ const ProfileScreen = () => {
     );
   }
 
-  /*
-   * Large phones/tablets should not have
-   * excessively wide feedback dialogs.
-   */
   const feedbackModalWidth =
     Math.min(
       windowWidth - 32,
       520
     );
 
+  /*
+   * ============================================================
+   * SCREEN
+   * ============================================================
+   */
+
   return (
     <View
       style={[
         styles.container,
         {
-          /*
-           * Dynamic system-bar handling.
-           *
-           * No hardcoded Android navigation-bar
-           * height is used.
-           */
           paddingTop:
             insets.top,
 
@@ -616,37 +1027,20 @@ const ProfileScreen = () => {
           styles.keyboardContainer
         }
       >
-
-        {/* Fixed Header Row */}
-
-        <View
-          style={
-            styles.headerRow
-          }
-        >
-          <Text
-            style={
-              styles.header
-            }
-          >
+        <View style={styles.headerRow}>
+          <Text style={styles.header}>
             Profile & Settings
           </Text>
 
           <TouchableOpacity
-            style={
-              styles.actionBtn
-            }
+            style={styles.actionBtn}
             onPress={() =>
               isEditing
                 ? handleSave()
-                : setIsEditing(
-                    true
-                  )
+                : setIsEditing(true)
             }
             disabled={isSaving}
-            activeOpacity={
-              0.85
-            }
+            activeOpacity={0.85}
           >
             {isSaving ? (
               <ActivityIndicator
@@ -667,26 +1061,16 @@ const ProfileScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Scrollable Content */}
-
         <ScrollView
           showsVerticalScrollIndicator={
             false
           }
           contentContainerStyle={[
             styles.scrollContent,
-
-            /*
-             * Critical:
-             * ensures the last Logout/Feedback
-             * controls can scroll above the
-             * Android navigation area.
-             */
             {
               paddingBottom:
                 Math.max(
-                  insets.bottom +
-                    24,
+                  insets.bottom + 24,
                   40
                 ),
             },
@@ -694,26 +1078,13 @@ const ProfileScreen = () => {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-
-          {/* SECTION 1 */}
-
-          <View
-            style={
-              styles.card
-            }
-          >
-            <View
-              style={
-                styles.avatarRow
-              }
-            >
+          <View style={styles.card}>
+            <View style={styles.avatarRow}>
               <TouchableOpacity
                 onPress={
                   handlePickAvatar
                 }
-                activeOpacity={
-                  0.8
-                }
+                activeOpacity={0.8}
               >
                 <View
                   style={
@@ -723,7 +1094,8 @@ const ProfileScreen = () => {
                   {avatarUri ? (
                     <Image
                       source={{
-                        uri: avatarUri,
+                        uri:
+                          avatarUri,
                       }}
                       style={
                         styles.avatarImage
@@ -741,9 +1113,7 @@ const ProfileScreen = () => {
                         'S'
                       )
                         .trim()
-                        .charAt(
-                          0
-                        )
+                        .charAt(0)
                         .toUpperCase()}
                     </Text>
                   )}
@@ -773,9 +1143,7 @@ const ProfileScreen = () => {
                   style={
                     styles.avatarShopName
                   }
-                  numberOfLines={
-                    1
-                  }
+                  numberOfLines={1}
                 >
                   {shopName ||
                     'Your Shop'}
@@ -785,9 +1153,7 @@ const ProfileScreen = () => {
                   style={
                     styles.avatarEmail
                   }
-                  numberOfLines={
-                    1
-                  }
+                  numberOfLines={1}
                 >
                   {email ||
                     'No email registered'}
@@ -796,16 +1162,10 @@ const ProfileScreen = () => {
             </View>
 
             <View
-              style={
-                styles.divider
-              }
+              style={styles.divider}
             />
 
-            <Text
-              style={
-                styles.label
-              }
-            >
+            <Text style={styles.label}>
               Shop Name
             </Text>
 
@@ -825,11 +1185,7 @@ const ProfileScreen = () => {
               placeholderTextColor="#9CA3AF"
             />
 
-            <Text
-              style={
-                styles.label
-              }
-            >
+            <Text style={styles.label}>
               Mobile Number
             </Text>
 
@@ -841,31 +1197,25 @@ const ProfileScreen = () => {
                   : styles.inputDisabled,
               ]}
               value={phone}
-              onChangeText={
-                setPhone
-              }
+              onChangeText={setPhone}
               editable={isEditing}
-              keyboardType="numeric"
+              keyboardType="phone-pad"
               placeholder="e.g. 9876543210"
               placeholderTextColor="#9CA3AF"
               maxLength={10}
             />
 
-            <Text
-              style={
-                styles.label
-              }
-            >
+            <Text style={styles.label}>
               Store Address
             </Text>
 
             <TextInput
               style={[
                 styles.input,
+                styles.textArea,
                 isEditing
                   ? styles.inputEditable
                   : styles.inputDisabled,
-                styles.textArea,
               ]}
               value={address}
               onChangeText={
@@ -878,13 +1228,7 @@ const ProfileScreen = () => {
             />
           </View>
 
-          {/* SECTION 2 */}
-
-          <View
-            style={
-              styles.card
-            }
-          >
+          <View style={styles.card}>
             <Text
               style={
                 styles.sectionTitle
@@ -893,11 +1237,7 @@ const ProfileScreen = () => {
               Payment Integration
             </Text>
 
-            <Text
-              style={
-                styles.label
-              }
-            >
+            <Text style={styles.label}>
               Shop UPI ID (For Khata Payments)
             </Text>
 
@@ -909,17 +1249,14 @@ const ProfileScreen = () => {
                   : styles.inputDisabled,
               ]}
               value={upiId}
-              onChangeText={
-                setUpiId
-              }
+              onChangeText={setUpiId}
               editable={isEditing}
               autoCapitalize="none"
+              keyboardType="email-address"
               placeholder="e.g. 9876543210@paytm"
               placeholderTextColor="#9CA3AF"
             />
           </View>
-
-          {/* SECTION 3 */}
 
           <View
             style={
@@ -942,13 +1279,9 @@ const ProfileScreen = () => {
                   styles.adminCard,
                 ]}
                 onPress={() =>
-                  setShowAdmin(
-                    true
-                  )
+                  setShowAdmin(true)
                 }
-                activeOpacity={
-                  0.85
-                }
+                activeOpacity={0.85}
               >
                 <View
                   style={{
@@ -991,13 +1324,9 @@ const ProfileScreen = () => {
                 styles.exportCard
               }
               onPress={() =>
-                setShowAnalytics(
-                  true
-                )
+                setShowAnalytics(true)
               }
-              activeOpacity={
-                0.85
-              }
+              activeOpacity={0.85}
             >
               <View
                 style={{
@@ -1055,7 +1384,7 @@ const ProfileScreen = () => {
                     styles.exportSubtitle
                   }
                 >
-                  Save shop records to your private Google Drive space.
+                  Save your shop records to your private Google Drive space.
                 </Text>
               </View>
 
@@ -1069,9 +1398,7 @@ const ProfileScreen = () => {
                 disabled={
                   isBackingUp
                 }
-                activeOpacity={
-                  0.85
-                }
+                activeOpacity={0.85}
               >
                 {isBackingUp ? (
                   <ActivityIndicator
@@ -1128,9 +1455,7 @@ const ProfileScreen = () => {
                 disabled={
                   isExporting
                 }
-                activeOpacity={
-                  0.85
-                }
+                activeOpacity={0.85}
               >
                 {isExporting ? (
                   <ActivityIndicator
@@ -1150,8 +1475,6 @@ const ProfileScreen = () => {
             </View>
           </View>
 
-          {/* SECTION 4 */}
-
           <TouchableOpacity
             style={
               styles.feedbackBtn
@@ -1161,9 +1484,7 @@ const ProfileScreen = () => {
                 true
               )
             }
-            activeOpacity={
-              0.85
-            }
+            activeOpacity={0.85}
           >
             <Text
               style={
@@ -1181,9 +1502,7 @@ const ProfileScreen = () => {
             onPress={
               handleLogout
             }
-            activeOpacity={
-              0.85
-            }
+            activeOpacity={0.85}
           >
             <Text
               style={
@@ -1193,13 +1512,8 @@ const ProfileScreen = () => {
               Logout of Storemate
             </Text>
           </TouchableOpacity>
-
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* =========================
-          FEEDBACK MODAL
-          ========================= */}
 
       <Modal
         visible={
@@ -1219,8 +1533,7 @@ const ProfileScreen = () => {
             styles.modalKeyboardContainer
           }
           behavior={
-            Platform.OS ===
-            'ios'
+            Platform.OS === 'ios'
               ? 'padding'
               : 'height'
           }
@@ -1229,12 +1542,9 @@ const ProfileScreen = () => {
             style={[
               styles.modalOverlay,
               {
-                /*
-                 * Keeps modal content clear of
-                 * status/navigation system areas.
-                 */
                 paddingTop:
                   insets.top,
+
                 paddingBottom:
                   insets.bottom,
               },
@@ -1273,9 +1583,7 @@ const ProfileScreen = () => {
                 placeholderTextColor="#9CA3AF"
                 multiline
                 numberOfLines={4}
-                value={
-                  feedbackText
-                }
+                value={feedbackText}
                 onChangeText={
                   setFeedbackText
                 }
@@ -1316,9 +1624,7 @@ const ProfileScreen = () => {
                   disabled={
                     isSubmitting
                   }
-                  activeOpacity={
-                    0.85
-                  }
+                  activeOpacity={0.85}
                 >
                   {isSubmitting ? (
                     <ActivityIndicator
@@ -1341,10 +1647,6 @@ const ProfileScreen = () => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* =========================
-          ADMIN MODAL
-          ========================= */}
-
       <Modal
         visible={showAdmin}
         animationType="slide"
@@ -1356,54 +1658,47 @@ const ProfileScreen = () => {
         <View
           style={{
             flex: 1,
+
             paddingTop:
               insets.top,
+
             paddingBottom:
               insets.bottom,
           }}
         >
           <AdminDashboard
             onClose={() =>
-              setShowAdmin(
-                false
-              )
+              setShowAdmin(false)
             }
           />
         </View>
       </Modal>
 
-      {/* =========================
-          ANALYTICS MODAL
-          ========================= */}
-
       <Modal
         visible={showAnalytics}
         animationType="slide"
         onRequestClose={() =>
-          setShowAnalytics(
-            false
-          )
+          setShowAnalytics(false)
         }
       >
         <View
           style={{
             flex: 1,
+
             paddingTop:
               insets.top,
+
             paddingBottom:
               insets.bottom,
           }}
         >
           <AnalyticsScreen
             onClose={() =>
-              setShowAnalytics(
-                false
-              )
+              setShowAnalytics(false)
             }
           />
         </View>
       </Modal>
-
     </View>
   );
 };
@@ -1411,8 +1706,7 @@ const ProfileScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor:
-      '#F5F7F6',
+    backgroundColor: '#F5F7F6',
   },
 
   keyboardContainer: {
@@ -1423,18 +1717,14 @@ const styles = StyleSheet.create({
 
   loadingContainer: {
     flex: 1,
-    backgroundColor:
-      '#F5F7F6',
-    justifyContent:
-      'center',
-    alignItems:
-      'center',
+    backgroundColor: '#F5F7F6',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   headerRow: {
     flexDirection: 'row',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 10,
     marginBottom: 6,
@@ -1449,15 +1739,13 @@ const styles = StyleSheet.create({
   },
 
   actionBtn: {
-    backgroundColor:
-      '#0C9C4C',
+    backgroundColor: '#0C9C4C',
     paddingVertical: 8,
     paddingHorizontal: 18,
     borderRadius: 10,
     minWidth: 75,
     alignItems: 'center',
-    justifyContent:
-      'center',
+    justifyContent: 'center',
   },
 
   actionBtnText: {
@@ -1472,13 +1760,11 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor:
-      '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
     marginBottom: 14,
     shadowColor: '#000',
     shadowOpacity: 0.02,
@@ -1491,8 +1777,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#374151',
     marginBottom: 12,
-    textTransform:
-      'uppercase',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
 
@@ -1506,11 +1791,9 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor:
-      '#0C9C4C',
+    backgroundColor: '#0C9C4C',
     alignItems: 'center',
-    justifyContent:
-      'center',
+    justifyContent: 'center',
     position: 'relative',
   },
 
@@ -1530,17 +1813,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -2,
     right: -2,
-    backgroundColor:
-      '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     width: 20,
     height: 20,
     alignItems: 'center',
-    justifyContent:
-      'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
   },
 
   avatarInfo: {
@@ -1562,8 +1842,7 @@ const styles = StyleSheet.create({
 
   divider: {
     height: 1,
-    backgroundColor:
-      '#EAECEC',
+    backgroundColor: '#EAECEC',
     marginBottom: 14,
   },
 
@@ -1585,25 +1864,20 @@ const styles = StyleSheet.create({
   },
 
   inputEditable: {
-    backgroundColor:
-      '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     color: '#1B1F23',
-    borderColor:
-      '#0C9C4C',
+    borderColor: '#0C9C4C',
   },
 
   inputDisabled: {
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
     color: '#6B7280',
-    backgroundColor:
-      '#F9FAFB',
+    backgroundColor: '#F9FAFB',
   },
 
   textArea: {
     height: 65,
-    textAlignVertical:
-      'top',
+    textAlignVertical: 'top',
   },
 
   toolsSection: {
@@ -1611,17 +1885,14 @@ const styles = StyleSheet.create({
   },
 
   exportCard: {
-    backgroundColor:
-      '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     marginBottom: 12,
     shadowColor: '#000',
     shadowOpacity: 0.02,
@@ -1630,10 +1901,8 @@ const styles = StyleSheet.create({
   },
 
   adminCard: {
-    borderColor:
-      '#F3D9A8',
-    backgroundColor:
-      '#FFF9EE',
+    borderColor: '#F3D9A8',
+    backgroundColor: '#FFF9EE',
   },
 
   exportTitle: {
@@ -1650,15 +1919,12 @@ const styles = StyleSheet.create({
   },
 
   exportBtn: {
-    backgroundColor:
-      '#0C9C4C',
+    backgroundColor: '#0C9C4C',
     paddingVertical: 9,
     paddingHorizontal: 14,
     borderRadius: 8,
-    justifyContent:
-      'center',
-    alignItems:
-      'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     minWidth: 70,
   },
 
@@ -1669,16 +1935,13 @@ const styles = StyleSheet.create({
   },
 
   feedbackBtn: {
-    backgroundColor:
-      '#FDECEA',
+    backgroundColor: '#FDECEA',
     padding: 15,
     borderRadius: 12,
     marginTop: 10,
-    alignItems:
-      'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor:
-      '#F7C9C4',
+    borderColor: '#F7C9C4',
   },
 
   feedbackBtnText: {
@@ -1688,17 +1951,14 @@ const styles = StyleSheet.create({
   },
 
   logoutBtn: {
-    backgroundColor:
-      '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     marginTop: 12,
     marginBottom: 20,
     padding: 15,
     borderRadius: 12,
-    alignItems:
-      'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
   },
 
   logoutBtnText: {
@@ -1707,34 +1967,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // =========================
-  // Feedback Modal
-  // =========================
-
   modalKeyboardContainer: {
     flex: 1,
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor:
-      'rgba(27,31,35,0.55)',
-    justifyContent:
-      'center',
-    alignItems:
-      'center',
+    width: '100%',
+    backgroundColor: 'rgba(27,31,35,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 16,
   },
 
   modalContent: {
-    backgroundColor:
-      '#FFF',
-    padding: 25,
+    backgroundColor: '#FFF',
+    padding: 24,
     borderRadius: 16,
     maxWidth: 520,
     borderWidth: 1,
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
   },
 
   modalTitle: {
@@ -1748,32 +2000,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     marginBottom: 20,
-    lineHeight: 20,
   },
 
   feedbackInput: {
-    backgroundColor:
-      '#F5F7F6',
+    backgroundColor: '#F5F7F6',
     borderRadius: 10,
     padding: 15,
     minHeight: 100,
     maxHeight: 180,
-    textAlignVertical:
-      'top',
+    textAlignVertical: 'top',
     color: '#1B1F23',
     borderWidth: 1,
-    borderColor:
-      '#EAECEC',
+    borderColor: '#EAECEC',
     marginBottom: 20,
     fontSize: 16,
   },
 
   modalBtnRow: {
     flexDirection: 'row',
-    justifyContent:
-      'flex-end',
-    alignItems:
-      'center',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
   },
 
   cancelBtn: {
@@ -1788,16 +2034,13 @@ const styles = StyleSheet.create({
   },
 
   submitBtn: {
-    backgroundColor:
-      '#0C9C4C',
+    backgroundColor: '#0C9C4C',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 10,
     minWidth: 120,
-    alignItems:
-      'center',
-    justifyContent:
-      'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   submitBtnText: {

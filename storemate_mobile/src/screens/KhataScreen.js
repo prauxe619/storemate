@@ -24,6 +24,7 @@ import { Q } from '@nozbe/watermelondb';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TelemetryService from '../services/TelemetryService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { requireCurrentUserId } from '../core/auth/localUser'; // 🚀 Added user isolation helper
 
 const KhataScreen = ({
   onClose,
@@ -140,14 +141,15 @@ const KhataScreen = ({
       try {
         /*
          * Balance calculation MUST see every
-         * ledger entry.
-         *
-         * Do not add a global limit here.
+         * ledger entry for the current user.
          */
+        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user
+
         const entries =
           await database
             .get('ledger_entries')
             .query(
+              Q.where('owner_id', ownerId), // 🚀 Filter by owner_id
               Q.sortBy(
                 'created_at',
                 Q.desc
@@ -487,10 +489,13 @@ const KhataScreen = ({
       }
 
       try {
+        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user
+
         const existing =
           await database
             .get('ledger_entries')
             .query(
+              Q.where('owner_id', ownerId), // 🚀 Filter by owner_id
               Q.where(
                 'customer_phone',
                 cleanPhone
@@ -582,6 +587,8 @@ const KhataScreen = ({
       }
 
       try {
+        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user
+
         await database.write(
           async () => {
             await database
@@ -589,6 +596,8 @@ const KhataScreen = ({
                 'ledger_entries'
               )
               .create(entry => {
+                entry.ownerId = ownerId; // 🚀 Assign owner_id
+
                 entry.customerId =
                   selectedCustomer.name;
 

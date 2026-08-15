@@ -39,7 +39,28 @@ SYNONYMS = {
 
 SALES_QUERY_PHRASES = ["today sale", "aaj ki bikri", "kitna bika", "sale today", "sales today", "bikri kitni"]
 KHATA_QUERY_PHRASES = ["kitna baki", "balance", "how much owe", "kitna dena", "kitna udhar", "kitna udhaar", "bacha hai"]
-ACCOUNT_CREATE_PHRASES = ["create account", "new customer", "add customer", "naya customer", "customer banao", "naya khata", "khata bnao"]
+ACCOUNT_CREATE_PHRASES = [
+        "create account",   
+        "new account",
+        "make account",
+        "open account",
+        "create customer",
+        "new customer",
+        "add customer",
+        "make customer",
+        "open customer",
+        "naya customer",
+        "customer banao",
+        "customer bana do",
+        "naya khata",
+        "khata bnao",
+        "khata banao",
+        "khata bana do",
+        "account banao",
+        "account bana do",
+        "account kholo",
+        "account khol do",
+    ]
 
 
 def _normalize_possessives(text: str) -> str:
@@ -62,6 +83,72 @@ def _result(intent, confidence, product=None, qty=1, discount_percent=None,
         "payment_type": payment_type,
     }
 
+def _extract_account_creation_customer(text_raw: str):
+    """
+    Detect customer/account creation commands where the customer's
+    name can appear between the action word and account/khata.
+
+    Examples:
+        create Ravi account
+        make Ravi account
+        open Ravi account
+        create account for Ravi
+        create an account for Ravi
+        new Ravi account
+        Ravi ka naya khata banao
+        Ravi ka account banao
+    """
+
+    text = re.sub(r"\s+", " ", text_raw.strip().lower())
+
+    patterns = [
+        # English:
+        # create Ravi account
+        # make Ravi account
+        # open Ravi account
+        # add Ravi account
+        r"^(?:create|make|open|add)\s+(?:an?\s+)?(.+?)\s+(?:account|customer|khata)$",
+
+        # English:
+        # create account for Ravi
+        # make account for Ravi
+        # open account for Ravi
+        r"^(?:create|make|open|add)\s+(?:an?\s+)?(?:account|customer|khata)\s+(?:for|of)\s+(.+)$",
+
+        # English:
+        # new Ravi account
+        # new Ravi customer
+        r"^new\s+(.+?)\s+(?:account|customer|khata)$",
+
+        # Hinglish:
+        # Ravi ka account banao
+        # Ravi ka khata banao
+        r"^(.+?)\s+(?:ka|ke\s+naam\s+ka|ke\s+naam\s+ki|ke)\s+(?:account|khata|customer)\s+(?:banao|bnao|bana|bana\s+do|banado|khol(?:o)?|khol\s+do)$",
+
+        # Hinglish:
+        # Ravi ka naya khata banao
+        r"^(.+?)\s+(?:ka|ke\s+naam\s+ka|ke)\s+(?:naya\s+)?(?:account|khata|customer)\s+(?:banao|bnao|bana|bana\s+do|banado|khol(?:o)?|khol\s+do)$",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+
+        if match:
+            candidate = match.group(1).strip()
+
+            # Remove common filler words accidentally captured
+            candidate = re.sub(
+                r"^(?:the|an|a|new)\s+",
+                "",
+                candidate,
+                flags=re.IGNORECASE
+            ).strip()
+
+            if candidate:
+                return candidate.title()
+
+    return None
+
 
 def parse_with_rules(text: str, inventory_names: list = None, customer_names: list = None):
     text_raw = _normalize_possessives(text.lower().strip())
@@ -81,13 +168,46 @@ def parse_with_rules(text: str, inventory_names: list = None, customer_names: li
         c_name = cust_match.group(1).title() if cust_match and cust_match.group(1) not in ["kitna", "udhar", "udhaar", "baki"] else None
         return _result("query.khata", confidence=0.90, customer_name=c_name)
 
+    account_customer = _extract_account_creation_customer(text_raw)
+
+    if account_customer:
+        return _result(
+            "customer.create",
+            confidence=0.98,
+            customer_name=account_customer,
+            product=None,
+            qty=1,
+            source="rules_local"
+        )
+
+    # Existing exact/common phrases as an additional fallback
     if any(k in combined for k in ACCOUNT_CREATE_PHRASES):
         name_match = (
-            re.search(r'^([a-zA-Z]+)\s+(?:ka|ke\s+naam|ke\s+khate)', text_raw) or 
-            re.search(r'(?:name|customer|account|of)\s+([a-zA-Z]+)', text_raw)
+            re.search(
+                r'^([a-zA-Z]+)\s+(?:ka|ke\s+naam|ke\s+khate)',
+                text_raw
+            )
+            or
+            re.search(
+                r'(?:name|customer|account|of|for)\s+([a-zA-Z]+)',
+                text_raw
+            )
         )
-        c_name = name_match.group(1).title() if name_match else None
-        return _result("customer.create", confidence=0.90, customer_name=c_name)
+
+        c_name = (
+            name_match.group(1).title()
+            if name_match
+            else None
+        )
+
+        return _result(
+            "customer.create",
+            confidence=0.95,
+            customer_name=c_name,
+            product=None,
+            qty=1,
+            source="rules_local"
+        )
 
     has_update_verb = any(w in text_clean for w in ["update", "rate", "karo", "kar do", "karo price"])
 

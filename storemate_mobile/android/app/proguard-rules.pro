@@ -1,10 +1,38 @@
-# Add project specific ProGuard rules here.
-# By default, the flags in this file are appended to flags specified
-# in /usr/local/Cellar/android-sdk/24.3.3/tools/proguard/proguard-android.txt
-# You can edit the include path and order by changing the proguardFiles
-# directive in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ============ Google Sign-In ============
+-keep class com.google.android.gms.auth.api.signin.** { *; }
+-keep interface com.google.android.gms.auth.api.signin.** { *; }
+-keep class com.google.android.gms.common.api.** { *; }
+-dontwarn com.google.android.gms.**
 
-# Add any project specific keep options here:
+# ============ WatermelonDB ============
+-keep class com.nozbe.watermelondb.** { *; }
+-dontwarn com.nozbe.watermelondb.**
+
+# ============ React Native FS ============
+-keep class com.rnfs.** { *; }
+
+# ============ React Native Share ============
+-keep class cl.json.** { *; }
+-keep class cl.json.social.** { *; }
+
+# ============ React Native Camera Kit ============
+-keep class com.rncamerakit.** { *; }
+
+# ============ AsyncStorage / Encrypted Storage ============
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-keep class com.reactnativeencryptedstorage.** { *; }
+
+# ============ JailMonkey ============
+-keep class com.gantix.JailMonkey.** { *; }
+
+# ============ SQLCipher (used by WatermelonDB) ============
+-keep class net.sqlcipher.** { *; }
+-keep class net.sqlcipher.database.* { *; }
+-dontwarn net.sqlcipher.**
+
+# ============ General React Native safety net ============
+-keep,allowobfuscation @interface com.facebook.proguard.annotations.DoNotStrip
+-keep @com.facebook.proguard.annotations.DoNotStrip class *
+-keepclassmembers class * {
+    @com.facebook.proguard.annotations.DoNotStrip *;
+}

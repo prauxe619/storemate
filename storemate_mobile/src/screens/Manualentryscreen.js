@@ -16,16 +16,20 @@ import { database } from '../core/database';
 import { Q } from '@nozbe/watermelondb';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TelemetryService from '../services/TelemetryService';
+import { requireCurrentUserId } from '../core/auth/localUser'; // 🚀 Added user ownership isolation[cite: 20]
 
 const PRESET_AMOUNTS = [50, 100, 200, 500, 1000];
 
 // Same shared entry point as the voice flow: builds a distinct,
 // balance-aware customer list from ledger_entries so both paths
-// see the same data.
+// see the same data for the current user only.
 async function loadCustomers() {
+  const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user[cite: 20]
   const entries = await database
     .get('ledger_entries')
-    .query()
+    .query(
+      Q.where('owner_id', ownerId) // 🚀 Filter by owner_id[cite: 20]
+    )
     .fetch();
 
   const byName = {};
@@ -260,11 +264,15 @@ const ManualEntryScreen = ({
         });
 
       try {
+        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user[cite: 20]
+
         await database.write(
           async () => {
             await database
               .get('ledger_entries')
               .create(e => {
+                e.ownerId = ownerId; // 🚀 Assign owner_id[cite: 20]
+
                 e.customerId =
                   entry.customerName;
 
@@ -844,7 +852,7 @@ const styles = StyleSheet.create({
   },
 
   newCustomerRow: {
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 4,
   },
 

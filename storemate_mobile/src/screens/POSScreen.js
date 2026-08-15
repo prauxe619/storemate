@@ -15,7 +15,7 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
-
+import { requireCurrentUserId } from '../core/auth/localUser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseVoiceCommand } from '../core/ai/VoiceCommandRouter';
 import { database } from '../core/database';
@@ -176,12 +176,16 @@ const POSScreen = ({ onClose }) => {
   }, []);
 
   /* ---------------------------------------------------------
-   * LOAD INVENTORY
+   * LOAD INVENTORY ISOLATED BY OWNER ID
    * --------------------------------------------------------- */
   useEffect(() => {
     const fetchInventory = async () => {
       try {
-        const items = await database.get('inventory_items').query().fetch();
+        const ownerId = await requireCurrentUserId();
+        const items = await database
+          .get('inventory_items')
+          .query(Q.where('owner_id', ownerId))
+          .fetch();
         setAvailableItems(items);
         inventoryRef.current = items;
       } catch (error) {
@@ -223,10 +227,6 @@ const POSScreen = ({ onClose }) => {
 
   /* ---------------------------------------------------------
    * POS SPEECH ENGINE
-   *
-   * POS owns the microphone while mounted. HomeScreen is still mounted
-   * underneath its Modal, so Home has its own listeners protected by its
-   * modal ref, while POS gets exclusive ownership here.
    * --------------------------------------------------------- */
   useEffect(() => {
     SpeechEngine.stop().catch(() => {});
@@ -256,8 +256,6 @@ const POSScreen = ({ onClose }) => {
       partialSub.remove();
       finalSub.remove();
       errorSub.remove();
-      // Stop the global SpeechEngine when POS closes so the next Home
-      // screen session does not inherit an old POS recognition session.
       SpeechEngine.stop().catch(() => {});
       isProcessingCommand.current = false;
     };
@@ -333,179 +331,154 @@ const POSScreen = ({ onClose }) => {
    * POS VOICE COMMAND
    * --------------------------------------------------------- */
   const processPOSVoiceCommand = async text => {
-  setAiStatus('Thinking...');
-  const startTime = Date.now();
+    setAiStatus('Thinking...');
+    const startTime = Date.now();
 
-  try {
-    const safeText = typeof text === 'string'
-      ? text.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 500)
-      : '';
+    try {
+      const safeText = typeof text === 'string'
+        ? text.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 500)
+        : '';
 
-    if (!safeText) {
-      setAiStatus("Didn't hear a command.");
-      return;
-    }
-
-    const inventoryNames = inventoryRef.current
-      .map(i => String(i.productName || '').trim().slice(0, 150))
-      .filter(Boolean)
-      .slice(0, 1000);
-
-    const customerNames = [
-      ...new Set(
-        (await database.get('ledger_entries').query().fetch())
-          .map(entry => String(entry.customerId || '').trim())
-          .filter(Boolean)
-      ),
-    ];
-
-    const aiData = await parseVoiceCommand({
-      text: safeText,
-      inventoryNames,
-      customerNames,
-    });
-
-    const latencyMs = Date.now() - startTime;
-
-    TelemetryService.logVoice(
-      safeText,
-      aiData.intent || 'unknown',
-      aiData.intent || 'unknown',
-      'SUCCESS',
-      latencyMs
-    );
-
-    const {
-      intent,
-      product,
-      qty,
-      discount_percent,
-      customer_name,
-    } = aiData;
-
-    if (customer_name) {
-      setCustomerName(customer_name);
-    }
-
-    /*
-     * POS CART ONLY
-     *
-     * sale.create / pos.add_item -> add to current cart.
-     *
-     * inventory.add is deliberately NOT included.
-     */
-    if (intent === 'pos.add_item' || intent === 'sale.create') {
-      if (!product) {
-        setAiStatus("Didn't catch which product. Try again.");
+      if (!safeText) {
+        setAiStatus("Didn't hear a command.");
         return;
       }
 
-      const normalizedProduct = String(product).trim().toLowerCase();
+      const ownerId = await requireCurrentUserId();
 
-      const match = inventoryRef.current.find(item =>
-        String(item.productName || '').trim().toLowerCase().includes(normalizedProduct)
+      const inventoryNames = inventoryRef.current
+        .map(i => String(i.productName || '').trim().slice(0, 150))
+        .filter(Boolean)
+        .slice(0, 1000);
+
+      const customerNames = [
+        ...new Set(
+          (await database.get('ledger_entries').query(Q.where('owner_id', ownerId)).fetch())
+            .map(entry => String(entry.customerId || '').trim())
+            .filter(Boolean)
+        ),
+      ];
+
+      const aiData = await parseVoiceCommand({
+        text: safeText,
+        inventoryNames,
+        customerNames,
+      });
+
+      const latencyMs = Date.now() - startTime;
+
+      TelemetryService.logVoice(
+        safeText,
+        aiData.intent || 'unknown',
+        aiData.intent || 'unknown',
+        'SUCCESS',
+        latencyMs
       );
 
-      if (!match) {
-        setAiStatus(`Couldn't find "${product}" in inventory`);
+      const {
+        intent,
+        product,
+        qty,
+        discount_percent,
+        customer_name,
+      } = aiData;
+
+      if (customer_name) {
+        setCustomerName(customer_name);
+      }
+
+      if (intent === 'pos.add_item' || intent === 'sale.create') {
+        if (!product) {
+          setAiStatus("Didn't catch which product. Try again.");
+          return;
+        }
+
+        const normalizedProduct = String(product).trim().toLowerCase();
+
+        const match = inventoryRef.current.find(item =>
+          String(item.productName || '').trim().toLowerCase().includes(normalizedProduct)
+        );
+
+        if (!match) {
+          setAiStatus(`Couldn't find "${product}" in inventory`);
+          return;
+        }
+
+        const safeQty = Number(qty) > 0 ? Number(qty) : 1;
+
+        addToCart(match, safeQty);
+        setAiStatus(`Added ${safeQty} ${match.productName}`);
         return;
       }
 
-      const safeQty = Number(qty) > 0 ? Number(qty) : 1;
-
-      addToCart(match, safeQty);
-      setAiStatus(`Added ${safeQty} ${match.productName}`);
-      return;
-    }
-
-    /*
-     * INVENTORY ADD
-     *
-     * "Add 20 sugar" means stock addition and must not
-     * accidentally become a POS sale.
-     */
-    if (intent === 'inventory.add') {
-      setAiStatus('Stock-add commands are handled from the main screen.');
-      return;
-    }
-
-    /*
-     * DISCOUNT
-     */
-    if (intent === 'pos.apply_discount') {
-      const safeDiscount = Number(discount_percent);
-
-      if (Number.isFinite(safeDiscount) && safeDiscount >= 0 && safeDiscount <= 100) {
-        setDiscount(safeDiscount);
-        setAiStatus(`Applied ${safeDiscount}% discount`);
-      } else {
-        setAiStatus('Invalid discount.');
+      if (intent === 'inventory.add') {
+        setAiStatus('Stock-add commands are handled from the main screen.');
+        return;
       }
 
-      return;
-    }
+      if (intent === 'pos.apply_discount') {
+        const safeDiscount = Number(discount_percent);
 
-    /*
-     * CHECKOUT
-     */
-    if (intent === 'pos.checkout') {
-      setAiStatus('Ready to bill — choose Cash or Udhaar.');
-      return;
-    }
+        if (Number.isFinite(safeDiscount) && safeDiscount >= 0 && safeDiscount <= 100) {
+          setDiscount(safeDiscount);
+          setAiStatus(`Applied ${safeDiscount}% discount`);
+        } else {
+          setAiStatus('Invalid discount.');
+        }
 
-    /*
-     * UNKNOWN COMMAND WITH A PRODUCT
-     *
-     * Example:
-     * "2 sugar"
-     *
-     * Safely add it to the current POS cart.
-     */
-    if (intent === 'unknown' && product) {
-      const normalizedProduct = String(product).trim().toLowerCase();
+        return;
+      }
 
-      const match = inventoryRef.current.find(item =>
-        String(item.productName || '').trim().toLowerCase().includes(normalizedProduct)
+      if (intent === 'pos.checkout') {
+        setAiStatus('Ready to bill — choose Cash or Udhaar.');
+        return;
+      }
+
+      if (intent === 'unknown' && product) {
+        const normalizedProduct = String(product).trim().toLowerCase();
+
+        const match = inventoryRef.current.find(item =>
+          String(item.productName || '').trim().toLowerCase().includes(normalizedProduct)
+        );
+
+        if (!match) {
+          setAiStatus(`"${product}" is not in inventory.`);
+          return;
+        }
+
+        const safeQty = Number(qty) > 0 ? Number(qty) : 1;
+
+        addToCart(match, safeQty);
+        setAiStatus(`Added ${safeQty} ${match.productName}`);
+        return;
+      }
+
+      setAiStatus('Command not recognized.');
+    } catch (error) {
+      const latencyMs = Date.now() - startTime;
+
+      setAiStatus(
+        error?.name === 'AbortError'
+          ? 'AI request timed out. Please try again.'
+          : 'Could not process that. Please try again.'
       );
 
-      if (!match) {
-        setAiStatus(`"${product}" is not in inventory.`);
-        return;
-      }
+      TelemetryService.logVoice(
+        text,
+        'unknown',
+        'unknown',
+        'FAILED',
+        latencyMs,
+        error?.message || 'Voice command failed'
+      );
 
-      const safeQty = Number(qty) > 0 ? Number(qty) : 1;
-
-      addToCart(match, safeQty);
-      setAiStatus(`Added ${safeQty} ${match.productName}`);
-      return;
+      TelemetryService.logError(
+        'pos_voice_ai',
+        error?.message || 'Voice command failed',
+        error?.stack
+      );
     }
-
-    setAiStatus('Command not recognized.');
-  } catch (error) {
-    const latencyMs = Date.now() - startTime;
-
-    setAiStatus(
-      error?.name === 'AbortError'
-        ? 'AI request timed out. Please try again.'
-        : 'Could not process that. Please try again.'
-    );
-
-    TelemetryService.logVoice(
-      text,
-      'unknown',
-      'unknown',
-      'FAILED',
-      latencyMs,
-      error?.message || 'Voice command failed'
-    );
-
-    TelemetryService.logError(
-      'pos_voice_ai',
-      error?.message || 'Voice command failed',
-      error?.stack
-    );
-  }
-};
+  };
 
   /* ---------------------------------------------------------
    * MICROPHONE
@@ -532,16 +505,20 @@ const POSScreen = ({ onClose }) => {
   };
 
   /* ---------------------------------------------------------
-   * BARCODE LOOKUP
+   * BARCODE LOOKUP ISOLATED BY OWNER ID
    * --------------------------------------------------------- */
   const handleScan = async barcode => {
     try {
       if (typeof barcode !== 'string' || !barcode.trim()) throw new Error('Invalid barcode');
 
+      const ownerId = await requireCurrentUserId();
       const cleanBarcode = barcode.trim();
       const item = await database
         .get('inventory_items')
-        .query(Q.where('barcode', cleanBarcode))
+        .query(
+          Q.where('owner_id', ownerId),
+          Q.where('barcode', cleanBarcode)
+        )
         .fetch();
 
       if (item.length > 0) {
@@ -607,10 +584,6 @@ const POSScreen = ({ onClose }) => {
 
   /* ---------------------------------------------------------
    * BARCODE READ
-   *
-   * CameraKit can fire multiple callbacks for the same physical barcode,
-   * so we use: an immediate ref lock, barcode validation, a 150ms camera
-   * teardown delay, and a delayed ref unlock. Safer than React state alone.
    * --------------------------------------------------------- */
   const onBarcodeRead = event => {
     try {
@@ -628,13 +601,9 @@ const POSScreen = ({ onClose }) => {
       setLastScanned(cleanBarcode);
       safeVibrate(100);
 
-      // Give the native camera thread time to finish this callback before
-      // tearing down the CameraKit view.
       setTimeout(() => {
         setIsScannerOpen(false);
         handleScan(cleanBarcode).finally(() => {
-          // Keep the lock briefly after the camera closes so another frame
-          // cannot create another cart item.
           setTimeout(() => {
             lastScannedRef.current = null;
             isScanningRef.current = false;
@@ -654,11 +623,9 @@ const POSScreen = ({ onClose }) => {
   };
 
   /* ---------------------------------------------------------
-   * CHECKOUT
+   * CHECKOUT WITH OWNER ISOLATION
    * --------------------------------------------------------- */
   const processCheckout = async paymentMethod => {
-    // Hard lock — executes synchronously before any await, so two
-    // Cash/Udhaar taps cannot enter this function simultaneously.
     if (isCheckoutProcessing.current) return;
 
     if (cart.length === 0) {
@@ -670,15 +637,21 @@ const POSScreen = ({ onClose }) => {
     setCheckoutProcessing(true);
 
     try {
+      const ownerId = await requireCurrentUserId();
       let oldBalance = 0;
 
       if (paymentMethod === 'KHATA') {
         if (!customerName.trim()) {
           Alert.alert('Required', 'Customer Name required for Udhaar.');
+          isCheckoutProcessing.current = false;
+          setCheckoutProcessing(false);
           return;
         }
 
-        const allEntries = await database.get('ledger_entries').query().fetch();
+        const allEntries = await database
+          .get('ledger_entries')
+          .query(Q.where('owner_id', ownerId))
+          .fetch();
         allEntries
           .filter(e => String(e.customerId || '').toLowerCase() === customerName.trim().toLowerCase())
           .forEach(e => {
@@ -689,15 +662,14 @@ const POSScreen = ({ onClose }) => {
       await database.write(async () => {
         const now = Date.now();
 
-        // Create sale exactly once.
         await database.get('sales_transactions').create(sale => {
+          sale.ownerId = ownerId;
           sale.totalAmount = total;
           sale.paymentType = paymentMethod;
           sale.isSynced = false;
           sale.createdAt = now;
         });
 
-        // Reduce inventory.
         for (const cartItem of cart) {
           const product = await database.get('inventory_items').find(cartItem.id);
           await product.update(p => {
@@ -707,14 +679,15 @@ const POSScreen = ({ onClose }) => {
           });
         }
 
-        // Create Khata ledger entry.
         if (paymentMethod === 'KHATA') {
           await database.get('ledger_entries').create(entry => {
+            entry.ownerId = ownerId;
             entry.customerId = customerName.trim();
             entry.amount = total;
             entry.entryType = 'CREDIT';
             entry.isSynced = false;
             entry.createdAt = now;
+            entry.customerPhone = customerPhone;
           });
         }
       });
@@ -735,7 +708,6 @@ const POSScreen = ({ onClose }) => {
         paymentMethod === 'KHATA' ? `₹${total} put on Khata.` : `₹${total} paid via Cash.`
       );
 
-      // Clear cart AFTER successful database transaction.
       setCart([]);
       setTotal(0);
       setDiscount(0);
@@ -747,7 +719,6 @@ const POSScreen = ({ onClose }) => {
       TelemetryService.logError('pos_checkout', error?.message || 'Checkout failed', error?.stack);
       Alert.alert('Checkout Failed', error?.message || 'Could not complete this sale.');
     } finally {
-      // Always unlock, even after failure.
       isCheckoutProcessing.current = false;
       setCheckoutProcessing(false);
     }
@@ -773,7 +744,6 @@ const POSScreen = ({ onClose }) => {
         }
       }
 
-      // Reset scanner state BEFORE mounting CameraKit.
       isScanningRef.current = false;
       lastScannedRef.current = null;
       setLastScanned(null);
@@ -1062,7 +1032,7 @@ const POSScreen = ({ onClose }) => {
 };
 
 /* =============================================================
- * STYLES — white background throughout, soft cards for depth
+ * STYLES
  * ============================================================= */
 
 const GREEN = '#0C9C4C';

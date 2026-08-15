@@ -92,12 +92,13 @@ try:
 except (TypeError, ValueError):
     print("⚠️ Invalid MAIL_PORT. Falling back to 587.")
     app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = os.getenv(
-    'MAIL_USE_TLS', 'true'
-).strip().lower() in ('true', '1', 'yes', 'on')
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').strip().lower() in ('true', '1', 'yes', 'on')
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_USERNAME')
+
+# 🚀 FIX: 5-second timeout to prevent the 30-38s app freeze
+app.config['MAIL_TIMEOUT'] = 5 
 
 mail = Mail(app)
 jwt = JWTManager(app)
@@ -395,7 +396,8 @@ def parse_intent():
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register():
     data = request.json or {}
-    email = data.get('email')
+    # 🚀 FIX: Normalize email
+    email = data.get('email', '').strip().lower()
     password = data.get('password')
     shop_name = data.get('shop_name')
 
@@ -420,10 +422,17 @@ def register():
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
     data = request.json or {}
-    email = data.get('email')
+    
+    # 🚀 FIX: Prevent case-sensitivity 401 errors
+    email = data.get('email', '').strip().lower()
     password = data.get('password')
 
     user = User.query.filter_by(email=email).first()
+    
+    # 🚀 FIX: Catch Google SSO users before throwing a generic 401
+    if user and user.password_hash == "GOOGLE_SSO_USER":
+        return jsonify({"error": "Please log in using the 'Continue with Google' button."}), 401
+
     if not user or not check_password_hash(user.password_hash, password):
         return jsonify({"error": "Invalid credentials"}), 401
 
@@ -439,13 +448,13 @@ def login():
     db.session.commit()
 
     access_token = create_access_token(identity=email)
-    return jsonify({"access_token": access_token, "shop_name": user.shop_name}), 200
-
+    return jsonify({"access_token": access_token, "user_id": user.id, "email": user.email, "shop_name": user.shop_name}), 200
 
 @app.route('/api/v1/auth/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json() or {}
-    email = data.get('email')
+    # 🚀 FIX: Normalize email
+    email = data.get('email', '').strip().lower()
 
     user = User.query.filter_by(email=email).first()
 
@@ -515,11 +524,12 @@ def google_auth():
         # 1. Verify token with Google's servers
         idinfo = id_token.verify_oauth2_token(token, requests.Request(), CLIENT_ID)
         
-        email = idinfo['email']
+        # 🚀 FIX: Normalize Google's email to lowercase
+        email = idinfo['email'].strip().lower()
         name = idinfo.get('name', 'My Shop')
         
-        # 2. Check if user exists
-        user = User.query.filter_by(email=email).first()
+        # 🚀 FIX: Use ilike() for case-insensitive lookup to prevent duplicate accounts
+        user = User.query.filter(User.email.ilike(email)).first()
         
         if not user:
             shop_name = data.get('shop_name') or f"{name.split(' ')[0]}'s Shop"
@@ -534,12 +544,7 @@ def google_auth():
         # 3. Generate JWT access token
         access_token = create_access_token(identity=user.email)
         
-        return jsonify({
-            "message": "Authenticated successfully",
-            "access_token": access_token,
-            "shop_name": user.shop_name,
-            "email": user.email
-        }), 200
+        return jsonify({"message": "Authenticated successfully", "access_token": access_token, "user_id": user.id, "shop_name": user.shop_name, "email": user.email}), 200
 
     except ValueError as ve:
         print(f"❌ Google Token Verification ValueError: {ve}")
@@ -548,7 +553,6 @@ def google_auth():
         print(f"❌ Unexpected Error during Google Auth: {e}")
         traceback.print_exc()
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
-
 
 @app.route('/api/v1/auth/profile', methods=['GET'])
 @jwt_required()

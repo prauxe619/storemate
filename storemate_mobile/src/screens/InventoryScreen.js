@@ -21,10 +21,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import {
-  withObservables,
-} from '@nozbe/watermelondb/react';
-
 import { database } from '../core/database';
 
 import {
@@ -50,9 +46,12 @@ import {
 
 import RNFS from 'react-native-fs';
 
+import {
+  requireCurrentUserId,
+} from '../core/auth/localUser';
+
 
 const InventoryScreen = ({
-  items,
   onClose,
 }) => {
 
@@ -60,17 +59,8 @@ const InventoryScreen = ({
    * =========================================================
    * SAFE AREA + RESPONSIVE SCREEN INFORMATION
    * =========================================================
-   *
-   * insets.top:
-   *   Status bar / notch / camera cutout
-   *
-   * insets.bottom:
-   *   Android navigation bar / gesture area
-   *
-   * IMPORTANT:
-   * Camera mode does NOT use these as padding
-   * on the camera itself. The camera remains full-screen.
    */
+
   const insets =
     useSafeAreaInsets();
 
@@ -79,18 +69,6 @@ const InventoryScreen = ({
     height: windowHeight,
   } = useWindowDimensions();
 
-  /*
-   * Responsive horizontal padding.
-   *
-   * Small phones:
-   *   14
-   *
-   * Normal phones:
-   *   20
-   *
-   * Large phones / tablets:
-   *   28
-   */
   const screenPadding =
     windowWidth < 360
       ? 14
@@ -98,10 +76,6 @@ const InventoryScreen = ({
       ? 20
       : 28;
 
-  /*
-   * Prevent edit dialog from becoming
-   * excessively wide on tablets.
-   */
   const editModalWidth =
     Math.min(
       windowWidth - 32,
@@ -109,10 +83,36 @@ const InventoryScreen = ({
     );
 
   /*
-   * Camera reference.
+   * =========================================================
+   * CAMERA REFERENCE
+   * =========================================================
    */
+
   const cameraRef =
     useRef(null);
+
+  /*
+   * =========================================================
+   * INVENTORY STATE
+   * =========================================================
+   *
+   * IMPORTANT:
+   *
+   * We no longer use withObservables here.
+   *
+   * requireCurrentUserId() is asynchronous, so the inventory
+   * observer is created after the current owner ID is known.
+   */
+
+  const [
+    items,
+    setItems,
+  ] = useState([]);
+
+  const [
+    ownerId,
+    setOwnerId,
+  ] = useState(null);
 
   /*
    * =========================================================
@@ -153,11 +153,12 @@ const InventoryScreen = ({
 
   /*
    * =========================================================
-   * APP STATE
+   * APP STATE / CAMERA SAFETY
    * =========================================================
    */
 
   useEffect(() => {
+
     const subscription =
       AppState.addEventListener(
         'change',
@@ -174,6 +175,7 @@ const InventoryScreen = ({
                 'background'
             )
           ) {
+
             /*
              * Never leave the camera
              * running when app goes
@@ -190,6 +192,98 @@ const InventoryScreen = ({
     return () => {
       subscription.remove();
     };
+
+  }, []);
+
+
+  /*
+   * =========================================================
+   * LOAD CURRENT USER + INVENTORY OBSERVER
+   * =========================================================
+   *
+   * This is the main owner-isolation fix.
+   *
+   * Only inventory_items belonging to the current owner
+   * are observed by this screen.
+   */
+
+  useEffect(() => {
+
+    let subscription = null;
+
+    let isMounted = true;
+
+    const loadOwnerAndInventory =
+      async () => {
+
+        try {
+
+          const currentOwnerId =
+            await requireCurrentUserId();
+
+          if (!isMounted) {
+            return;
+          }
+
+          setOwnerId(
+            currentOwnerId
+          );
+
+          subscription =
+            database
+              .get(
+                'inventory_items'
+              )
+              .query(
+                Q.where(
+                  'owner_id',
+                  currentOwnerId
+                )
+              )
+              .observe()
+              .subscribe(
+                inventoryItems => {
+
+                  if (!isMounted) {
+                    return;
+                  }
+
+                  setItems(
+                    inventoryItems
+                  );
+                }
+              );
+
+        } catch (error) {
+
+          console.error(
+            'Inventory observer error:',
+            error
+          );
+
+          TelemetryService.logError(
+            'inventory_observer',
+            error?.message ||
+              'Could not load inventory',
+            error?.stack
+          );
+
+        }
+      };
+
+    loadOwnerAndInventory();
+
+    return () => {
+
+      isMounted = false;
+
+      if (subscription) {
+        subscription.unsubscribe();
+        subscription = null;
+      }
+
+    };
+
   }, []);
 
 
@@ -277,6 +371,7 @@ const InventoryScreen = ({
         !sellingPrice ||
         !quantity
       ) {
+
         return Alert.alert(
           'Missing Info',
           'Product name, sell price, and quantity are required.'
@@ -284,6 +379,22 @@ const InventoryScreen = ({
       }
 
       try {
+
+        /*
+         * Get current user before writing.
+         */
+        const currentOwnerId =
+          ownerId ||
+          await requireCurrentUserId();
+
+        /*
+         * Make sure state has it as well.
+         */
+        if (!ownerId) {
+          setOwnerId(
+            currentOwnerId
+          );
+        }
 
         await database.write(
           async () => {
@@ -293,6 +404,14 @@ const InventoryScreen = ({
                 'inventory_items'
               )
               .create(item => {
+
+                /*
+                 * IMPORTANT:
+                 * Every new inventory record
+                 * belongs to the current user.
+                 */
+                item.ownerId =
+                  currentOwnerId;
 
                 item.barcode =
                   barcode;
@@ -317,6 +436,9 @@ const InventoryScreen = ({
 
                 item.isSynced =
                   false;
+
+                item.updatedAt =
+                  Date.now();
 
                 TelemetryService.trackEvent(
                   'product_added',
@@ -351,9 +473,15 @@ const InventoryScreen = ({
 
       } catch (error) {
 
+        console.error(
+          'Add inventory error:',
+          error
+        );
+
         Alert.alert(
           'Error',
-          error.message
+          error.message ||
+            'Could not add product.'
         );
       }
     };
@@ -404,10 +532,15 @@ const InventoryScreen = ({
         !editPrice ||
         !editQuantity
       ) {
+
         return Alert.alert(
           'Missing Info',
           'All fields are required.'
         );
+      }
+
+      if (!editingItem) {
+        return;
       }
 
       try {
@@ -429,7 +562,7 @@ const InventoryScreen = ({
                 /*
                  * Preserve decimal quantities.
                  *
-                 * This is important for:
+                 * Important for:
                  * Kg, litres, meters, etc.
                  */
                 item.quantity =
@@ -451,11 +584,16 @@ const InventoryScreen = ({
           false
         );
 
+        setEditingItem(
+          null
+        );
+
       } catch (error) {
 
         Alert.alert(
           'Update Error',
-          error.message
+          error.message ||
+            'Could not update product.'
         );
       }
     };
@@ -514,7 +652,8 @@ const InventoryScreen = ({
 
                   Alert.alert(
                     'Delete Error',
-                    error.message
+                    error.message ||
+                      'Could not delete product.'
                   );
                 }
               },
@@ -528,12 +667,43 @@ const InventoryScreen = ({
    * =========================================================
    * SAVE SCANNED ITEMS
    * =========================================================
+   *
+   * IMPORTANT OWNER FIX:
+   *
+   * Existing products are searched using BOTH:
+   *
+   * owner_id
+   * product_name
+   *
+   * This prevents User A's "Rice" from being modified when
+   * User B scans a bill containing "Rice".
    */
 
   const saveScannedItems =
     async () => {
 
       try {
+
+        if (
+          !scannedItems ||
+          scannedItems.length === 0
+        ) {
+
+          return Alert.alert(
+            'No Items',
+            'There are no scanned items to save.'
+          );
+        }
+
+        const currentOwnerId =
+          ownerId ||
+          await requireCurrentUserId();
+
+        if (!ownerId) {
+          setOwnerId(
+            currentOwnerId
+          );
+        }
 
         await database.write(
           async () => {
@@ -551,12 +721,33 @@ const InventoryScreen = ({
                 scannedItems
             ) {
 
+              const productName =
+                String(
+                  item.productName ||
+                    ''
+                ).trim();
+
+              /*
+               * Skip invalid OCR rows.
+               */
+              if (!productName) {
+                continue;
+              }
+
+              /*
+               * OWNER-SCOPED LOOKUP
+               */
               const existingRecords =
                 await itemsCollection
                   .query(
                     Q.where(
+                      'owner_id',
+                      currentOwnerId
+                    ),
+
+                    Q.where(
                       'product_name',
-                      item.productName
+                      productName
                     )
                   )
                   .fetch();
@@ -602,8 +793,16 @@ const InventoryScreen = ({
                 await itemsCollection.create(
                   dbItem => {
 
+                    /*
+                     * IMPORTANT:
+                     * New OCR inventory belongs
+                     * to the current user.
+                     */
+                    dbItem.ownerId =
+                      currentOwnerId;
+
                     dbItem.productName =
-                      item.productName;
+                      productName;
 
                     dbItem.quantity =
                       Number(
@@ -656,9 +855,17 @@ const InventoryScreen = ({
           error
         );
 
+        TelemetryService.logError(
+          'inventory_ocr_save',
+          error?.message ||
+            'Could not save scanned items',
+          error?.stack
+        );
+
         Alert.alert(
           'Database Error',
-          'Could not save scanned items.'
+          error.message ||
+            'Could not save scanned items.'
         );
       }
     };
@@ -804,6 +1011,18 @@ const InventoryScreen = ({
 
       } catch (err) {
 
+        console.error(
+          'Camera initialization error:',
+          err
+        );
+
+        TelemetryService.logError(
+          'inventory_camera',
+          err?.message ||
+            'Camera could not be initialized',
+          err?.stack
+        );
+
         Alert.alert(
           'Hardware Error',
           'Camera could not be initialized.'
@@ -845,6 +1064,10 @@ const InventoryScreen = ({
 
         const imageUri =
           result.assets[0].uri;
+
+        if (!imageUri) {
+          return;
+        }
 
         setScanMode(
           null
@@ -955,14 +1178,8 @@ const InventoryScreen = ({
    * CAMERA SCREEN
    * =========================================================
    *
-   * IMPORTANT:
-   *
-   * Do NOT add safe-area padding around Camera.
-   *
-   * The camera must remain true full-screen.
-   *
-   * Only the overlay controls are moved
-   * using insets.bottom.
+   * Camera remains completely full-screen.
+   * Safe-area padding is applied only to controls.
    */
 
   if (scanMode) {
@@ -998,14 +1215,22 @@ const InventoryScreen = ({
                 'barcode'
               ) {
 
-                setBarcode(
+                const scannedCode =
                   event.nativeEvent
-                    .codeStringValue
-                );
+                    .codeStringValue;
 
-                setScanMode(
-                  null
-                );
+                if (
+                  scannedCode
+                ) {
+
+                  setBarcode(
+                    scannedCode
+                  );
+
+                  setScanMode(
+                    null
+                  );
+                }
               }
             }
           }
@@ -1054,10 +1279,6 @@ const InventoryScreen = ({
               styles.cameraActionRow,
 
               {
-                /*
-                 * Navigation bar safe area +
-                 * enough visual breathing room.
-                 */
                 bottom:
                   Math.max(
                     insets.bottom +
@@ -1081,6 +1302,15 @@ const InventoryScreen = ({
 
                   try {
 
+                    if (
+                      !cameraRef.current
+                    ) {
+
+                      throw new Error(
+                        'Camera is not ready.'
+                      );
+                    }
+
                     const image =
                       await cameraRef.current.capture();
 
@@ -1095,10 +1325,17 @@ const InventoryScreen = ({
                       true
                     );
 
+                    const startTime =
+                      Date.now();
+
                     const result =
                       await uploadInvoice(
                         image.uri
                       );
+
+                    const latencyMs =
+                      Date.now() -
+                      startTime;
 
                     if (!result) {
                       return;
@@ -1118,19 +1355,46 @@ const InventoryScreen = ({
                         true
                       );
 
+                      TelemetryService.trackEvent(
+                        'ocr_scan_success',
+                        'ocr',
+                        {
+                          items_extracted:
+                            result
+                              .extracted_data
+                              .length,
+
+                          latency_ms:
+                            latencyMs,
+                        }
+                      );
+
                     } else {
 
                       Alert.alert(
                         'No Items Found',
-                        "The AI couldn't read the items clearly."
+                        "The AI couldn't read the invoice clearly."
                       );
                     }
 
                   } catch (e) {
 
+                    console.error(
+                      'Invoice camera error:',
+                      e
+                    );
+
+                    TelemetryService.logError(
+                      'invoice_camera_ocr',
+                      e?.message ||
+                        'Could not read invoice',
+                      e?.stack
+                    );
+
                     Alert.alert(
                       'Scan Failed',
-                      'Could not read the invoice.'
+                      e?.message ||
+                        'Could not read the invoice.'
                     );
 
                   } finally {
@@ -1210,10 +1474,6 @@ const InventoryScreen = ({
             styles.cancelBtn,
 
             {
-              /*
-               * This is the important part
-               * for Android navigation modes.
-               */
               bottom:
                 Math.max(
                   insets.bottom +
@@ -1261,18 +1521,12 @@ const InventoryScreen = ({
         styles.container,
 
         {
-          /*
-           * Dynamic status bar.
-           */
           paddingTop:
             Math.max(
               insets.top,
               16
             ),
 
-          /*
-           * Dynamic navigation bar.
-           */
           paddingBottom:
             Math.max(
               insets.bottom,
@@ -1743,10 +1997,6 @@ const InventoryScreen = ({
           styles.stockListContent,
 
           {
-            /*
-             * Always keep final item
-             * above Android navigation.
-             */
             paddingBottom:
               Math.max(
                 insets.bottom +
@@ -1850,6 +2100,7 @@ const InventoryScreen = ({
                 style={
                   styles.itemName
                 }
+
                 numberOfLines={
                   2
                 }
@@ -3072,8 +3323,6 @@ const styles =
      * =======================================================
      * FULL-SCREEN CAMERA
      * =======================================================
-     *
-     * DO NOT add padding here.
      */
 
     cameraContainer: {
@@ -3522,27 +3771,4 @@ const styles =
   });
 
 
-/*
- * =========================================================
- * WATERMELONDB OBSERVER
- * =========================================================
- */
-
-const enhance =
-  withObservables(
-    [],
-    () => ({
-      items:
-        database
-          .get(
-            'inventory_items'
-          )
-          .query()
-          .observe(),
-    })
-  );
-
-
-export default enhance(
-  InventoryScreen
-);
+export default InventoryScreen;

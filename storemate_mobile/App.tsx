@@ -14,8 +14,11 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import JailMonkey from 'jail-monkey';
+import {
+  clearActiveUser,
+} from './src/core/auth/localUser';
 
+import JailMonkey from 'jail-monkey';
 import RNExitApp from 'react-native-exit-app';
 
 import {
@@ -42,25 +45,16 @@ import {
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
 
-// @ts-ignore
 import { database } from './src/core/database';
 
-// @ts-ignore
-import { startAutoSyncListener } from './src/core/sync/autoSync';
+import {
+  startAutoSyncListener,
+} from './src/core/sync/autoSync';
 
-// @ts-ignore
 import HomeScreen from './src/screens/HomeScreen';
-
-// @ts-ignore
 import InventoryScreen from './src/screens/InventoryScreen';
-
-// @ts-ignore
 import KhataScreen from './src/screens/KhataScreen';
-
-// @ts-ignore
 import ProfileScreen from './src/screens/ProfileScreen';
-
-// @ts-ignore
 import LoginScreen from './src/screens/LoginScreen';
 
 import {
@@ -68,13 +62,22 @@ import {
 } from '@react-native-google-signin/google-signin';
 
 
+
+const GOOGLE_WEB_CLIENT_ID =
+  '106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com';
+
+GoogleSignin.configure({
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+  offlineAccess: true,
+});
+
 const Tab =
   createBottomTabNavigator();
 
-
 /*
  * ============================================================
- * STORE MATE THEME
+ * THEME
  * ============================================================
  */
 
@@ -101,7 +104,6 @@ const MyLightTheme = {
   },
 };
 
-
 /*
  * ============================================================
  * AUTH CONTEXT
@@ -111,7 +113,6 @@ const MyLightTheme = {
 export const AuthContext =
   createContext<any>(null);
 
-
 /*
  * ============================================================
  * APP
@@ -119,154 +120,130 @@ export const AuthContext =
  */
 
 export default function App() {
-
   const [
     isLoading,
     setIsLoading,
-  ] = useState<boolean>(
-    true
-  );
-
+  ] = useState<boolean>(true);
 
   const [
     userToken,
     setUserToken,
-  ] = useState<string | null>(
-    null
-  );
-
+  ] = useState<string | null>(null);
 
   /*
    * ==========================================================
-   * SECURITY + LOGIN CHECK
+   * SECURITY + SESSION CHECK
    * ==========================================================
    */
 
   useEffect(() => {
+    let securityBlocked = false;
 
-    const runSecurityAudit =
-      () => {
-
-        /*
-         * Check rooted / jailbroken /
-         * external-storage environments.
-         */
-
+    const runSecurityAudit = () => {
+      try {
         if (
           JailMonkey.isJailBroken() ||
           JailMonkey.isOnExternalStorage()
         ) {
+          securityBlocked = true;
 
           Alert.alert(
             'Security Violation',
-
             'StoreMate cannot run on rooted or compromised devices in order to protect your financial data.',
-
             [
               {
-                text:
-                  'OK',
-
-                onPress:
-                  () =>
-                    RNExitApp.exitApp(),
+                text: 'OK',
+                onPress: () =>
+                  RNExitApp.exitApp(),
               },
             ],
-
             {
-              cancelable:
-                false,
+              cancelable: false,
             }
           );
 
           return;
         }
-
-
-        /*
-         * Prevent mock-location usage.
-         */
 
         if (
           JailMonkey.canMockLocation()
         ) {
+          securityBlocked = true;
 
           Alert.alert(
             'Security Violation',
-
             "Please disable 'Mock Locations' in your developer settings to use StoreMate.",
-
             [
               {
-                text:
-                  'OK',
-
-                onPress:
-                  () =>
-                    RNExitApp.exitApp(),
+                text: 'OK',
+                onPress: () =>
+                  RNExitApp.exitApp(),
               },
             ],
-
             {
-              cancelable:
-                false,
+              cancelable: false,
             }
           );
 
           return;
         }
-      };
-
-
-    /*
-     * Run security audit.
-     */
+      } catch (error) {
+        console.error(
+          'Security audit failed:',
+          error
+        );
+      }
+    };
 
     runSecurityAudit();
 
-
-    /*
-     * Check existing StoreMate
-     * authentication session.
-     */
-
     const checkLoginStatus =
       async () => {
-
         try {
+          if (securityBlocked) {
+            return;
+          }
 
           const token =
             await AsyncStorage.getItem(
               'userToken'
             );
 
+          const userId =
+            await AsyncStorage.getItem(
+              'userId'
+            );
 
-          setUserToken(
-            token
-          );
-
-        } catch (
-          error
-        ) {
-
+          /*
+           * Both values are required.
+           *
+           * This prevents the app from entering
+           * the database with an unknown owner.
+           */
+          if (
+            token &&
+            userId
+          ) {
+            setUserToken(
+              token
+            );
+          } else {
+            setUserToken(null);
+          }
+        } catch (error) {
           console.error(
             'Auth check failed:',
             error
           );
 
+          setUserToken(null);
         } finally {
-
-          setIsLoading(
-            false
-          );
+          setIsLoading(false);
         }
       };
 
-
     checkLoginStatus();
-
   }, []);
-
 
   /*
    * ==========================================================
@@ -275,281 +252,195 @@ export default function App() {
    */
 
   useEffect(() => {
-
-    /*
-     * Nothing to start when logged out.
-     */
-
-    if (
-      !userToken
-    ) {
-
+    if (!userToken) {
       return;
     }
 
+    let unsubscribeSync = null;
 
-    /*
-     * Start real-time sync listener.
-     */
+    try {
+      unsubscribeSync =
+        startAutoSyncListener();
+    } catch (error) {
+      console.error(
+        'Auto sync listener failed:',
+        error
+      );
+    }
 
-    const unsubscribeSync =
-      startAutoSyncListener();
-
-
-    /*
-     * Start hourly Google Drive
-     * backup scheduler.
-     */
-
-    startHourlyBackupScheduler();
-
-
-    /*
-     * Cleanup when user logs out
-     * or token changes.
-     */
+    try {
+      startHourlyBackupScheduler();
+    } catch (error) {
+      console.error(
+        'Hourly backup scheduler failed:',
+        error
+      );
+    }
 
     return () => {
-
       if (
         unsubscribeSync &&
         typeof unsubscribeSync ===
           'function'
       ) {
-
         unsubscribeSync();
       }
 
-
       stopHourlyBackupScheduler();
-
     };
-
-  }, [
-    userToken,
-  ]);
-
-
- /*
- * ============================================================
- * LOGOUT
- * ============================================================
- *
- * IMPORTANT:
- * Logout must NEVER:
- *
- * - call backupNow()
- * - call Google Drive
- * - call GoogleSignin.signIn()
- *
- * StoreMate authentication and Google Drive authentication
- * are completely separate.
- */
-
-const logout =
-  async () => {
-
-    setIsLoading(true);
-
-    try {
-
-      /*
-       * DO NOT backup here.
-       *
-       * A logout operation must work even when:
-       * - internet is unavailable
-       * - Google is not signed in
-       * - Google Drive is unavailable
-       *
-       * Local WatermelonDB remains untouched.
-       */
-
-      /*
-       * If a Google account is already connected,
-       * signing it out is optional.
-       *
-       * IMPORTANT:
-       * We only sign out an EXISTING Google session.
-       * We NEVER call GoogleSignin.signIn().
-       */
-
-      try {
-
-        const gs =
-          GoogleSignin as any;
-
-        let signedIn =
-          false;
-
-        if (
-          typeof gs.isSignedIn ===
-          'function'
-        ) {
-
-          signedIn =
-            await gs.isSignedIn();
-
-        } else if (
-          typeof gs.getCurrentUser ===
-          'function'
-        ) {
-
-          const currentUser =
-            await gs.getCurrentUser();
-
-          signedIn =
-            !!currentUser;
-        }
-
-        if (
-          signedIn &&
-          typeof gs.signOut ===
-            'function'
-        ) {
-
-          await gs.signOut();
-        }
-
-      } catch (
-        googleLogoutError
-      ) {
-
-        /*
-         * Google logout failure must NEVER
-         * prevent StoreMate logout.
-         */
-
-        console.log(
-          'Google session cleanup skipped:',
-          googleLogoutError
-        );
-      }
-
-
-      /*
-       * Clear StoreMate local session/profile.
-       *
-       * IMPORTANT:
-       * WatermelonDB is NOT deleted.
-       *
-       * Therefore the shop's local data remains
-       * available for the next authenticated session.
-       */
-
-      const keysToClear = [
-        'userToken',
-        'shopName',
-        'userEmail',
-        'userPhone',
-        'userAddress',
-        'avatarUri',
-        'shopUpi',
-        'driveBackup_restorePromptShown',
-      ];
-
-      await Promise.all(
-        keysToClear.map(
-          key =>
-            AsyncStorage.removeItem(
-              key
-            )
-        )
-      );
-
-    } catch (
-      error
-    ) {
-
-      console.error(
-        'Logout Cleanup Error:',
-        error
-      );
-
-    } finally {
-
-      /*
-       * This immediately sends the app
-       * back to LoginScreen.
-       */
-
-      setUserToken(null);
-
-      setIsLoading(false);
-    }
-  };
-
+  }, [userToken]);
 
   /*
    * ==========================================================
-   * LOADING SCREEN
+   * LOGOUT
    * ==========================================================
-   *
-   * SafeAreaProvider is already
-   * above this component in the
-   * returned tree.
    */
 
-  if (
-    isLoading
-  ) {
+  const logout =
+    async () => {
+      setIsLoading(true);
 
+      try {
+        /*
+         * Stop background services immediately.
+         */
+        stopHourlyBackupScheduler();
+
+        /*
+         * Disconnect Google session.
+         *
+         * This does NOT delete StoreMate
+         * WatermelonDB records.
+         */
+        try {
+          const gs =
+            GoogleSignin as any;
+
+          let signedIn =
+            false;
+
+          if (
+            typeof gs.isSignedIn ===
+            'function'
+          ) {
+            signedIn =
+              await gs.isSignedIn();
+          } else if (
+            typeof gs.getCurrentUser ===
+            'function'
+          ) {
+            const currentUser =
+              await gs.getCurrentUser();
+
+            signedIn =
+              !!currentUser;
+          }
+
+          if (
+            signedIn &&
+            typeof gs.signOut ===
+              'function'
+          ) {
+            await gs.signOut();
+          }
+        } catch (
+          googleLogoutError
+        ) {
+          console.log(
+            'Google session cleanup skipped:',
+            googleLogoutError
+          );
+        }
+
+        /*
+         * Clear ONLY the active session.
+         *
+         * Do not delete WatermelonDB.
+         */
+        await clearActiveUser();
+      } catch (error) {
+        console.error(
+          'Logout cleanup error:',
+          error
+        );
+      } finally {
+        setUserToken(null);
+        setIsLoading(false);
+      }
+    };
+
+  /*
+   * ==========================================================
+   * LOADING
+   * ==========================================================
+   */
+
+  if (isLoading) {
     return (
-
       <SafeAreaProvider>
-
         <View
           style={{
             flex: 1,
-
             backgroundColor:
               '#F5F7F6',
-
             justifyContent:
               'center',
-
             alignItems:
               'center',
           }}
         >
-
           <ActivityIndicator
             size="large"
             color="#0C9C4C"
           />
-
         </View>
-
       </SafeAreaProvider>
     );
   }
-
 
   /*
    * ==========================================================
-   * LOGIN GATEKEEPER
+   * LOGIN
    * ==========================================================
    */
 
-  if (
-    !userToken
-  ) {
-
+  if (!userToken) {
     return (
-
       <SafeAreaProvider>
-
         <LoginScreen
-          onLoginSuccess={() =>
-            setUserToken(
-              'active_session'
-            )
-          }
-        />
+          onLoginSuccess={async () => {
+            try {
+              const token =
+                await AsyncStorage.getItem(
+                  'userToken'
+                );
 
+              const userId =
+                await AsyncStorage.getItem(
+                  'userId'
+                );
+
+              if (
+                token &&
+                userId
+              ) {
+                setUserToken(token);
+              } else {
+                setUserToken(null);
+              }
+            } catch (error) {
+              console.error(
+                'Login session refresh failed:',
+                error
+              );
+
+              setUserToken(null);
+            }
+          }}
+        />
       </SafeAreaProvider>
     );
   }
-
 
   /*
    * ==========================================================
@@ -558,89 +449,43 @@ const logout =
    */
 
   return (
-
-    /*
-     * ========================================================
-     * IMPORTANT:
-     *
-     * SafeAreaProvider MUST be above:
-     *
-     * LoginScreen
-     * HomeScreen
-     * POSScreen
-     * InventoryScreen
-     * KhataScreen
-     * ProfileScreen
-     * AnalyticsScreen
-     * AdminDashboard
-     *
-     * This is what fixes:
-     *
-     * "No safe area value available"
-     * ========================================================
-     */
-
     <SafeAreaProvider>
-
       <AuthContext.Provider
         value={{
           logout,
         }}
       >
-
         <DatabaseProvider
-          database={
-            database
-          }
+          database={database}
         >
-
           <NavigationContainer
-            theme={
-              MyLightTheme
-            }
+            theme={MyLightTheme}
           >
-
             <StatusBar
               barStyle="dark-content"
               backgroundColor="#FFFFFF"
             />
 
-
-            {/* ==========================================
-                GLOBAL OFFLINE / SYNC HEADER
-                ========================================== */}
-
             <NetworkHeader
               syncStatus="synced"
             />
 
-
-            {/* ==========================================
-                MAIN NAVIGATION
-                ========================================== */}
-
             <Tab.Navigator
-
               screenOptions={{
-                headerShown:
-                  false,
+                headerShown: false,
 
                 tabBarStyle: {
-
                   backgroundColor:
                     '#FFFFFF',
 
                   borderTopColor:
                     '#EAECEC',
 
-                  height:
-                    65,
+                  height: 65,
 
-                  paddingBottom:
-                    10,
+                  paddingBottom: 10,
 
-                  paddingTop:
-                    10,
+                  paddingTop: 10,
                 },
 
                 tabBarActiveTintColor:
@@ -650,42 +495,25 @@ const logout =
                   '#9CA3AF',
 
                 tabBarLabelStyle: {
-
-                  fontSize:
-                    12,
-
-                  fontWeight:
-                    '600',
-
-                  marginTop:
-                    4,
+                  fontSize: 12,
+                  fontWeight: '600',
+                  marginTop: 4,
                 },
               }}
             >
-
-              {/* ========================================
-                  HOME
-                  ======================================== */}
-
               <Tab.Screen
-
                 name="Home"
-
                 component={
                   HomeScreen as any
                 }
-
                 options={{
                   tabBarIcon:
                     ({
                       focused,
                     }) => (
-
                       <Text
                         style={{
-                          fontSize:
-                            22,
-
+                          fontSize: 22,
                           opacity:
                             focused
                               ? 1
@@ -694,35 +522,23 @@ const logout =
                       >
                         🏠
                       </Text>
-
                     ),
                 }}
               />
 
-
-              {/* ========================================
-                  INVENTORY
-                  ======================================== */}
-
               <Tab.Screen
-
                 name="Inventory"
-
                 component={
                   InventoryScreen as any
                 }
-
                 options={{
                   tabBarIcon:
                     ({
                       focused,
                     }) => (
-
                       <Text
                         style={{
-                          fontSize:
-                            22,
-
+                          fontSize: 22,
                           opacity:
                             focused
                               ? 1
@@ -731,35 +547,23 @@ const logout =
                       >
                         📦
                       </Text>
-
                     ),
                 }}
               />
 
-
-              {/* ========================================
-                  KHATA
-                  ======================================== */}
-
               <Tab.Screen
-
                 name="Khata"
-
                 component={
                   KhataScreen as any
                 }
-
                 options={{
                   tabBarIcon:
                     ({
                       focused,
                     }) => (
-
                       <Text
                         style={{
-                          fontSize:
-                            22,
-
+                          fontSize: 22,
                           opacity:
                             focused
                               ? 1
@@ -768,35 +572,23 @@ const logout =
                       >
                         📒
                       </Text>
-
                     ),
                 }}
               />
 
-
-              {/* ========================================
-                  PROFILE
-                  ======================================== */}
-
               <Tab.Screen
-
                 name="Profile"
-
                 component={
                   ProfileScreen as any
                 }
-
                 options={{
                   tabBarIcon:
                     ({
                       focused,
                     }) => (
-
                       <Text
                         style={{
-                          fontSize:
-                            22,
-
+                          fontSize: 22,
                           opacity:
                             focused
                               ? 1
@@ -805,19 +597,13 @@ const logout =
                       >
                         👤
                       </Text>
-
                     ),
                 }}
               />
-
             </Tab.Navigator>
-
           </NavigationContainer>
-
         </DatabaseProvider>
-
       </AuthContext.Provider>
-
     </SafeAreaProvider>
   );
 }

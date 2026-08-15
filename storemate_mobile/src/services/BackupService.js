@@ -1,34 +1,21 @@
-import {
-  GoogleSignin,
-} from '@react-native-google-signin/google-signin';
-
-import {
-  database,
-} from '../core/database';
-
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { database } from '../core/database';
+import { Q } from '@nozbe/watermelondb';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import RNFS from 'react-native-fs';
+import {
+  requireCurrentUserId,
+  getCurrentUserEmail,
+} from '../core/auth/localUser';
 
+const BACKUP_MIME_TYPE = 'application/json';
+const BACKUP_VERSION = 6;
 
-const BACKUP_FILENAME =
-  'storemate_backup.json';
-
-const BACKUP_MIME_TYPE =
-  'application/json';
+const GOOGLE_WEB_CLIENT_ID =
+  '106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com';
 
 const RESTORE_PROMPT_SHOWN_KEY =
   'driveBackup_restorePromptShown';
-
-const BACKUP_VERSION =
-  3;
-
-
-/*
- * ============================================================
- * DATABASE TABLES
- * ============================================================
- */
 
 const BACKED_UP_TABLES = [
   'inventory_items',
@@ -36,16 +23,14 @@ const BACKED_UP_TABLES = [
   'sales_transactions',
 ];
 
+const PROFILE_KEY_PREFIX =
+  'storemate_profile_';
 
-/*
- * ============================================================
- * GOOGLE CONFIG
- * ============================================================
- */
+const PROFILE_IMAGE_PREFIX =
+  'storemate_profile_avatar_';
 
-const GOOGLE_WEB_CLIENT_ID =
-  '106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com';
-
+const MAX_AVATAR_BASE64_SIZE =
+  15 * 1024 * 1024;
 
 GoogleSignin.configure({
   scopes: [
@@ -62,65 +47,50 @@ GoogleSignin.configure({
 
 /*
  * ============================================================
- * PROFILE
+ * HELPERS
  * ============================================================
  */
 
-const PROFILE_STORAGE_KEYS = [
-  'userEmail',
-  'shopName',
-  'userPhone',
-  'userAddress',
-  'shopUpi',
-  'avatarUri',
-];
+function getProfileStorageKey(ownerId) {
+  return `${PROFILE_KEY_PREFIX}${ownerId}`;
+}
 
 
-const IMAGE_FILE_NAME =
-  'storemate_profile_avatar.jpg';
+function normalizeUserId(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
 
 
-/*
- * ============================================================
- * GOOGLE EMAIL
- * ============================================================
- */
+function normalizeEmail(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
 
-function extractGoogleEmail(
-  googleUser
-) {
 
-  if (!googleUser) {
-    return null;
-  }
-
+function extractGoogleEmail(googleUser) {
+  if (!googleUser) return null;
 
   if (
     googleUser.user &&
     googleUser.user.email
   ) {
-
     return googleUser.user.email;
   }
-
 
   if (
     googleUser.data &&
     googleUser.data.user &&
     googleUser.data.user.email
   ) {
-
     return googleUser.data.user.email;
   }
 
-
-  if (
-    googleUser.email
-  ) {
-
+  if (googleUser.email) {
     return googleUser.email;
   }
-
 
   return null;
 }
@@ -128,156 +98,103 @@ function extractGoogleEmail(
 
 /*
  * ============================================================
- * CHECK GOOGLE SESSION
- * ============================================================
- *
- * NEVER opens Google account selector.
+ * GOOGLE SESSION
  * ============================================================
  */
 
 async function isGoogleAlreadySignedIn() {
-
   try {
-
     if (
       typeof GoogleSignin.isSignedIn ===
       'function'
     ) {
-
       return await GoogleSignin.isSignedIn();
     }
-
 
     if (
       typeof GoogleSignin.getCurrentUser ===
       'function'
     ) {
-
-      const currentUser =
-        await GoogleSignin.getCurrentUser();
-
-      return !!currentUser;
+      return !!(
+        await GoogleSignin.getCurrentUser()
+      );
     }
 
-
     return false;
-
-  } catch (
-    error
-  ) {
-
+  } catch (error) {
     console.log(
       'Google session check failed:',
-      error?.message ||
-        error
+      error?.message || error
     );
-
 
     return false;
   }
 }
 
 
-/*
- * ============================================================
- * GET EXISTING GOOGLE TOKEN
- * ============================================================
- *
- * NEVER opens login.
- * ============================================================
- */
-
 async function getExistingGoogleToken() {
-
-  const signedIn =
-    await isGoogleAlreadySignedIn();
-
-
-  if (
-    !signedIn
-  ) {
-
-    return null;
-  }
-
-
-  const expectedEmail =
-    await AsyncStorage.getItem(
-      'userEmail'
-    );
-
-
-  if (
-    !expectedEmail
-  ) {
-
-    return null;
-  }
-
-
-  let currentUser =
-    null;
-
-
-  if (
-    typeof GoogleSignin.getCurrentUser ===
-    'function'
-  ) {
-
-    currentUser =
-      await GoogleSignin.getCurrentUser();
-  }
-
-
-  const currentEmail =
-    extractGoogleEmail(
-      currentUser
-    );
-
-
-  if (
-    !currentEmail
-  ) {
-
-    return null;
-  }
-
-
-  if (
-    currentEmail.toLowerCase() !==
-    expectedEmail.toLowerCase()
-  ) {
-
-    return null;
-  }
-
-
   try {
+    const signedIn =
+      await isGoogleAlreadySignedIn();
 
-    const tokens =
-      await GoogleSignin.getTokens();
+    if (!signedIn) {
+      return null;
+    }
 
+    const expectedEmail =
+      normalizeEmail(
+        await getCurrentUserEmail()
+      );
+
+    if (!expectedEmail) {
+      return null;
+    }
+
+    let currentUser = null;
 
     if (
-      !tokens ||
-      !tokens.accessToken
+      typeof GoogleSignin.getCurrentUser ===
+      'function'
     ) {
+      currentUser =
+        await GoogleSignin.getCurrentUser();
+    }
+
+    const currentEmail =
+      normalizeEmail(
+        extractGoogleEmail(
+          currentUser
+        )
+      );
+
+    if (
+      currentEmail &&
+      currentEmail !== expectedEmail
+    ) {
+      console.log(
+        'Google Drive session belongs to another Google account.'
+      );
 
       return null;
     }
 
+    if (
+      typeof GoogleSignin.getTokens !==
+      'function'
+    ) {
+      return null;
+    }
 
-    return tokens.accessToken;
+    const tokens =
+      await GoogleSignin.getTokens();
 
-  } catch (
-    error
-  ) {
+    return tokens?.accessToken || null;
 
+  } catch (error) {
     console.log(
       'Existing Google token unavailable:',
-      error?.message
+      error?.message || error
     );
-
 
     return null;
   }
@@ -289,203 +206,228 @@ async function getExistingGoogleToken() {
  * EXPLICIT GOOGLE SIGN-IN
  * ============================================================
  *
- * ONLY call this from an explicit Backup/Restore action.
- * ============================================================
+ * Only called by explicit Backup / Restore.
  */
 
 async function ensureSignedInAndGetToken() {
-
-  if (
-    typeof GoogleSignin.hasPlayServices ===
-    'function'
-  ) {
-
-    await GoogleSignin.hasPlayServices({
-      showPlayServicesUpdateDialog:
-        true,
-    });
-  }
-
-
-  const expectedEmail =
-    await AsyncStorage.getItem(
-      'userEmail'
-    );
-
-
-  if (
-    !expectedEmail
-  ) {
-
-    throw new Error(
-      'StoreMate profile email not found. Please log in again.'
-    );
-  }
-
-
-  let currentUser =
-    null;
-
-
-  if (
-    typeof GoogleSignin.getCurrentUser ===
-    'function'
-  ) {
-
-    currentUser =
-      await GoogleSignin.getCurrentUser();
-  }
-
-
-  let currentEmail =
-    extractGoogleEmail(
-      currentUser
-    );
-
-
-  /*
-   * Wrong Google account:
-   * remove it.
-   */
-
-  if (
-    currentEmail &&
-    currentEmail.toLowerCase() !==
-      expectedEmail.toLowerCase()
-  ) {
-
-    try {
-
-      await GoogleSignin.signOut();
-
-    } catch (
-      error
+  try {
+    if (
+      typeof GoogleSignin.hasPlayServices ===
+      'function'
     ) {
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+    }
 
-      console.log(
-        'Google account cleanup failed:',
-        error?.message
+    const expectedEmail =
+      normalizeEmail(
+        await getCurrentUserEmail()
+      );
+
+    if (!expectedEmail) {
+      throw new Error(
+        'StoreMate profile email not found. Please log in again.'
       );
     }
 
-
-    currentUser =
-      null;
-
-    currentEmail =
-      null;
-  }
-
-
-  /*
-   * ONLY HERE may the Google popup open.
-   */
-
-  if (
-    !currentUser
-  ) {
-
-    currentUser =
-      await GoogleSignin.signIn();
-
+    let currentUser = null;
 
     if (
-      currentUser &&
-      currentUser.type ===
-        'cancelled'
+      typeof GoogleSignin.getCurrentUser ===
+      'function'
     ) {
+      currentUser =
+        await GoogleSignin.getCurrentUser();
+    }
+
+    let currentEmail =
+      normalizeEmail(
+        extractGoogleEmail(
+          currentUser
+        )
+      );
+
+    if (
+      currentEmail &&
+      currentEmail !== expectedEmail
+    ) {
+      try {
+        await GoogleSignin.signOut();
+      } catch {}
+
+      currentUser = null;
+      currentEmail = null;
+    }
+
+    if (
+      !currentUser ||
+      !currentEmail
+    ) {
+      if (
+        typeof GoogleSignin.signIn !==
+        'function'
+      ) {
+        throw new Error(
+          'Google Sign-In is unavailable on this device.'
+        );
+      }
+
+      currentUser =
+        await GoogleSignin.signIn();
+
+      currentEmail =
+        normalizeEmail(
+          extractGoogleEmail(
+            currentUser
+          )
+        );
+    }
+
+    if (
+      currentEmail !== expectedEmail
+    ) {
+      try {
+        await GoogleSignin.signOut();
+      } catch {}
 
       throw new Error(
-        'Google Sign-In was cancelled.'
+        `Please select the Google account connected to StoreMate (${expectedEmail}).`
       );
     }
 
+    const tokens =
+      await GoogleSignin.getTokens();
 
-    currentEmail =
-      extractGoogleEmail(
-        currentUser
-      );
-  }
-
-
-  /*
-   * Security check.
-   */
-
-  if (
-    !currentEmail ||
-    currentEmail.toLowerCase() !==
-      expectedEmail.toLowerCase()
-  ) {
-
-    try {
-
-      await GoogleSignin.signOut();
-
-    } catch (
-      error
-    ) {
-
-      console.log(
-        'Google security cleanup failed:',
-        error?.message
+    if (!tokens?.accessToken) {
+      throw new Error(
+        'Google Drive authorization failed.'
       );
     }
 
+    return tokens.accessToken;
 
+  } catch (error) {
     throw new Error(
-      `Security Mismatch: Select the Google Drive account for ${expectedEmail}.`
+      error?.message ||
+      'Google Drive authentication failed.'
     );
   }
-
-
-  const tokens =
-    await GoogleSignin.getTokens();
-
-
-  if (
-    !tokens ||
-    !tokens.accessToken
-  ) {
-
-    throw new Error(
-      'Google Drive access token could not be obtained.'
-    );
-  }
-
-
-  return tokens.accessToken;
 }
 
 
 /*
  * ============================================================
- * EXPORT PROFILE
+ * BACKUP FILE NAME
  * ============================================================
  */
 
-async function exportLocalProfile() {
+function getBackupFilename(ownerId) {
+  const safeOwner =
+    String(ownerId || 'unknown')
+      .replace(
+        /[^a-zA-Z0-9._-]/g,
+        '_'
+      )
+      .slice(0, 100);
 
-  const values =
-    await AsyncStorage.multiGet(
-      PROFILE_STORAGE_KEYS
+  return `storemate_backup_${safeOwner}.json`;
+}
+
+
+function getAvatarFilename(ownerId) {
+  const safeOwner =
+    String(ownerId || 'unknown')
+      .replace(
+        /[^a-zA-Z0-9._-]/g,
+        '_'
+      )
+      .slice(0, 80);
+
+  return `${PROFILE_IMAGE_PREFIX}${safeOwner}.jpg`;
+}
+
+
+/*
+ * ============================================================
+ * EXPORT USER PROFILE
+ * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * ONLY current user's profile key is read.
+ *
+ * No global shopName/userPhone/avatar keys are used.
+ */
+
+async function exportLocalProfile(ownerId) {
+  const profileKey =
+    getProfileStorageKey(ownerId);
+
+  const storedProfile =
+    await AsyncStorage.getItem(
+      profileKey
     );
 
+  let profile = {};
 
-  const profile =
-    {};
+  if (storedProfile) {
+    try {
+      const parsed =
+        JSON.parse(
+          storedProfile
+        );
 
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+      ) {
+        profile = parsed;
+      }
 
-  values.forEach(
-    ([key, value]) => {
-
-      profile[key] =
-        value || null;
+    } catch (error) {
+      console.log(
+        'Profile JSON invalid:',
+        error?.message || error
+      );
     }
-  );
+  }
 
+  /*
+   * Email fallback is safe because it belongs
+   * to the active authenticated user.
+   */
 
-  return profile;
+  const currentEmail =
+    await getCurrentUserEmail();
+
+  return {
+    email:
+      profile.email ||
+      currentEmail ||
+      '',
+
+    shopName:
+      profile.shopName ||
+      '',
+
+    phone:
+      profile.phone ||
+      '',
+
+    address:
+      profile.address ||
+      '',
+
+    upiId:
+      profile.upiId ||
+      '',
+
+    avatarUri:
+      profile.avatarUri ||
+      null,
+  };
 }
 
 
@@ -495,51 +437,20 @@ async function exportLocalProfile() {
  * ============================================================
  */
 
-async function imageUriToBase64(
-  uri
-) {
-
+async function imageUriToBase64(uri) {
   if (!uri) {
     return null;
   }
 
-
   try {
-
-    if (
-      uri.startsWith(
-        'data:image/'
-      )
-    ) {
-
-      const commaIndex =
-        uri.indexOf(',');
-
-
-      if (
-        commaIndex !== -1
-      ) {
-
-        return uri.substring(
-          commaIndex + 1
-        );
-      }
-
-
-      return null;
-    }
-
-
     let filePath =
-      uri;
-
+      String(uri);
 
     if (
       filePath.startsWith(
         'file://'
       )
     ) {
-
       filePath =
         filePath.replace(
           'file://',
@@ -547,157 +458,43 @@ async function imageUriToBase64(
         );
     }
 
-
     if (
-      RNFS &&
       typeof RNFS.exists ===
-        'function'
+      'function' &&
+      typeof RNFS.readFile ===
+      'function'
     ) {
-
       const exists =
         await RNFS.exists(
           filePath
         );
 
+      if (exists) {
+        const base64 =
+          await RNFS.readFile(
+            filePath,
+            'base64'
+          );
 
-      if (
-        exists &&
-        typeof RNFS.readFile ===
-          'function'
-      ) {
-
-        return await RNFS.readFile(
-          filePath,
-          'base64'
-        );
-      }
-    }
-
-
-    /*
-     * Content URI fallback.
-     */
-
-    if (
-      typeof fetch ===
-      'function'
-    ) {
-
-      const response =
-        await fetch(
-          uri
-        );
-
-
-      if (
-        !response.ok
-      ) {
-
-        return null;
-      }
-
-
-      if (
-        typeof FileReader ===
-        'undefined'
-      ) {
-
-        return null;
-      }
-
-
-      const blob =
-        await response.blob();
-
-
-      return await new Promise(
-        (
-          resolve
-        ) => {
-
-          try {
-
-            const reader =
-              new FileReader();
-
-
-            reader.onloadend =
-              () => {
-
-                try {
-
-                  const result =
-                    String(
-                      reader.result ||
-                        ''
-                    );
-
-
-                  const commaIndex =
-                    result.indexOf(
-                      ','
-                    );
-
-
-                  if (
-                    commaIndex ===
-                    -1
-                  ) {
-
-                    resolve(
-                      null
-                    );
-
-                    return;
-                  }
-
-
-                  resolve(
-                    result.substring(
-                      commaIndex + 1
-                    )
-                  );
-
-                } catch {
-
-                  resolve(
-                    null
-                  );
-                }
-              };
-
-
-            reader.onerror =
-              () => resolve(null);
-
-
-            reader.readAsDataURL(
-              blob
-            );
-
-          } catch {
-
-            resolve(
-              null
-            );
-          }
+        if (
+          base64 &&
+          base64.length >
+            MAX_AVATAR_BASE64_SIZE
+        ) {
+          return null;
         }
-      );
-    }
 
+        return base64;
+      }
+    }
 
     return null;
 
-  } catch (
-    error
-  ) {
-
+  } catch (error) {
     console.log(
       'Avatar conversion skipped:',
-      error?.message ||
-        error
+      error?.message || error
     );
-
 
     return null;
   }
@@ -706,66 +503,61 @@ async function imageUriToBase64(
 
 /*
  * ============================================================
- * EXPORT PROFILE DATA
+ * EXPORT PROFILE + AVATAR
  * ============================================================
  */
 
-async function exportProfileData() {
-
+async function exportProfileData(ownerId) {
   const profile =
-    await exportLocalProfile();
+    await exportLocalProfile(
+      ownerId
+    );
 
-
-  let avatarBase64 =
-    null;
-
+  let avatarBase64 = null;
 
   if (
     profile.avatarUri
   ) {
-
     avatarBase64 =
       await imageUriToBase64(
         profile.avatarUri
       );
   }
 
-
   return {
+    ownerId,
 
     data: {
-
-      userEmail:
-        profile.userEmail,
+      email:
+        profile.email,
 
       shopName:
         profile.shopName,
 
-      userPhone:
-        profile.userPhone,
+      phone:
+        profile.phone,
 
-      userAddress:
-        profile.userAddress,
+      address:
+        profile.address,
 
-      shopUpi:
-        profile.shopUpi,
+      upiId:
+        profile.upiId,
     },
-
 
     avatar:
       avatarBase64
         ? {
-
             base64:
               avatarBase64,
 
             fileName:
-              IMAGE_FILE_NAME,
+              getAvatarFilename(
+                ownerId
+              ),
 
             mimeType:
               'image/jpeg',
           }
-
         : null,
   };
 }
@@ -773,41 +565,47 @@ async function exportProfileData() {
 
 /*
  * ============================================================
- * EXPORT LOCAL DATABASE
+ * EXPORT COMPLETE LOCAL DATA
  * ============================================================
  */
 
 async function exportLocalData() {
+  const ownerId =
+    await requireCurrentUserId();
 
   const payload = {
-
     version:
       BACKUP_VERSION,
+
+    ownerId,
 
     exportedAt:
       Date.now(),
 
-    tables:
-      {},
+    tables: {},
 
     profile:
       null,
   };
 
-
   for (
     const tableName of
       BACKED_UP_TABLES
   ) {
+    const collection =
+      database.get(
+        tableName
+      );
 
     const records =
-      await database
-        .get(
-          tableName
+      await collection
+        .query(
+          Q.where(
+            'owner_id',
+            ownerId
+          )
         )
-        .query()
         .fetch();
-
 
     payload.tables[
       tableName
@@ -815,14 +613,17 @@ async function exportLocalData() {
       records.map(
         record => ({
           ...record._raw,
+
+          owner_id:
+            ownerId,
         })
       );
   }
 
-
   payload.profile =
-    await exportProfileData();
-
+    await exportProfileData(
+      ownerId
+    );
 
   return payload;
 }
@@ -830,81 +631,54 @@ async function exportLocalData() {
 
 /*
  * ============================================================
- * FIND DRIVE BACKUP
+ * FIND EXISTING DRIVE BACKUP
  * ============================================================
  */
 
 async function findExistingBackupFileId(
-  accessToken
+  accessToken,
+  ownerId
 ) {
-
-  if (
-    !accessToken
-  ) {
-
+  if (!accessToken) {
     return null;
   }
 
-
   try {
+    const backupFilename =
+      getBackupFilename(
+        ownerId
+      );
 
     const query =
       encodeURIComponent(
-        `name='${BACKUP_FILENAME}' and trashed=false`
+        `name='${backupFilename}' and trashed=false`
       );
-
 
     const response =
       await fetch(
-        `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}&fields=files(id,modifiedTime)`,
+        `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}&fields=files(id,name,modifiedTime)`,
         {
           headers: {
-
             Authorization:
               `Bearer ${accessToken}`,
           },
         }
       );
 
-
-    if (
-      !response.ok
-    ) {
-
-      console.log(
-        `Drive lookup failed: ${response.status}`
-      );
-
-
+    if (!response.ok) {
       return null;
     }
-
 
     const data =
       await response.json();
 
+    return data?.files?.[0] || null;
 
-    if (
-      data.files &&
-      data.files.length > 0
-    ) {
-
-      return data.files[0];
-    }
-
-
-    return null;
-
-  } catch (
-    error
-  ) {
-
+  } catch (error) {
     console.log(
       'Drive lookup error:',
-      error?.message ||
-        error
+      error?.message || error
     );
-
 
     return null;
   }
@@ -913,53 +687,43 @@ async function findExistingBackupFileId(
 
 /*
  * ============================================================
- * BACKUP NOW
- * ============================================================
- *
- * Explicit user action.
- *
- * Internet + Google login required.
+ * BUILD MULTIPART DRIVE REQUEST
  * ============================================================
  */
 
-export async function backupNow() {
-
-  const accessToken =
-    await ensureSignedInAndGetToken();
-
-
-  const payload =
-    await exportLocalData();
-
-
+async function uploadBackupToDrive(
+  accessToken,
+  ownerId,
+  payload
+) {
   const jsonBody =
     JSON.stringify(
       payload
     );
 
-
   const existing =
     await findExistingBackupFileId(
-      accessToken
+      accessToken,
+      ownerId
     );
 
+  const backupFilename =
+    getBackupFilename(
+      ownerId
+    );
 
   const metadata =
     existing
-
       ? {
-
           name:
-            BACKUP_FILENAME,
+            backupFilename,
 
           mimeType:
             BACKUP_MIME_TYPE,
         }
-
       : {
-
           name:
-            BACKUP_FILENAME,
+            backupFilename,
 
           mimeType:
             BACKUP_MIME_TYPE,
@@ -969,10 +733,8 @@ export async function backupNow() {
           ],
         };
 
-
   const boundary =
     `storemate-${Date.now()}`;
-
 
   const multipartBody =
     `--${boundary}\r\n` +
@@ -983,14 +745,10 @@ export async function backupNow() {
     `${jsonBody}\r\n` +
     `--${boundary}--`;
 
-
   const url =
     existing
-
       ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart`
-
       : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
-
 
   const response =
     await fetch(
@@ -1002,7 +760,6 @@ export async function backupNow() {
             : 'POST',
 
         headers: {
-
           Authorization:
             `Bearer ${accessToken}`,
 
@@ -1015,11 +772,7 @@ export async function backupNow() {
       }
     );
 
-
-  if (
-    !response.ok
-  ) {
-
+  if (!response.ok) {
     const errorText =
       await response
         .text()
@@ -1027,15 +780,38 @@ export async function backupNow() {
           () => ''
         );
 
-
     throw new Error(
       `Drive upload failed (${response.status})${errorText ? `: ${errorText}` : ''}`
     );
   }
 
+  return existing;
+}
+
+
+/*
+ * ============================================================
+ * MANUAL BACKUP
+ * ============================================================
+ */
+
+export async function backupNow() {
+  const ownerId =
+    await requireCurrentUserId();
+
+  const accessToken =
+    await ensureSignedInAndGetToken();
+
+  const payload =
+    await exportLocalData();
+
+  await uploadBackupToDrive(
+    accessToken,
+    ownerId,
+    payload
+  );
 
   return {
-
     success:
       true,
 
@@ -1053,6 +829,34 @@ export async function backupNow() {
         payload.profile.avatar
       ),
 
+    counts: {
+      inventory:
+        payload.tables
+          .inventory_items
+          ?.length || 0,
+
+      ledger:
+        payload.tables
+          .ledger_entries
+          ?.length || 0,
+
+      sales:
+        payload.tables
+          .sales_transactions
+          ?.length || 0,
+    },
+
+    profileIncluded:
+      !!payload.profile,
+
+    avatarIncluded:
+      !!(
+        payload.profile &&
+        payload.profile.avatar
+      ),
+
+    ownerId,
+
     timestamp:
       payload.exportedAt,
   };
@@ -1065,23 +869,18 @@ export async function backupNow() {
  * ============================================================
  *
  * NEVER opens Google Sign-In.
- * ============================================================
  */
 
 export async function checkForExistingBackup() {
-
   try {
+    const ownerId =
+      await requireCurrentUserId();
 
     const accessToken =
       await getExistingGoogleToken();
 
-
-    if (
-      !accessToken
-    ) {
-
+    if (!accessToken) {
       return {
-
         found:
           false,
 
@@ -1090,19 +889,14 @@ export async function checkForExistingBackup() {
       };
     }
 
-
     const existing =
       await findExistingBackupFileId(
-        accessToken
+        accessToken,
+        ownerId
       );
 
-
-    if (
-      existing
-    ) {
-
+    if (existing) {
       return {
-
         found:
           true,
 
@@ -1114,27 +908,18 @@ export async function checkForExistingBackup() {
       };
     }
 
-
     return {
       found:
         false,
     };
 
-  } catch (
-    error
-  ) {
-
-    console.log(
-      'Drive backup check skipped:',
-      error?.message ||
-        error
-    );
-
-
+  } catch (error) {
     return {
-
       found:
         false,
+
+      googleNotSignedIn:
+        true,
 
       error:
         error?.message ||
@@ -1151,23 +936,19 @@ export async function checkForExistingBackup() {
  */
 
 async function restoreAvatarImage(
-  avatar
+  avatar,
+  ownerId
 ) {
-
   if (
     !avatar ||
     !avatar.base64
   ) {
-
     return null;
   }
 
-
   try {
-
     const directory =
       RNFS.DocumentDirectoryPath;
-
 
     await RNFS.mkdir(
       directory
@@ -1175,30 +956,22 @@ async function restoreAvatarImage(
       () => {}
     );
 
-
     const filePath =
-      `${directory}/${IMAGE_FILE_NAME}`;
-
+      `${directory}/${getAvatarFilename(
+        ownerId
+      )}`;
 
     try {
-
       if (
         await RNFS.exists(
           filePath
         )
       ) {
-
         await RNFS.unlink(
           filePath
         );
       }
-
-    } catch {
-      /*
-       * Ignore old image cleanup errors.
-       */
-    }
-
+    } catch {}
 
     await RNFS.writeFile(
       filePath,
@@ -1206,19 +979,13 @@ async function restoreAvatarImage(
       'base64'
     );
 
-
     return `file://${filePath}`;
 
-  } catch (
-    error
-  ) {
-
+  } catch (error) {
     console.log(
       'Avatar restore skipped:',
-      error?.message ||
-        error
+      error?.message || error
     );
-
 
     return null;
   }
@@ -1229,18 +996,20 @@ async function restoreAvatarImage(
  * ============================================================
  * RESTORE PROFILE
  * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * ONLY current user's profile key is updated.
+ *
+ * NO global profile keys are written.
  */
 
 async function restoreProfileData(
-  profile
+  profile,
+  ownerId
 ) {
-
-  if (
-    !profile
-  ) {
-
+  if (!profile) {
     return {
-
       restored:
         false,
 
@@ -1249,96 +1018,102 @@ async function restoreProfileData(
     };
   }
 
-
   const data =
-    profile.data ||
-    {};
+    profile.data || {};
 
+  const profileKey =
+    getProfileStorageKey(
+      ownerId
+    );
 
-  const values =
-    [];
+  let existingProfile = {};
 
+  try {
+    const stored =
+      await AsyncStorage.getItem(
+        profileKey
+      );
 
-  const keys = [
-    'userEmail',
-    'shopName',
-    'userPhone',
-    'userAddress',
-    'shopUpi',
-  ];
-
-
-  keys.forEach(
-    key => {
-
-      const value =
-        data[key];
-
+    if (stored) {
+      const parsed =
+        JSON.parse(
+          stored
+        );
 
       if (
-        value !== null &&
-        value !== undefined &&
-        String(
-          value
-        ).trim() !== ''
+        parsed &&
+        typeof parsed === 'object'
       ) {
-
-        values.push([
-          key,
-          String(
-            value
-          ),
-        ]);
+        existingProfile =
+          parsed;
       }
     }
-  );
-
-
-  if (
-    values.length > 0
-  ) {
-
-    await AsyncStorage.multiSet(
-      values
-    );
+  } catch {
+    existingProfile = {};
   }
 
+  const restoredProfile = {
+    email:
+      data.email ||
+      existingProfile.email ||
+      '',
+
+    shopName:
+      data.shopName ||
+      existingProfile.shopName ||
+      '',
+
+    phone:
+      data.phone ||
+      existingProfile.phone ||
+      '',
+
+    address:
+      data.address ||
+      existingProfile.address ||
+      '',
+
+    upiId:
+      data.upiId ||
+      existingProfile.upiId ||
+      '',
+
+    avatarUri:
+      existingProfile.avatarUri ||
+      null,
+  };
 
   let avatarRestored =
     false;
 
-
   if (
     profile.avatar
   ) {
-
     const avatarUri =
       await restoreAvatarImage(
-        profile.avatar
+        profile.avatar,
+        ownerId
       );
 
-
-    if (
-      avatarUri
-    ) {
-
-      await AsyncStorage.setItem(
-        'avatarUri',
-        avatarUri
-      );
-
+    if (avatarUri) {
+      restoredProfile.avatarUri =
+        avatarUri;
 
       avatarRestored =
         true;
     }
   }
 
+  await AsyncStorage.setItem(
+    profileKey,
+    JSON.stringify(
+      restoredProfile
+    )
+  );
 
   return {
-
     restored:
-      values.length >
-      0,
+      true,
 
     avatarRestored,
   };
@@ -1349,72 +1124,128 @@ async function restoreProfileData(
  * ============================================================
  * RESTORE FROM DRIVE
  * ============================================================
- *
- * Explicit user action only.
- * ============================================================
  */
 
 export async function restoreFromDrive(
   fileId
 ) {
-
-  if (
-    !fileId
-  ) {
-
+  if (!fileId) {
     throw new Error(
       'Backup file ID is missing.'
     );
   }
 
+  const currentOwnerId =
+    await requireCurrentUserId();
 
   const accessToken =
     await ensureSignedInAndGetToken();
-
 
   const response =
     await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
         headers: {
-
           Authorization:
             `Bearer ${accessToken}`,
         },
       }
     );
 
-
-  if (
-    !response.ok
-  ) {
-
+  if (!response.ok) {
     throw new Error(
       `Drive download failed (${response.status})`
     );
   }
 
-
   const payload =
     await response.json();
-
 
   if (
     !payload ||
     !payload.tables
   ) {
-
     throw new Error(
       'Backup file is malformed or empty.'
     );
   }
 
+  /*
+   * ==========================================================
+   * STRICT OWNER CHECK
+   * ==========================================================
+   */
+
+  const backupOwnerId =
+    normalizeUserId(
+      payload.ownerId
+    );
+
+  const activeOwnerId =
+    normalizeUserId(
+      currentOwnerId
+    );
+
+  if (backupOwnerId) {
+    if (
+      backupOwnerId !==
+      activeOwnerId
+    ) {
+      throw new Error(
+        'This backup belongs to another StoreMate account.'
+      );
+    }
+  } else {
+    /*
+     * Legacy backup.
+     *
+     * Verify by account email.
+     */
+
+    const backupEmail =
+      normalizeEmail(
+        payload.profile?.data
+          ?.email
+      );
+
+    const activeEmail =
+      normalizeEmail(
+        await getCurrentUserEmail()
+      );
+
+    if (
+      !backupEmail ||
+      !activeEmail ||
+      backupEmail !==
+      activeEmail
+    ) {
+      throw new Error(
+        'This older backup cannot be safely restored because its StoreMate account could not be verified.'
+      );
+    }
+  }
+
 
   /*
    * ==========================================================
-   * DATABASE RESTORE
+   * RESTORE DATABASE
    * ==========================================================
+   *
+   * IMPORTANT:
+   *
+   * Existing local records are NOT overwritten.
    */
+
+  const restoredCounts = {
+    inventory:
+      0,
+
+    ledger:
+      0,
+
+    sales:
+      0,
+  };
 
   await database.write(
     async () => {
@@ -1423,58 +1254,61 @@ export async function restoreFromDrive(
         const tableName of
           BACKED_UP_TABLES
       ) {
-
         const rows =
           payload.tables[
             tableName
           ] || [];
-
 
         const collection =
           database.get(
             tableName
           );
 
-
         const validColumns =
           collection.schema.columns;
 
-
         for (
-          const row of
-            rows
+          const row of rows
         ) {
-
           if (
             !row ||
             !row.id
           ) {
-
             continue;
           }
 
+          /*
+           * If backup has an owner, it MUST
+           * belong to current user.
+           */
+
+          if (
+            row.owner_id &&
+            normalizeUserId(
+              row.owner_id
+            ) !==
+              activeOwnerId
+          ) {
+            throw new Error(
+              'Backup contains records belonging to another StoreMate account.'
+            );
+          }
+
+          /*
+           * Do not overwrite existing
+           * local records.
+           */
 
           try {
-
             await collection.find(
               row.id
             );
 
-
-            /*
-             * Already exists locally.
-             * Do not overwrite local data.
-             */
-
             continue;
 
           } catch {
-            /*
-             * Record does not exist.
-             * Create it below.
-             */
+            // Record doesn't exist.
           }
-
 
           await collection.create(
             record => {
@@ -1485,33 +1319,98 @@ export async function restoreFromDrive(
                 columnName => {
 
                   if (
-                    row[columnName] !==
+                    row[
+                      columnName
+                    ] !==
                     undefined
                   ) {
-
                     record._setRaw(
                       columnName,
-                      row[columnName]
+                      row[
+                        columnName
+                      ]
                     );
                   }
                 }
               );
+
+              /*
+               * NEVER trust the owner_id
+               * from the backup.
+               *
+               * Assign the currently logged-in
+               * StoreMate user.
+               */
+
+              if (
+                validColumns.owner_id
+              ) {
+                record._setRaw(
+                  'owner_id',
+                  currentOwnerId
+                );
+              }
+
+              /*
+               * Restored records need to be
+               * considered synced because they
+               * came from cloud backup.
+               */
+
+              if (
+                validColumns.is_synced
+              ) {
+                record._setRaw(
+                  'is_synced',
+                  true
+                );
+              }
             }
           );
+
+          if (
+            tableName ===
+            'inventory_items'
+          ) {
+            restoredCounts.inventory +=
+              1;
+          }
+
+          if (
+            tableName ===
+            'ledger_entries'
+          ) {
+            restoredCounts.ledger +=
+              1;
+          }
+
+          if (
+            tableName ===
+            'sales_transactions'
+          ) {
+            restoredCounts.sales +=
+              1;
+          }
         }
       }
     }
   );
 
 
+  /*
+   * ==========================================================
+   * RESTORE PROFILE
+   * ==========================================================
+   */
+
   const profileResult =
     await restoreProfileData(
-      payload.profile
+      payload.profile,
+      currentOwnerId
     );
 
 
   return {
-
     success:
       true,
 
@@ -1520,6 +1419,8 @@ export async function restoreFromDrive(
         payload.tables
       ),
 
+    restoredCounts,
+
     profileRestored:
       profileResult.restored,
 
@@ -1527,86 +1428,63 @@ export async function restoreFromDrive(
       profileResult.avatarRestored,
 
     backupVersion:
-      payload.version ||
-      1,
+      payload.version || 1,
+
+    ownerId:
+      currentOwnerId,
   };
 }
 
 
 /*
  * ============================================================
- * FIRST LAUNCH RESTORE
+ * FIRST-LAUNCH RESTORE OFFER
  * ============================================================
  *
- * NEVER opens Google login.
- * ============================================================
+ * NEVER opens Google Sign-In.
  */
 
 export async function offerRestoreIfFirstLaunch(
   onFoundBackup
 ) {
-
   try {
-
     const alreadyShown =
       await AsyncStorage.getItem(
         RESTORE_PROMPT_SHOWN_KEY
       );
 
-
-    if (
-      alreadyShown
-    ) {
-
+    if (alreadyShown) {
       return;
     }
-
 
     const result =
       await checkForExistingBackup();
 
-
-    /*
-     * Do not mark it permanently as shown
-     * when Google is not connected.
-     *
-     * This allows the check again later
-     * when the user intentionally connects Drive.
-     */
-
     if (
       result.googleNotSignedIn
     ) {
-
       return;
     }
-
 
     await AsyncStorage.setItem(
       RESTORE_PROMPT_SHOWN_KEY,
       'true'
     );
 
-
     if (
       result.found &&
       typeof onFoundBackup ===
-        'function'
+      'function'
     ) {
-
       onFoundBackup(
         result
       );
     }
 
-  } catch (
-    error
-  ) {
-
+  } catch (error) {
     console.log(
       'Restore offer skipped:',
-      error?.message ||
-        error
+      error?.message || error
     );
   }
 }
@@ -1617,201 +1495,60 @@ export async function offerRestoreIfFirstLaunch(
  * HOURLY BACKUP
  * ============================================================
  *
- * NEVER opens Google account selector.
- * ============================================================
+ * NEVER opens Google Sign-In.
  */
 
-let backupInterval =
-  null;
+let backupInterval = null;
 
 
 export function startHourlyBackupScheduler() {
-
-  if (
-    backupInterval
-  ) {
-
+  if (backupInterval) {
     return;
   }
 
-
   const ONE_HOUR =
-    60 *
-    60 *
-    1000;
-
+    60 * 60 * 1000;
 
   backupInterval =
     setInterval(
       async () => {
 
         try {
-
-          const userEmail =
-            await AsyncStorage.getItem(
-              'userEmail'
-            );
-
-
-          if (
-            !userEmail
-          ) {
-
-            return;
-          }
-
-
-          /*
-           * Get existing Google token ONLY.
-           *
-           * If unavailable:
-           * silently skip.
-           */
+          const ownerId =
+            await requireCurrentUserId();
 
           const accessToken =
             await getExistingGoogleToken();
 
-
-          if (
-            !accessToken
-          ) {
-
-            console.log(
-              'Hourly backup skipped: no existing Google Drive session.'
-            );
-
+          if (!accessToken) {
             return;
           }
-
-
-          /*
-           * Export local data.
-           */
 
           const payload =
             await exportLocalData();
 
-
-          const jsonBody =
-            JSON.stringify(
-              payload
-            );
-
-
-          const existing =
-            await findExistingBackupFileId(
-              accessToken
-            );
-
-
-          const metadata =
-            existing
-
-              ? {
-
-                  name:
-                    BACKUP_FILENAME,
-
-                  mimeType:
-                    BACKUP_MIME_TYPE,
-                }
-
-              : {
-
-                  name:
-                    BACKUP_FILENAME,
-
-                  mimeType:
-                    BACKUP_MIME_TYPE,
-
-                  parents: [
-                    'appDataFolder',
-                  ],
-                };
-
-
-          const boundary =
-            `storemate-auto-${Date.now()}`;
-
-
-          const multipartBody =
-            `--${boundary}\r\n` +
-            `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-            `${JSON.stringify(metadata)}\r\n` +
-            `--${boundary}\r\n` +
-            `Content-Type: ${BACKUP_MIME_TYPE}\r\n\r\n` +
-            `${jsonBody}\r\n` +
-            `--${boundary}--`;
-
-
-          const url =
-            existing
-
-              ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart`
-
-              : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
-
-
-          const response =
-            await fetch(
-              url,
-              {
-                method:
-                  existing
-                    ? 'PATCH'
-                    : 'POST',
-
-                headers: {
-
-                  Authorization:
-                    `Bearer ${accessToken}`,
-
-                  'Content-Type':
-                    `multipart/related; boundary=${boundary}`,
-                },
-
-                body:
-                  multipartBody,
-              }
-            );
-
-
-          if (
-            !response.ok
-          ) {
-
-            console.log(
-              `Hourly backup failed: ${response.status}`
-            );
-
-
-            return;
-          }
-
-
-          console.log(
-            'Hourly StoreMate backup completed.'
+          await uploadBackupToDrive(
+            accessToken,
+            ownerId,
+            payload
           );
 
-        } catch (
-          error
-        ) {
+          console.log(
+            'Hourly Google Drive backup completed.'
+          );
+
+        } catch (error) {
 
           /*
-           * VERY IMPORTANT:
-           *
-           * Never show an Alert here.
-           * Never change app state.
-           * Never block Home/POS.
+           * Background backup failure must
+           * NEVER disturb the user.
            */
 
           console.log(
             'Hourly backup skipped:',
-            error?.message ||
-              error
+            error?.message || error
           );
         }
-
       },
       ONE_HOUR
     );
@@ -1825,15 +1562,10 @@ export function startHourlyBackupScheduler() {
  */
 
 export function stopHourlyBackupScheduler() {
-
-  if (
-    backupInterval
-  ) {
-
+  if (backupInterval) {
     clearInterval(
       backupInterval
     );
-
 
     backupInterval =
       null;

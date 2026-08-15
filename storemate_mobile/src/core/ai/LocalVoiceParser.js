@@ -3,11 +3,14 @@
  * StoreMate Local Voice Parser
  * ============================================================
  *
- * IMPORTANT:
+ * Responsibilities:
  *
- * This file ONLY converts speech into an intent object.
- *
- * It NEVER writes to WatermelonDB.
+ * 1. Convert speech into a structured intent object.
+ * 2. Work completely offline.
+ * 3. Never write directly to WatermelonDB.
+ * 4. Customer/account commands are detected BEFORE product
+ *    commands so "create Ravi account" can never become
+ *    "product: Ravi".
  *
  * Database writes happen only inside IntentHandler.js.
  * ============================================================
@@ -22,9 +25,7 @@
 
 const SYNONYMS = {
 
-  /*
-   * Sales
-   */
+  /* Sales */
   cell: 'sell',
   sel: 'sell',
   sal: 'sell',
@@ -35,9 +36,7 @@ const SYNONYMS = {
   bikri: 'sell',
   bill: 'sell',
 
-  /*
-   * Inventory
-   */
+  /* Inventory */
   jodo: 'add',
   daalo: 'add',
   dalo: 'add',
@@ -46,17 +45,13 @@ const SYNONYMS = {
   ad: 'add',
   plus: 'add',
 
-  /*
-   * Khata
-   */
+  /* Khata */
   udhaar: 'khata',
   udhar: 'khata',
   baki: 'khata',
   khaata: 'khata',
 
-  /*
-   * Payment
-   */
+  /* Payment */
   jama: 'received',
   diye: 'received',
   diya: 'received',
@@ -67,9 +62,7 @@ const SYNONYMS = {
   mil: 'received',
   mile: 'received',
 
-  /*
-   * Hindi numbers
-   */
+  /* Hindi numbers */
   ek: '1',
   do: '2',
   teen: '3',
@@ -101,6 +94,7 @@ const STOP_WORDS = new Set([
   'an',
   'a',
   'account',
+  'accounts',
   'customer',
   'customers',
   'khata',
@@ -110,9 +104,10 @@ const STOP_WORDS = new Set([
   'bana',
   'banado',
   'banaao',
-  'do',
+  'banao',
   'karo',
   'kar',
+  'do',
   'please',
   'the',
   'for',
@@ -124,6 +119,41 @@ const STOP_WORDS = new Set([
   'naam',
   'mein',
   'me',
+  'named',
+  'called',
+]);
+
+
+/*
+ * ============================================================
+ * CUSTOMER COMMAND WORDS
+ * ============================================================
+ */
+
+const CUSTOMER_COMMAND_WORDS = new Set([
+  'create',
+  'make',
+  'open',
+  'add',
+  'new',
+  'account',
+  'accounts',
+  'customer',
+  'customers',
+  'khata',
+  'khate',
+  'banao',
+  'bnao',
+  'bana',
+  'banado',
+  'banaao',
+  'karo',
+  'kar',
+  'do',
+  'please',
+  'naam',
+  'named',
+  'called',
 ]);
 
 
@@ -141,10 +171,7 @@ const cleanText = value =>
           ''
         )
         .trim()
-        .slice(
-          0,
-          500
-        )
+        .slice(0, 500)
     : '';
 
 
@@ -217,35 +244,23 @@ const makeResult = ({
   payment_type = null,
   confidence = 0.95,
 }) => ({
-
   intent,
-
   product,
-
   qty,
-
   discount_percent,
-
   new_price,
-
   customer_name,
-
   time_period,
-
   amount,
-
   payment_type,
-
   confidence,
-
-  source:
-    'local_rules',
+  source: 'local_rules',
 });
 
 
 /*
  * ============================================================
- * CUSTOMER NAME MATCHING
+ * KNOWN CUSTOMER MATCHING
  * ============================================================
  */
 
@@ -259,7 +274,6 @@ const matchKnownCustomer = (
       customerNames
     )
   ) {
-
     return null;
   }
 
@@ -297,48 +311,315 @@ const matchKnownCustomer = (
 
 /*
  * ============================================================
+ * CUSTOMER NAME VALIDATION
+ * ============================================================
+ */
+
+const isValidCustomerName = name => {
+
+  if (
+    !name ||
+    typeof name !== 'string'
+  ) {
+    return false;
+  }
+
+
+  const cleaned =
+    name
+      .trim()
+      .replace(
+        /\s+/g,
+        ' '
+      );
+
+
+  if (
+    cleaned.length < 2 ||
+    cleaned.length > 100
+  ) {
+    return false;
+  }
+
+
+  if (
+    /^\d+(?:\.\d+)?$/.test(
+      cleaned
+    )
+  ) {
+    return false;
+  }
+
+
+  const words =
+    cleaned
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+
+
+  if (
+    words.length === 0
+  ) {
+    return false;
+  }
+
+
+  /*
+   * A customer name should not consist entirely
+   * of command words.
+   */
+
+  if (
+    words.every(
+      word =>
+        CUSTOMER_COMMAND_WORDS.has(
+          word
+        )
+    )
+  ) {
+    return false;
+  }
+
+
+  const badName =
+    new Set([
+      'account',
+      'accounts',
+      'customer',
+      'customers',
+      'khata',
+      'khate',
+      'product',
+      'products',
+      'item',
+      'items',
+      'new',
+      'naya',
+      'create',
+      'make',
+      'open',
+      'add',
+      'please',
+      'for',
+      'of',
+      'named',
+      'called',
+    ]);
+
+
+  if (
+    words.some(
+      word =>
+        badName.has(
+          word
+        )
+    )
+  ) {
+    return false;
+  }
+
+
+  return true;
+};
+
+
+/*
+ * ============================================================
+ * CLEAN CUSTOMER NAME
+ * ============================================================
+ */
+
+const cleanCustomerName = value => {
+
+  if (
+    !value ||
+    typeof value !== 'string'
+  ) {
+    return null;
+  }
+
+
+  let name =
+    value
+      .trim()
+      .replace(
+        /\s+/g,
+        ' '
+      );
+
+
+  /*
+   * Remove polite words from the beginning/end.
+   */
+
+  name =
+    name.replace(
+      /^(?:please|pls)\s+/i,
+      ''
+    );
+
+
+  name =
+    name.replace(
+      /\s+(?:please|pls)$/i,
+      ''
+    );
+
+
+  /*
+   * Remove "naya/new" if it was accidentally
+   * captured as part of the name.
+   */
+
+  name =
+    name.replace(
+      /^(?:naya|new)\s+/i,
+      ''
+    );
+
+
+  name =
+    name.replace(
+      /\s+(?:naya|new)$/i,
+      ''
+    );
+
+
+  /*
+   * Remove trailing command words.
+   */
+
+  name =
+    name.replace(
+      /\s+(?:banao|bnao|bana|banado|banaao|karo|kar|do|khol|kholo)$/i,
+      ''
+    );
+
+
+  return isValidCustomerName(
+    name
+  )
+    ? titleCase(name)
+    : null;
+};
+
+
+/*
+ * ============================================================
  * CUSTOMER CREATION
+ * ============================================================
+ *
+ * Supported examples:
+ *
+ * create Ravi account
+ * create a Ravi account
+ * create new Ravi account
+ * create Ravi customer
+ * create account for Ravi
+ * create a new account for Ravi
+ * add Ravi account
+ * new Ravi account
+ * please create Ravi account
+ * Ravi ka account banao
+ * Ravi ka naya khata banao
+ * Ravi ka khata bana do
+ * Ravi ke naam ka khata banao
+ * naya khata Ravi ka banao
+ * Ravi account banao
+ * Ravi customer banao
  * ============================================================
  */
 
 const extractCustomerCreation = raw => {
 
+  const normalized =
+    raw
+      .toLowerCase()
+      .replace(
+        /\s+/g,
+        ' '
+      )
+      .trim();
+
+
   const patterns = [
 
     /*
-     * Create Ravi account
+     * Please create Ravi account
      */
-    /^(?:create|make|open)\s+(?:an?\s+)?(.+?)\s+(?:account|customer|khata)$/i,
+
+    /^(?:please|pls)\s+(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
+
 
     /*
-     * Add Ravi account
+     * Create Ravi account
+     * Create a Ravi account
+     * Create new Ravi account
      */
-    /^add\s+(.+?)\s+(?:account|customer|khata)$/i,
+
+    /^(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
+
 
     /*
      * Create account for Ravi
+     * Create a new account for Ravi
      */
-    /^(?:create|make|open|add)\s+(?:an?\s+)?(?:account|customer|khata)\s+(?:for|of)\s+(.+)$/i,
+
+    /^(?:please\s+)?(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(?:account|customer|khata)\s+(?:for|of)\s+(.+)$/i,
+
 
     /*
      * New Ravi account
      */
-    /^new\s+(.+?)\s+(?:account|customer|khata)$/i,
+
+    /^(?:new|naya)\s+(.+?)\s+(?:account|customer|khata)$/i,
+
 
     /*
-     * Ravi ka khata banao
+     * Ravi account banao
+     * Ravi customer banao
+     * Ravi khata banao
      */
-    /^(.+?)\s+(?:ka|k|ke|ki)\s+(?:naya\s+)?(?:account|customer|khata)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+    /^(.+?)\s+(?:account|customer|khata)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+
+    /*
+     * Ravi ka account banao
+     * Ravi k account banao
+     * Ravi ke khate banao
+     */
+
+    /^(.+?)\s+(?:ka|k|ke|ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
 
     /*
      * Ravi ka naya khata banao
      */
-    /^(.+?)\s+(?:ka|k|ke|ki)\s+naya\s+(?:account|customer|khata)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+    /^(.+?)\s+(?:ka|k|ke|ki)\s+naya\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+
+    /*
+     * Ravi ke naam ka khata banao
+     */
+
+    /^(.+?)\s+(?:ke\s+naam\s+ka|ke\s+naam\s+ke|ke\s+naam\s+ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
 
     /*
      * Naya khata Ravi ka banao
      */
-    /^naya\s+(?:account|customer|khata)\s+(.+?)\s+(?:ka|k|ke|ki)\s+(?:banao|bnao|bana|karo|kar\s+do)$/i,
+
+    /^(?:naya|new)\s+(?:account|customer|khata|khate)\s+(.+?)\s+(?:ka|k|ke|ki)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do)$/i,
+
+
+    /*
+     * Account banao Ravi ka
+     */
+
+    /^(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao)\s+(.+?)\s+(?:ka|k|ke|ki)$/i,
   ];
 
 
@@ -347,7 +628,7 @@ const extractCustomerCreation = raw => {
   ) {
 
     const match =
-      raw.match(
+      normalized.match(
         pattern
       );
 
@@ -356,59 +637,134 @@ const extractCustomerCreation = raw => {
       !match ||
       !match[1]
     ) {
-
       continue;
     }
 
 
-    const name =
-      match[1]
-        .replace(
-          /\b(?:naya|new)\b/gi,
-          ''
-        )
-        .trim();
+    const customerName =
+      cleanCustomerName(
+        match[1]
+      );
 
 
     if (
-      !name ||
-      name.length < 2
+      customerName
     ) {
-
-      continue;
+      return customerName;
     }
+  }
 
 
-    /*
-     * Reject obvious command words accidentally captured
-     * as a name.
-     */
+  /*
+   * ==========================================================
+   * FALLBACK CUSTOMER EXTRACTION
+   * ==========================================================
+   *
+   * This handles natural speech such as:
+   *
+   * "please make a new khata for Ravi"
+   * "create new customer Ravi"
+   * "please add Ravi as customer"
+   *
+   * We only use this fallback when a clear customer/account
+   * command word is present.
+   * ==========================================================
+   */
 
-    const badName =
-      new Set([
-        'account',
-        'customer',
-        'khata',
-        'new',
-        'naya',
-        'product',
-        'item',
-      ]);
-
-
-    if (
-      badName.has(
-        name.toLowerCase()
-      )
-    ) {
-
-      continue;
-    }
-
-
-    return titleCase(
-      name
+  const hasCustomerCommand =
+    /\b(create|make|open|add|new|customer|account|khata|khate|banao|bnao|bana|banado|banaao)\b/i.test(
+      normalized
     );
+
+
+  if (
+    !hasCustomerCommand
+  ) {
+    return null;
+  }
+
+
+  /*
+   * "create new customer Ravi"
+   */
+
+  let fallback =
+    normalized.match(
+      /^(?:please\s+)?(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(?:customer|account|khata|khate)\s+(.+)$/i
+    );
+
+
+  if (
+    fallback &&
+    fallback[1]
+  ) {
+    const customerName =
+      cleanCustomerName(
+        fallback[1]
+      );
+
+
+    if (
+      customerName
+    ) {
+      return customerName;
+    }
+  }
+
+
+  /*
+   * "create Ravi as customer"
+   */
+
+  fallback =
+    normalized.match(
+      /^(?:please\s+)?(?:create|make|open|add)\s+(.+?)\s+as\s+(?:a\s+)?(?:customer|account)$/i
+    );
+
+
+  if (
+    fallback &&
+    fallback[1]
+  ) {
+    const customerName =
+      cleanCustomerName(
+        fallback[1]
+      );
+
+
+    if (
+      customerName
+    ) {
+      return customerName;
+    }
+  }
+
+
+  /*
+   * "please add Ravi as a customer"
+   */
+
+  fallback =
+    normalized.match(
+      /^(?:please\s+)?add\s+(.+?)\s+as\s+(?:a\s+)?customer$/i
+    );
+
+
+  if (
+    fallback &&
+    fallback[1]
+  ) {
+    const customerName =
+      cleanCustomerName(
+        fallback[1]
+      );
+
+
+    if (
+      customerName
+    ) {
+      return customerName;
+    }
   }
 
 
@@ -427,10 +783,6 @@ const extractPayment = (
   raw,
   customerNames
 ) => {
-
-  /*
-   * First prefer a known customer name.
-   */
 
   const knownCustomer =
     matchKnownCustomer(
@@ -470,21 +822,28 @@ const extractPayment = (
     /*
      * Ravi ne 500 received
      */
+
     /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?(?:ne|se)\s+(\d+(?:\.\d+)?)\s+received$/i,
+
 
     /*
      * Ravi 500 received
      */
+
     /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?(\d+(?:\.\d+)?)\s+received$/i,
+
 
     /*
      * Ravi received 500
      */
+
     /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?received\s+(\d+(?:\.\d+)?)$/i,
+
 
     /*
      * Received 500 from Ravi
      */
+
     /^received\s+(\d+(?:\.\d+)?)\s+from\s+([a-zA-Z][a-zA-Z .'-]*)$/i,
   ];
 
@@ -545,7 +904,6 @@ const extractPayment = (
     ) {
 
       return {
-
         customer_name:
           customerName
             ? titleCase(
@@ -614,7 +972,6 @@ const productFromInventory = (
     ) ||
     inventoryNames.length === 0
   ) {
-
     return null;
   }
 
@@ -649,6 +1006,21 @@ const productFromInventory = (
 /*
  * ============================================================
  * PRODUCT FALLBACK
+ * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * Customer/account words are removed here.
+ *
+ * This prevents:
+ *
+ * "create Ravi account"
+ *
+ * from becoming:
+ *
+ * product = "Ravi"
+ *
+ * if customer detection ever fails.
  * ============================================================
  */
 
@@ -685,7 +1057,6 @@ const productFromWords = (
               word
             )
           ) {
-
             return false;
           }
 
@@ -695,7 +1066,6 @@ const productFromWords = (
               word
             )
           ) {
-
             return false;
           }
 
@@ -715,7 +1085,10 @@ const productFromWords = (
               'stock',
               'plus',
               'khata',
+              'khate',
               'cash',
+              'nagad',
+              'rokar',
               'received',
               'from',
               'ne',
@@ -724,11 +1097,25 @@ const productFromWords = (
               'percent',
               'payment',
               'jama',
+              'create',
+              'make',
+              'open',
+              'new',
+              'account',
+              'accounts',
+              'customer',
+              'customers',
+              'banao',
+              'bnao',
+              'bana',
+              'banado',
+              'banaao',
+              'named',
+              'called',
             ].includes(
               word
             )
           ) {
-
             return false;
           }
 
@@ -767,8 +1154,13 @@ export function parseVoiceCommandLocally(
     );
 
 
-  if (!raw) {
+  /*
+   * ==========================================================
+   * EMPTY
+   * ==========================================================
+   */
 
+  if (!raw) {
     return makeResult({
       intent:
         'unknown',
@@ -781,7 +1173,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 1. CUSTOMER CREATE
+   * CUSTOMER CREATE MUST ALWAYS COME FIRST
    * ==========================================================
    */
 
@@ -791,7 +1183,9 @@ export function parseVoiceCommandLocally(
     );
 
 
-  if (customer) {
+  if (
+    customer
+  ) {
 
     return makeResult({
 
@@ -809,7 +1203,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 2. PAYMENT RECEIVED
+   * PAYMENT RECEIVED
    * ==========================================================
    */
 
@@ -845,7 +1239,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 3. DISCOUNT
+   * DISCOUNT
    * ==========================================================
    */
 
@@ -855,7 +1249,9 @@ export function parseVoiceCommandLocally(
     );
 
 
-  if (discountMatch) {
+  if (
+    discountMatch
+  ) {
 
     const discount =
       Number(
@@ -888,7 +1284,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 4. QUANTITY + PRODUCT
+   * QUANTITY + PRODUCT
    * ==========================================================
    */
 
@@ -907,7 +1303,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 5. CASH / SALE
+   * SALE
    * ==========================================================
    */
 
@@ -951,7 +1347,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 6. CASH SALE
+   * CASH SALE
    * ==========================================================
    */
 
@@ -983,7 +1379,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 7. INVENTORY ADD
+   * INVENTORY ADD
    * ==========================================================
    */
 
@@ -1012,7 +1408,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 8. KHATA QUERY
+   * KHATA QUERY
    * ==========================================================
    */
 
@@ -1047,7 +1443,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * 9. UNKNOWN
+   * UNKNOWN
    * ==========================================================
    */
 
@@ -1056,7 +1452,8 @@ export function parseVoiceCommandLocally(
     intent:
       'unknown',
 
-    product,
+    product:
+      null,
 
     qty,
 

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setActiveUser } from '../core/auth/localUser';
 import {
   GoogleSignin,
   statusCodes,
@@ -85,20 +86,6 @@ const LoginScreen = ({
     useState(false);
 
   useEffect(() => {
-    GoogleSignin.configure({
-      webClientId:
-        '106180836013-ve839dtddc46540n1pi6q3gfjd97ol3p.apps.googleusercontent.com',
-
-      offlineAccess: true,
-
-      /*
-       * Ask for Drive app-data permission
-       * during Google authentication.
-       */
-      scopes: [
-        'https://www.googleapis.com/auth/drive.appdata',
-      ],
-    });
   }, []);
 
   const handleSubmit =
@@ -267,44 +254,38 @@ const LoginScreen = ({
            */
 
           await AsyncStorage.setItem(
-            'userToken',
-            loginData.access_token
-          );
-
-          await AsyncStorage.setItem(
-            'shopName',
-            loginData.shop_name
-          );
-
-          await AsyncStorage.setItem(
-            'userEmail',
-            email
-          );
-
-          TelemetryService.setAuthToken(
-            loginData.access_token
-          );
-
-          TelemetryService.trackEvent(
-            'password_reset_login',
-            'auth',
-            {
-              email,
-            }
-          );
-
-          Alert.alert(
-              'Success 🎉',
-              'Password updated successfully!'
+              'userToken',
+              loginData.access_token
             );
 
-            /*
-            * Password reset login is still a normal
-            * StoreMate login.
-            *
-            * Do NOT automatically authenticate
-            * with Google Drive.
-            */
+            await AsyncStorage.setItem(
+              'shopName',
+              loginData.shop_name || ''
+            );
+
+            await setActiveUser({
+              userId:
+                loginData.user_id ||
+                loginData.user?.id ||
+                loginData.email ||
+                email,
+
+              email:
+                loginData.email ||
+                email,
+            });
+
+            TelemetryService.setAuthToken(
+              loginData.access_token
+            );
+
+            TelemetryService.trackEvent(
+              'password_reset_login',
+              'auth',
+              {
+                email,
+              }
+            );
 
             onLoginSuccess();
         } catch (error) {
@@ -412,13 +393,20 @@ const LoginScreen = ({
 
             await AsyncStorage.setItem(
               'shopName',
-              data.shop_name
+              data.shop_name || ''
             );
 
-            await AsyncStorage.setItem(
-              'userEmail',
-              email
-            );
+            await setActiveUser({
+              userId:
+                data.user_id ||
+                data.user?.id ||
+                data.email ||
+                email,
+
+              email:
+                data.email ||
+                email,
+            });
 
             TelemetryService.setAuthToken(
               data.access_token
@@ -428,15 +416,11 @@ const LoginScreen = ({
               'user_login',
               'auth',
               {
-                email,
+                email:
+                  data.email ||
+                  email,
               }
             );
-
-            /*
-            * Go directly into StoreMate.
-            *
-            * NO GOOGLE POPUP.
-            */
 
             onLoginSuccess();
           } else {
@@ -538,20 +522,9 @@ const LoginScreen = ({
           );
         }
 
-        await AsyncStorage.setItem(
-          'userToken',
-          data.access_token
-        );
-
-        await AsyncStorage.setItem(
-          'shopName',
-          data.shop_name
-        );
-
-        await AsyncStorage.setItem(
-          'userEmail',
-          data.email
-        );
+        await AsyncStorage.setItem('userToken', data.access_token);
+        await AsyncStorage.setItem('shopName', data.shop_name);
+        await setActiveUser({ userId: data.user_id || data.user?.id || data.email, email: data.email });
 
         TelemetryService.setAuthToken(
           data.access_token

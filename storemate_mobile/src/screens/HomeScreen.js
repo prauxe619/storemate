@@ -1,8 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useRef,
-} from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 import {
   View,
@@ -21,26 +17,15 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import {
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Q } from '@nozbe/watermelondb';
-
 import { database } from '../core/database';
-
 import { syncWithCloud } from '../core/sync/sync';
-
 import POSScreen from '../screens/POSScreen';
-
 import NetInfo from '@react-native-community/netinfo';
-
 import KhataScreen from '../screens/KhataScreen';
-
 import LowStockWidget from '../components/LowStockWidget';
-
 import ManualEntryScreen from '../screens/Manualentryscreen';
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
@@ -49,35 +34,22 @@ import {
 } from '../core/ai/IntentHandler';
 
 import { SpeechEngine } from '../core/speech/SpeechEngine';
-
 import { BASE_URL } from '../config/api';
 import { parseVoiceCommand } from '../core/ai/VoiceCommandRouter';
 import TelemetryService from '../services/TelemetryService';
+import { requireCurrentUserId } from '../core/auth/localUser';
+
+
+const PROFILE_KEY_PREFIX = 'storemate_profile_';
 
 
 const HomeScreen = () => {
-
-  /*
-   * =========================================================
-   * SAFE AREA
-   * =========================================================
-   */
-
-  const insets =
-    useSafeAreaInsets();
-
-
-  /*
-   * =========================================================
-   * RESPONSIVE SCREEN SIZE
-   * =========================================================
-   */
+  const insets = useSafeAreaInsets();
 
   const {
     width: windowWidth,
     height: windowHeight,
   } = useWindowDimensions();
-
 
   const screenPadding =
     windowWidth < 360
@@ -93,72 +65,42 @@ const HomeScreen = () => {
    * =========================================================
    */
 
-  const [
-    isSyncing,
-    setIsSyncing,
-  ] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showPOS, setShowPOS] = useState(false);
+  const [showKhata, setShowKhata] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
-  const [
-    showPOS,
-    setShowPOS,
-  ] = useState(false);
+  const [manualEntryPrefill, setManualEntryPrefill] =
+    useState('');
 
-  const [
-    showKhata,
-    setShowKhata,
-  ] = useState(false);
+  const [todaySales, setTodaySales] = useState(0);
+  const [pendingKhata, setPendingKhata] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
 
-  const [
-    showManualEntry,
-    setShowManualEntry,
-  ] = useState(false);
+  const [isListening, setIsListening] = useState(false);
 
-  const [
-    manualEntryPrefill,
-    setManualEntryPrefill,
-  ] = useState('');
-
-  const [
-    todaySales,
-    setTodaySales,
-  ] = useState(0);
-
-  const [
-    pendingKhata,
-    setPendingKhata,
-  ] = useState(0);
-
-  const [
-    isOffline,
-    setIsOffline,
-  ] = useState(false);
-
-  const [
-    isListening,
-    setIsListening,
-  ] = useState(false);
-
-  const [
-    aiStatus,
-    setAiStatus,
-  ] = useState(
+  const [aiStatus, setAiStatus] = useState(
     'Tap the mic to speak a command'
   );
 
-  const [
-    transcribedText,
-    setTranscribedText,
-  ] = useState('');
+  const [transcribedText, setTranscribedText] =
+    useState('');
 
-  const [
-    shopName,
-    setShopName,
-  ] = useState('Your Store');
+  const [shopName, setShopName] =
+    useState('Your Store');
 
-  const [
-    avatarUri,
-    setAvatarUri,
-  ] = useState(null);
+  const [avatarUri, setAvatarUri] =
+    useState(null);
+
+
+  /*
+   * =========================================================
+   * CURRENT USER
+   * =========================================================
+   */
+
+  const [currentUserId, setCurrentUserId] =
+    useState(null);
 
 
   /*
@@ -167,25 +109,17 @@ const HomeScreen = () => {
    * =========================================================
    */
 
-  const [
-    showOnboardingModal,
-    setShowOnboardingModal,
-  ] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] =
+    useState(false);
 
-  const [
-    onboardingPhone,
-    setOnboardingPhone,
-  ] = useState('');
+  const [onboardingPhone, setOnboardingPhone] =
+    useState('');
 
-  const [
-    onboardingUpi,
-    setOnboardingUpi,
-  ] = useState('');
+  const [onboardingUpi, setOnboardingUpi] =
+    useState('');
 
-  const [
-    isSavingOnboarding,
-    setIsSavingOnboarding,
-  ] = useState(false);
+  const [isSavingOnboarding, setIsSavingOnboarding] =
+    useState(false);
 
 
   /*
@@ -195,9 +129,7 @@ const HomeScreen = () => {
    */
 
   const pulseAnim =
-    useRef(
-      new Animated.Value(0)
-    ).current;
+    useRef(new Animated.Value(0)).current;
 
 
   /*
@@ -212,17 +144,7 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * IMPORTANT:
-   * HOME SPEECH OWNERSHIP
-   *
-   * Home and POS use the same global SpeechEngine.
-   *
-   * POS is displayed inside a Modal, but HomeScreen itself
-   * remains mounted underneath it.
-   *
-   * Therefore we keep a synchronous ref so Home's speech
-   * callbacks immediately know when another screen owns
-   * the microphone.
+   * MODAL / MIC OWNERSHIP
    * =========================================================
    */
 
@@ -231,13 +153,11 @@ const HomeScreen = () => {
 
 
   useEffect(() => {
-
     isModalOpen.current =
       showPOS ||
       showKhata ||
       showManualEntry ||
       showOnboardingModal;
-
   }, [
     showPOS,
     showKhata,
@@ -248,15 +168,21 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * STOP HOME SPEECH WHEN ANY MODAL OPENS
-   *
-   * This is important because simply ignoring callbacks is
-   * not enough if Home was already listening when POS opens.
+   * USER PROFILE KEY
+   * =========================================================
+   */
+
+  const getProfileKey = userId =>
+    `${PROFILE_KEY_PREFIX}${userId}`;
+
+
+  /*
+   * =========================================================
+   * STOP HOME SPEECH WHEN MODAL OPENS
    * =========================================================
    */
 
   useEffect(() => {
-
     const modalIsOpen =
       showPOS ||
       showKhata ||
@@ -264,17 +190,12 @@ const HomeScreen = () => {
       showOnboardingModal;
 
     if (modalIsOpen) {
-
       setIsListening(false);
 
-      isProcessingCommand.current =
-        false;
+      isProcessingCommand.current = false;
 
-      SpeechEngine.stop().catch(
-        () => {}
-      );
+      SpeechEngine.stop().catch(() => {});
     }
-
   }, [
     showPOS,
     showKhata,
@@ -285,77 +206,48 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * VOICE PULSE ANIMATION
+   * VOICE PULSE
    * =========================================================
    */
 
   useEffect(() => {
-
     let loop;
 
     if (isListening) {
-
       pulseAnim.setValue(0);
 
-      loop =
-        Animated.loop(
-          Animated.timing(
-            pulseAnim,
-            {
-              toValue: 1,
-              duration: 1400,
-              useNativeDriver:
-                true,
-            }
-          )
-        );
+      loop = Animated.loop(
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        })
+      );
 
       loop.start();
-
     } else {
-
       pulseAnim.setValue(0);
     }
 
     return () => {
-
       if (loop) {
         loop.stop();
       }
-
     };
-
-  }, [
-    isListening,
-    pulseAnim,
-  ]);
+  }, [isListening, pulseAnim]);
 
 
   const pulseScale =
     pulseAnim.interpolate({
-      inputRange: [
-        0,
-        1,
-      ],
-
-      outputRange: [
-        1,
-        1.7,
-      ],
+      inputRange: [0, 1],
+      outputRange: [1, 1.7],
     });
 
 
   const pulseOpacity =
     pulseAnim.interpolate({
-      inputRange: [
-        0,
-        1,
-      ],
-
-      outputRange: [
-        0.35,
-        0,
-      ],
+      inputRange: [0, 1],
+      outputRange: [0.35, 0],
     });
 
 
@@ -365,104 +257,382 @@ const HomeScreen = () => {
    * =========================================================
    */
 
-  const fetchMetrics =
-    async () => {
+  const fetchMetrics = async () => {
+    try {
+      const ownerId =
+        await requireCurrentUserId();
 
-      try {
+      const today = new Date();
 
-        const today =
-          new Date();
-
-        today.setHours(
-          0,
-          0,
-          0,
-          0
-        );
+      today.setHours(
+        0,
+        0,
+        0,
+        0
+      );
 
 
-        const sales =
-          await database
-            .get(
-              'sales_transactions'
-            )
-            .query(
-              Q.where(
-                'created_at',
-                Q.gte(
-                  today.getTime()
-                )
+      const sales =
+        await database
+          .get('sales_transactions')
+          .query(
+            Q.where(
+              'owner_id',
+              ownerId
+            ),
+
+            Q.where(
+              'created_at',
+              Q.gte(
+                today.getTime()
               )
             )
-            .fetch();
-
-
-        setTodaySales(
-          sales.reduce(
-            (
-              sum,
-              sale
-            ) =>
-              sum +
-              sale.totalAmount,
-            0
           )
-        );
+          .fetch();
 
 
-        const entries =
-          await database
-            .get(
-              'ledger_entries'
+      setTodaySales(
+        sales.reduce(
+          (sum, sale) =>
+            sum +
+            Number(
+              sale.totalAmount ||
+                0
+            ),
+
+          0
+        )
+      );
+
+
+      const entries =
+        await database
+          .get('ledger_entries')
+          .query(
+            Q.where(
+              'owner_id',
+              ownerId
             )
-            .query()
-            .fetch();
-
-
-        let totalKhata =
-          0;
-
-
-        entries.forEach(
-          entry => {
-
-            if (
-              entry.entryType ===
-              'CREDIT'
-            ) {
-
-              totalKhata +=
-                entry.amount;
-            }
-
-            if (
-              entry.entryType ===
-              'PAYMENT'
-            ) {
-
-              totalKhata -=
-                entry.amount;
-            }
-
-          }
-        );
-
-
-        setPendingKhata(
-          Math.max(
-            totalKhata,
-            0
           )
+          .fetch();
+
+
+      let totalKhata = 0;
+
+
+      entries.forEach(
+        entry => {
+          if (
+            entry.entryType ===
+            'CREDIT'
+          ) {
+            totalKhata +=
+              Number(
+                entry.amount ||
+                  0
+              );
+          }
+
+          if (
+            entry.entryType ===
+            'PAYMENT'
+          ) {
+            totalKhata -=
+              Number(
+                entry.amount ||
+                  0
+              );
+          }
+        }
+      );
+
+
+      setPendingKhata(
+        Math.max(
+          totalKhata,
+          0
+        )
+      );
+
+    } catch (error) {
+      console.error(
+        'Metrics error:',
+        error
+      );
+    }
+  };
+
+
+  /*
+   * =========================================================
+   * LOAD CURRENT USER PROFILE
+   * =========================================================
+   */
+
+  const loadProfileData = async () => {
+    try {
+      const ownerId =
+        await requireCurrentUserId();
+
+      setCurrentUserId(
+        ownerId
+      );
+
+
+      /*
+       * =====================================================
+       * ONLY USER-SPECIFIC PROFILE STORAGE
+       * =====================================================
+       */
+
+      const profileKey =
+        getProfileKey(
+          ownerId
         );
 
-      } catch (error) {
 
-        console.error(
-          'Metrics error:',
-          error
+      const storedProfile =
+        await AsyncStorage.getItem(
+          profileKey
+        );
+
+
+      let profile = null;
+
+
+      if (storedProfile) {
+        try {
+          profile =
+            JSON.parse(
+              storedProfile
+            );
+        } catch (error) {
+          console.warn(
+            'Profile JSON invalid:',
+            error
+          );
+        }
+      }
+
+
+      if (profile) {
+        setShopName(
+          profile.shopName ||
+            'Your Store'
+        );
+
+        setAvatarUri(
+          profile.avatarUri ||
+            null
+        );
+
+        setOnboardingPhone(
+          profile.phone ||
+            ''
+        );
+
+        setOnboardingUpi(
+          profile.upiId ||
+            ''
+        );
+
+
+        /*
+         * ===================================================
+         * ONBOARDING CHECK
+         * ===================================================
+         */
+
+        const onboardingComplete =
+          profile.onboardingCompleted ===
+          true;
+
+
+        if (
+          !onboardingComplete &&
+          (
+            !profile.phone ||
+            !profile.upiId
+          )
+        ) {
+          setShowOnboardingModal(
+            true
+          );
+        }
+
+
+        return;
+      }
+
+
+      /*
+       * =====================================================
+       * NO NEW PROFILE FOUND
+       *
+       * We intentionally DO NOT read the old global
+       * shopName/avatarUri/userPhone/shopUpi keys here.
+       *
+       * Otherwise another user's data can leak.
+       * =====================================================
+       */
+
+      setShopName(
+        'Your Store'
+      );
+
+      setAvatarUri(
+        null
+      );
+
+      setOnboardingPhone(
+        ''
+      );
+
+      setOnboardingUpi(
+        ''
+      );
+
+
+      /*
+       * =====================================================
+       * SERVER PROFILE FALLBACK
+       * =====================================================
+       */
+
+      const token =
+        await AsyncStorage.getItem(
+          'userToken'
+        );
+
+
+      if (token) {
+        TelemetryService.setAuthToken(
+          token
+        );
+
+
+        try {
+          const response =
+            await fetch(
+              `${BASE_URL}/api/v1/auth/profile`,
+              {
+                method:
+                  'GET',
+
+                headers: {
+                  'Content-Type':
+                    'application/json',
+
+                  Authorization:
+                    `Bearer ${token}`,
+                },
+              }
+            );
+
+
+          if (
+            response.ok
+          ) {
+            const data =
+              await response.json();
+
+
+            const serverProfile = {
+              email:
+                data.email ||
+                '',
+
+              shopName:
+                data.shop_name ||
+                'Your Store',
+
+              phone:
+                data.phone ||
+                '',
+
+              address:
+                data.address ||
+                '',
+
+              avatarUri:
+                data.avatar_uri ||
+                data.avatarUrl ||
+                null,
+
+              upiId:
+                data.upi_id ||
+                '',
+
+              onboardingCompleted:
+                Boolean(
+                  data.phone &&
+                  data.upi_id
+                ),
+            };
+
+
+            await AsyncStorage.setItem(
+              profileKey,
+              JSON.stringify(
+                serverProfile
+              )
+            );
+
+
+            setShopName(
+              serverProfile.shopName
+            );
+
+            setAvatarUri(
+              serverProfile.avatarUri
+            );
+
+            setOnboardingPhone(
+              serverProfile.phone
+            );
+
+            setOnboardingUpi(
+              serverProfile.upiId
+            );
+
+
+            if (
+              !serverProfile.phone ||
+              !serverProfile.upiId
+            ) {
+              setShowOnboardingModal(
+                true
+              );
+            }
+          }
+        } catch (error) {
+          /*
+           * Offline is valid.
+           *
+           * User can continue using
+           * local database features.
+           */
+          console.log(
+            'Profile server unavailable. Continuing offline.'
+          );
+
+          setShowOnboardingModal(
+            true
+          );
+        }
+      } else {
+        setShowOnboardingModal(
+          true
         );
       }
-    };
+
+    } catch (error) {
+      console.error(
+        'Failed to load profile data:',
+        error
+      );
+    }
+  };
 
 
   /*
@@ -473,13 +643,11 @@ const HomeScreen = () => {
 
   const autoSyncBackground =
     async () => {
-
       if (isSyncing) {
         return;
       }
 
       try {
-
         setIsSyncing(
           true
         );
@@ -489,9 +657,7 @@ const HomeScreen = () => {
         setIsSyncing(
           false
         );
-
       } catch (error) {
-
         setIsSyncing(
           false
         );
@@ -512,101 +678,7 @@ const HomeScreen = () => {
    */
 
   useEffect(() => {
-
     fetchMetrics();
-
-
-    /*
-     * Load saved profile.
-     */
-
-    const loadProfileData =
-      async () => {
-
-        try {
-
-          const storedToken =
-            await AsyncStorage.getItem(
-              'userToken'
-            );
-
-
-          if (storedToken) {
-
-            TelemetryService.setAuthToken(
-              storedToken
-            );
-          }
-
-
-          const storedName =
-            await AsyncStorage.getItem(
-              'shopName'
-            );
-
-
-          const storedAvatar =
-            await AsyncStorage.getItem(
-              'avatarUri'
-            );
-
-
-          const storedPhone =
-            await AsyncStorage.getItem(
-              'userPhone'
-            );
-
-
-          const storedUpi =
-            await AsyncStorage.getItem(
-              'shopUpi'
-            );
-
-
-          const onboardingDone =
-            await AsyncStorage.getItem(
-              'onboardingDetailsCompleted'
-            );
-
-
-          if (
-            !onboardingDone &&
-            (
-              !storedPhone ||
-              !storedUpi
-            )
-          ) {
-
-            setShowOnboardingModal(
-              true
-            );
-          }
-
-
-          if (storedName) {
-
-            setShopName(
-              storedName
-            );
-          }
-
-
-          if (storedAvatar) {
-
-            setAvatarUri(
-              storedAvatar
-            );
-          }
-
-        } catch (error) {
-
-          console.error(
-            'Failed to load profile data:',
-            error
-          );
-        }
-      };
-
 
     loadProfileData();
 
@@ -620,7 +692,6 @@ const HomeScreen = () => {
     const unsubscribeNetInfo =
       NetInfo.addEventListener(
         state => {
-
           const currentlyOffline =
             !(
               state.isConnected &&
@@ -631,14 +702,12 @@ const HomeScreen = () => {
 
           setIsOffline(
             previousOffline => {
-
               if (
                 previousOffline ===
                   true &&
                 currentlyOffline ===
                   false
               ) {
-
                 console.log(
                   '🌐 Network returned! Auto-syncing...'
                 );
@@ -655,25 +724,18 @@ const HomeScreen = () => {
 
     /*
      * =======================================================
-     * SPEECH LISTENERS
+     * SPEECH PARTIAL
      * =======================================================
      */
 
     const partialSub =
       SpeechEngine.onPartialResult(
         text => {
-
-          /*
-           * IMPORTANT:
-           * If POS / Khata / Manual Entry / Onboarding
-           * is open, Home does not receive speech.
-           */
           if (
             isModalOpen.current
           ) {
             return;
           }
-
 
           setTranscribedText(
             text
@@ -686,53 +748,65 @@ const HomeScreen = () => {
       );
 
 
+    /*
+     * =======================================================
+     * SPEECH FINAL
+     * =======================================================
+     */
+
     const finalSub =
-  SpeechEngine.onFinalResult(
-    async text => {
-      if (
-        isModalOpen.current
-      ) {
-        return;
-      }
-
-      if (
-        isProcessingCommand.current
-      ) {
-        return;
-      }
-
-      isProcessingCommand.current =
-        true;
-
-      setTranscribedText(text);
-      setIsListening(false);
-
-      try {
-        await processVoiceCommand(
-          text
-        );
-      } finally {
-        isProcessingCommand.current =
-          false;
-      }
-    }
-  );
-
-
-    const errorSub =
-      SpeechEngine.onError(
-        code => {
-
-          /*
-           * Ignore Home speech errors if another screen
-           * currently owns the microphone.
-           */
+      SpeechEngine.onFinalResult(
+        async text => {
           if (
             isModalOpen.current
           ) {
             return;
           }
 
+          if (
+            isProcessingCommand.current
+          ) {
+            return;
+          }
+
+          isProcessingCommand.current =
+            true;
+
+          setTranscribedText(
+            text
+          );
+
+          setIsListening(
+            false
+          );
+
+
+          try {
+            await processVoiceCommand(
+              text
+            );
+          } finally {
+            isProcessingCommand.current =
+              false;
+          }
+        }
+      );
+
+
+    /*
+     * =======================================================
+     * SPEECH ERROR
+     * =======================================================
+     */
+
+    const errorSub =
+      SpeechEngine.onError(
+        code => {
+          if (
+            isModalOpen.current
+          ) {
+            return;
+          }
 
           setIsListening(
             false
@@ -746,29 +820,33 @@ const HomeScreen = () => {
             `Error Code: ${code}`;
 
 
-          if (code === 6) {
-
+          if (
+            code === 6
+          ) {
             errorMsg =
               "Speech timeout (didn't hear anything)";
           }
 
 
-          if (code === 7) {
-
+          if (
+            code === 7
+          ) {
             errorMsg =
               'No match (speak louder/clearer)';
           }
 
 
-          if (code === 8) {
-
+          if (
+            code === 8
+          ) {
             errorMsg =
               'Google Speech server busy';
           }
 
 
-          if (code === 9) {
-
+          if (
+            code === 9
+          ) {
             errorMsg =
               'Insufficient permissions';
           }
@@ -794,7 +872,6 @@ const HomeScreen = () => {
      */
 
     return () => {
-
       unsubscribeNetInfo();
 
       partialSub.remove();
@@ -803,14 +880,10 @@ const HomeScreen = () => {
 
       errorSub.remove();
 
-      /*
-       * Stop any Home speech session when Home unmounts.
-       */
       SpeechEngine.stop().catch(
         () => {}
       );
     };
-
   }, []);
 
 
@@ -821,84 +894,58 @@ const HomeScreen = () => {
    */
 
   const processVoiceCommand =
-  async text => {
+    async text => {
+      const startTime =
+        Date.now();
 
-    const startTime =
-      Date.now();
 
-    setAiStatus(
-      'Thinking...'
-    );
+      setAiStatus(
+        'Thinking...'
+      );
 
-    try {
 
-      /*
-       * =====================================================
-       * 1. LOAD LOCAL INVENTORY
-       * =====================================================
-       *
-       * This is always available offline.
-       */
-      const inventoryItems =
-        await database
-          .get(
-            'inventory_items'
-          )
-          .query()
-          .fetch();
+      let safeVoiceText =
+        '';
 
-      const inventoryNames =
-        inventoryItems
-          .map(
-            item =>
-              String(
-                item.productName ||
-                  ''
+
+      try {
+        const ownerId =
+          await requireCurrentUserId();
+
+
+        /*
+         * =====================================================
+         * LOCAL INVENTORY
+         * =====================================================
+         */
+
+        const inventoryItems =
+          await database
+            .get(
+              'inventory_items'
+            )
+            .query(
+              Q.where(
+                'owner_id',
+                ownerId
               )
-                .trim()
-                .slice(
-                  0,
-                  150
-                )
-          )
-          .filter(
-            Boolean
-          )
-          .slice(
-            0,
-            1000
-          );
+            )
+            .fetch();
 
 
-      /*
-       * =====================================================
-       * 2. LOAD LOCAL CUSTOMER NAMES
-       * =====================================================
-       *
-       * This is important for commands such as:
-       *
-       * "create Ravi account"
-       * "Ravi ka naya khata banao"
-       * "Ravi se 500 mila"
-       */
-      const ledgerEntries =
-        await database
-          .get(
-            'ledger_entries'
-          )
-          .query()
-          .fetch();
-
-      const customerNames = [
-        ...new Set(
-          ledgerEntries
+        const inventoryNames =
+          inventoryItems
             .map(
-              entry =>
+              item =>
                 String(
-                  entry.customerId ||
+                  item.productName ||
                     ''
                 )
                   .trim()
+                  .slice(
+                    0,
+                    150
+                  )
             )
             .filter(
               Boolean
@@ -906,20 +953,192 @@ const HomeScreen = () => {
             .slice(
               0,
               1000
+            );
+
+
+        /*
+         * =====================================================
+         * LOCAL CUSTOMERS
+         * =====================================================
+         */
+
+        const ledgerEntries =
+          await database
+            .get(
+              'ledger_entries'
             )
-        ),
-      ];
+            .query(
+              Q.where(
+                'owner_id',
+                ownerId
+              )
+            )
+            .fetch();
 
 
-      /*
-       * =====================================================
-       * 3. SANITIZE VOICE TEXT
-       * =====================================================
-       */
-      const safeVoiceText =
-        typeof text ===
-        'string'
-          ? text
+        const customerNames = [
+          ...new Set(
+            ledgerEntries
+              .map(
+                entry =>
+                  String(
+                    entry.customerId ||
+                      ''
+                  )
+                    .trim()
+              )
+              .filter(
+                Boolean
+              )
+              .slice(
+                0,
+                1000
+              )
+          ),
+        ];
+
+
+        /*
+         * =====================================================
+         * SANITIZE VOICE TEXT
+         * =====================================================
+         */
+
+        safeVoiceText =
+          typeof text ===
+          'string'
+            ? text
+                .replace(
+                  /[\u0000-\u001F\u007F]/g,
+                  ''
+                )
+                .trim()
+                .slice(
+                  0,
+                  500
+                )
+            : '';
+
+
+        if (
+          !safeVoiceText
+        ) {
+          setAiStatus(
+            "I didn't hear a command."
+          );
+
+          return;
+        }
+
+
+        /*
+         * =====================================================
+         * OFFLINE-FIRST ROUTER
+         * =====================================================
+         */
+
+        const aiData =
+          await parseVoiceCommand({
+            text:
+              safeVoiceText,
+
+            inventoryNames:
+              inventoryNames,
+
+            customerNames:
+              customerNames,
+          });
+
+
+        const latencyMs =
+          Date.now() -
+          startTime;
+
+
+        /*
+         * =====================================================
+         * SECURITY VALIDATION
+         * =====================================================
+         */
+
+        if (
+          !aiData ||
+          typeof aiData !==
+            'object' ||
+          Array.isArray(
+            aiData
+          )
+        ) {
+          throw new Error(
+            'Invalid voice parser response'
+          );
+        }
+
+
+        const allowedIntents =
+          new Set([
+            'inventory.add',
+            'inventory.create',
+            'sale.create',
+            'khata.credit',
+            'inventory.update_price',
+            'customer.create',
+
+            'query.sales',
+            'query.khata',
+            'query.inventory',
+
+            'ui.open_billing',
+            'ui.show_low_stock',
+            'ui.show_sales',
+
+            'pos.add_item',
+            'pos.apply_discount',
+            'pos.checkout',
+
+            'unknown',
+          ]);
+
+
+        const rawIntent =
+          typeof aiData.intent ===
+          'string'
+            ? aiData.intent
+                .trim()
+                .toLowerCase()
+            : 'unknown';
+
+
+        if (
+          !allowedIntents.has(
+            rawIntent
+          )
+        ) {
+          throw new Error(
+            `Unsupported voice intent: ${rawIntent}`
+          );
+        }
+
+
+        /*
+         * =====================================================
+         * TEXT SANITIZER
+         * =====================================================
+         */
+
+        const cleanRemoteText =
+          (
+            value,
+            maxLength
+          ) => {
+            if (
+              typeof value !==
+              'string'
+            ) {
+              return '';
+            }
+
+            return value
               .replace(
                 /[\u0000-\u001F\u007F]/g,
                 ''
@@ -927,743 +1146,477 @@ const HomeScreen = () => {
               .trim()
               .slice(
                 0,
-                500
-              )
-          : '';
-
-
-      if (
-        !safeVoiceText
-      ) {
-
-        setAiStatus(
-          "I didn't hear a command."
-        );
-
-        return;
-      }
-
-
-      /*
-       * =====================================================
-       * 4. OFFLINE-FIRST VOICE ROUTER
-       * =====================================================
-       *
-       * IMPORTANT:
-       *
-       * Local parser runs FIRST.
-       *
-       * High-confidence commands such as:
-       *
-       *   create Ravi account
-       *   Ravi ka naya khata banao
-       *   add 10 sugar
-       *   sell 2 sugar
-       *   Ravi se 500 mila
-       *
-       * should be handled locally without internet.
-       *
-       * Only commands that local parsing cannot understand
-       * are allowed to use the backend when internet exists.
-       */
-      const aiData =
-        await parseVoiceCommand({
-          text:
-            safeVoiceText,
-
-          inventoryNames:
-            inventoryNames,
-
-          customerNames:
-            customerNames,
-        });
-
-
-      const latencyMs =
-        Date.now() -
-        startTime;
-
-
-      /*
-       * =====================================================
-       * 5. SECURITY BOUNDARY
-       * =====================================================
-       */
-      if (
-        !aiData ||
-        typeof aiData !==
-          'object' ||
-        Array.isArray(
-          aiData
-        )
-      ) {
-
-        throw new Error(
-          'Invalid voice parser response'
-        );
-      }
-
-
-      /*
-       * =====================================================
-       * 6. ALLOWED INTENTS
-       * =====================================================
-       *
-       * inventory.create was missing before.
-       */
-      const allowedIntents =
-        new Set([
-          'inventory.add',
-          'inventory.create',
-          'sale.create',
-          'khata.credit',
-          'inventory.update_price',
-          'customer.create',
-
-          'query.sales',
-          'query.khata',
-          'query.inventory',
-
-          'ui.open_billing',
-          'ui.show_low_stock',
-          'ui.show_sales',
-
-          'pos.add_item',
-          'pos.apply_discount',
-          'pos.checkout',
-
-          'unknown',
-        ]);
-
-
-      const rawIntent =
-        typeof aiData.intent ===
-        'string'
-          ? aiData.intent
-              .trim()
-              .toLowerCase()
-          : 'unknown';
-
-
-      if (
-        !allowedIntents.has(
-          rawIntent
-        )
-      ) {
-
-        throw new Error(
-          `Unsupported voice intent: ${rawIntent}`
-        );
-      }
-
-
-      /*
-       * =====================================================
-       * 7. TEXT SANITIZER
-       * =====================================================
-       */
-      const cleanRemoteText =
-        (
-          value,
-          maxLength
-        ) => {
-
-          if (
-            typeof value !==
-            'string'
-          ) {
-
-            return '';
-          }
-
-
-          return value
-            .replace(
-              /[\u0000-\u001F\u007F]/g,
-              ''
-            )
-            .trim()
-            .slice(
-              0,
-              maxLength
-            );
-        };
-
-
-      /*
-       * =====================================================
-       * 8. NUMBER SANITIZER
-       * =====================================================
-       */
-      const safeNumber =
-        (
-          value,
-          maximum
-        ) => {
-
-          if (
-            value ===
-              null ||
-            value ===
-              undefined ||
-            value ===
-              '' ||
-            (
-              typeof value !==
-                'number' &&
-              typeof value !==
-                'string'
-            )
-          ) {
-
-            return null;
-          }
-
-
-          const parsed =
-            Number(
-              value
-            );
-
-
-          if (
-            !Number.isFinite(
-              parsed
-            ) ||
-            parsed <= 0 ||
-            parsed > maximum
-          ) {
-
-            return null;
-          }
-
-
-          return parsed;
-        };
-
-
-      /*
-       * =====================================================
-       * 9. DISCOUNT SANITIZER
-       * =====================================================
-       */
-      const safeDiscount =
-        (
-          value
-        ) => {
-
-          if (
-            value ===
-              null ||
-            value ===
-              undefined ||
-            value ===
-              ''
-          ) {
-
-            return null;
-          }
-
-
-          const parsed =
-            Number(
-              value
-            );
-
-
-          if (
-            !Number.isFinite(
-              parsed
-            ) ||
-            parsed < 0 ||
-            parsed > 100
-          ) {
-
-            return null;
-          }
-
-
-          return parsed;
-        };
-
-
-      /*
-       * =====================================================
-       * 10. BUILD SAFE ACTION DATA
-       * =====================================================
-       */
-      const safeAIData = {
-
-        /*
-         * Intent
-         */
-        intent:
-          rawIntent,
+                maxLength
+              );
+          };
 
 
         /*
-         * Product
+         * =====================================================
+         * NUMBER SANITIZER
+         * =====================================================
          */
-        product:
-          cleanRemoteText(
-            aiData.product,
-            150
-          ),
 
-
-        /*
-         * Customer
-         */
-        customer_name:
-          cleanRemoteText(
-            aiData.customer_name,
-            100
-          ),
-
-
-        /*
-         * Explanation / error reason
-         */
-        reason:
-          cleanRemoteText(
-            aiData.reason,
-            250
-          ),
-
-
-        /*
-         * Time period
-         */
-        time_period:
-          cleanRemoteText(
-            aiData.time_period,
-            50
-          ),
-
-
-        /*
-         * Quantity
-         */
-        qty:
-          safeNumber(
-            aiData.qty,
-            100000
-          ),
-
-
-        /*
-         * Money amount
-         */
-        amount:
-          safeNumber(
-            aiData.amount,
-            100000000
-          ),
-
-
-        /*
-         * Product selling price
-         */
-        new_price:
-          safeNumber(
-            aiData.new_price,
-            100000000
-          ),
-
-
-        /*
-         * Discount
-         */
-        discount_percent:
-          safeDiscount(
-            aiData.discount_percent
-          ),
-
-
-        /*
-         * Unit
-         *
-         * Examples:
-         * kg
-         * g
-         * liter
-         * pcs
-         */
-        unit:
-          cleanRemoteText(
-            aiData.unit,
-            20
-          ),
-
-
-        /*
-         * Payment type
-         */
-        payment_type:
+        const safeNumber =
           (
-            aiData.payment_type ===
-              'CASH' ||
-            aiData.payment_type ===
-              'KHATA'
-          )
-            ? aiData.payment_type
-            : null,
-      };
+            value,
+            maximum
+          ) => {
+            if (
+              value ===
+                null ||
+              value ===
+                undefined ||
+              value ===
+                '' ||
+              (
+                typeof value !==
+                  'number' &&
+                typeof value !==
+                  'string'
+              )
+            ) {
+              return null;
+            }
 
 
-      /*
-       * =====================================================
-       * 11. IMPORTANT SAFETY CHECK
-       * =====================================================
-       *
-       * Never execute an unknown command as a sale.
-       */
-      if (
-        safeAIData.intent ===
-        'unknown'
-      ) {
+            const parsed =
+              Number(
+                value
+              );
+
+
+            if (
+              !Number.isFinite(
+                parsed
+              ) ||
+              parsed <= 0 ||
+              parsed > maximum
+            ) {
+              return null;
+            }
+
+
+            return parsed;
+          };
+
 
         /*
-         * If parser found a product but no action,
-         * explain what the user needs to say.
+         * =====================================================
+         * DISCOUNT SANITIZER
+         * =====================================================
          */
-        if (
-          safeAIData.product
-        ) {
 
-          setAiStatus(
-            `I found "${safeAIData.product}", but I need an action. Try "add 2 ${safeAIData.product}" or "sell 1 ${safeAIData.product}".`
+        const safeDiscount =
+          value => {
+            if (
+              value ===
+                null ||
+              value ===
+                undefined ||
+              value ===
+                ''
+            ) {
+              return null;
+            }
+
+
+            const parsed =
+              Number(
+                value
+              );
+
+
+            if (
+              !Number.isFinite(
+                parsed
+              ) ||
+              parsed < 0 ||
+              parsed > 100
+            ) {
+              return null;
+            }
+
+
+            return parsed;
+          };
+
+
+        /*
+         * =====================================================
+         * SAFE ACTION DATA
+         * =====================================================
+         */
+
+        const safeAIData = {
+          intent:
+            rawIntent,
+
+          product:
+            cleanRemoteText(
+              aiData.product,
+              150
+            ),
+
+          customer_name:
+            cleanRemoteText(
+              aiData.customer_name,
+              100
+            ),
+
+          reason:
+            cleanRemoteText(
+              aiData.reason,
+              250
+            ),
+
+          time_period:
+            cleanRemoteText(
+              aiData.time_period,
+              50
+            ),
+
+          qty:
+            safeNumber(
+              aiData.qty,
+              100000
+            ),
+
+          amount:
+            safeNumber(
+              aiData.amount,
+              100000000
+            ),
+
+          new_price:
+            safeNumber(
+              aiData.new_price,
+              100000000
+            ),
+
+          discount_percent:
+            safeDiscount(
+              aiData.discount_percent
+            ),
+
+          unit:
+            cleanRemoteText(
+              aiData.unit,
+              20
+            ),
+
+          payment_type:
+            (
+              aiData.payment_type ===
+                'CASH' ||
+              aiData.payment_type ===
+                'KHATA'
+            )
+              ? aiData.payment_type
+              : null,
+        };
+
+
+        /*
+         * =====================================================
+         * UNKNOWN COMMAND
+         * =====================================================
+         */
+
+        if (
+          safeAIData.intent ===
+          'unknown'
+        ) {
+          if (
+            safeAIData.product
+          ) {
+            setAiStatus(
+              `I found "${safeAIData.product}", but I need an action. Try "add 2 ${safeAIData.product}" or "sell 1 ${safeAIData.product}".`
+            );
+          } else {
+            setAiStatus(
+              'Command not recognized. Try "add 2 sugar", "sell 1 sugar", or "create Ravi account".'
+            );
+          }
+
+
+          TelemetryService.logVoice(
+            safeVoiceText,
+            'unknown',
+            'unknown',
+            'FAILED',
+            latencyMs,
+            'Unknown command',
+            aiData.confidence ||
+              0
           );
 
-        } else {
 
+          return;
+        }
+
+
+        /*
+         * =====================================================
+         * LOG VOICE SUCCESS
+         * =====================================================
+         */
+
+        TelemetryService.logVoice(
+          safeVoiceText,
+          safeAIData.intent,
+          safeAIData.intent,
+          'SUCCESS',
+          latencyMs,
+          null,
+          aiData.confidence ||
+            0.9
+        );
+
+
+        setAiStatus(
+          'Updating database...'
+        );
+
+
+        /*
+         * =====================================================
+         * EXECUTE LOCAL ACTION
+         * =====================================================
+         */
+
+        const resultMessage =
+          await executeAIAction(
+            safeAIData
+          );
+
+
+        /*
+         * =====================================================
+         * PAYMENT CONFIRMATION
+         * =====================================================
+         */
+
+        if (
+          resultMessage &&
+          typeof resultMessage ===
+            'object' &&
+          resultMessage.needsConfirmation
+        ) {
           setAiStatus(
-            'Command not recognized. Try "add 2 sugar", "sell 1 sugar", or "create Ravi account".'
+            resultMessage.message
+          );
+
+
+          Alert.alert(
+            'Cash or Khata?',
+            resultMessage.message,
+            [
+              {
+                text:
+                  '💵 Cash',
+
+                onPress:
+                  async () => {
+                    if (
+                      isProcessingCommand.current
+                    ) {
+                      return;
+                    }
+
+
+                    isProcessingCommand.current =
+                      true;
+
+
+                    try {
+                      const finalMsg =
+                        await confirmPendingSale(
+                          resultMessage.pendingSale,
+                          'CASH'
+                        );
+
+
+                      setAiStatus(
+                        finalMsg
+                      );
+
+
+                      await fetchMetrics();
+
+                    } catch (
+                      confirmationError
+                    ) {
+                      console.error(
+                        'Cash confirmation error:',
+                        confirmationError
+                      );
+
+
+                      setAiStatus(
+                        confirmationError?.message ||
+                          'Could not complete cash sale.'
+                      );
+
+                    } finally {
+                      isProcessingCommand.current =
+                        false;
+                    }
+                  },
+              },
+
+              {
+                text:
+                  '📖 Udhaar',
+
+                onPress:
+                  async () => {
+                    if (
+                      isProcessingCommand.current
+                    ) {
+                      return;
+                    }
+
+
+                    isProcessingCommand.current =
+                      true;
+
+
+                    try {
+                      const finalMsg =
+                        await confirmPendingSale(
+                          resultMessage.pendingSale,
+                          'KHATA'
+                        );
+
+
+                      setAiStatus(
+                        finalMsg
+                      );
+
+
+                      await fetchMetrics();
+
+                    } catch (
+                      confirmationError
+                    ) {
+                      console.error(
+                        'Khata confirmation error:',
+                        confirmationError
+                      );
+
+
+                      setAiStatus(
+                        confirmationError?.message ||
+                          'Could not complete Khata sale.'
+                      );
+
+                    } finally {
+                      isProcessingCommand.current =
+                        false;
+                    }
+                  },
+              },
+
+              {
+                text:
+                  'Cancel',
+
+                style:
+                  'cancel',
+              },
+            ]
+          );
+
+
+          return;
+        }
+
+
+        /*
+         * =====================================================
+         * NORMAL RESULT
+         * =====================================================
+         */
+
+        if (
+          typeof resultMessage ===
+          'string'
+        ) {
+          setAiStatus(
+            resultMessage
+          );
+        } else if (
+          resultMessage &&
+          typeof resultMessage.message ===
+            'string'
+        ) {
+          setAiStatus(
+            resultMessage.message
+          );
+        } else {
+          setAiStatus(
+            'Done.'
           );
         }
 
 
+        await fetchMetrics();
+
+      } catch (
+        error
+      ) {
+        const latencyMs =
+          Date.now() -
+          startTime;
+
+
+        console.error(
+          'Voice Pipeline Error:',
+          error
+        );
+
+
+        const errorMessage =
+          error?.message ||
+          'Could not process that command.';
+
+
+        setAiStatus(
+          errorMessage
+        );
+
+
         TelemetryService.logVoice(
-          safeVoiceText,
+          safeVoiceText ||
+            text ||
+            '',
           'unknown',
           'unknown',
           'FAILED',
           latencyMs,
-          'Unknown command',
-          aiData.confidence ||
-            0
-        );
-
-        return;
-      }
-
-
-      /*
-       * =====================================================
-       * 12. LOG SUCCESS
-       * =====================================================
-       */
-      TelemetryService.logVoice(
-        safeVoiceText,
-        safeAIData.intent,
-        safeAIData.intent,
-        'SUCCESS',
-        latencyMs,
-        null,
-        aiData.confidence ||
-          0.9
-      );
-
-
-      /*
-       * =====================================================
-       * 13. EXECUTE LOCAL DATABASE ACTION
-       * =====================================================
-       *
-       * executeAIAction must operate against WatermelonDB.
-       *
-       * Therefore this part works without internet.
-       */
-      setAiStatus(
-        'Updating database...'
-      );
-
-
-      const resultMessage =
-        await executeAIAction(
-          safeAIData
+          errorMessage,
+          0
         );
 
 
-      /*
-       * =====================================================
-       * 14. PAYMENT CONFIRMATION
-       * =====================================================
-       *
-       * If a sale needs Cash/Udhaar confirmation,
-       * preserve the existing confirmation flow.
-       */
-      if (
-        resultMessage &&
-        typeof resultMessage ===
-          'object' &&
-        resultMessage.needsConfirmation
-      ) {
-
-        setAiStatus(
-          resultMessage.message
-        );
-
-
-        Alert.alert(
-          'Cash or Khata?',
-          resultMessage.message,
-          [
-            {
-              text:
-                '💵 Cash',
-
-              onPress:
-                async () => {
-
-                  /*
-                   * Prevent double execution.
-                   */
-                  if (
-                    isProcessingCommand.current
-                  ) {
-                    return;
-                  }
-
-
-                  isProcessingCommand.current =
-                    true;
-
-
-                  try {
-
-                    const finalMsg =
-                      await confirmPendingSale(
-                        resultMessage.pendingSale,
-                        'CASH'
-                      );
-
-
-                    setAiStatus(
-                      finalMsg
-                    );
-
-
-                    await fetchMetrics();
-
-                  } catch (
-                    confirmationError
-                  ) {
-
-                    console.error(
-                      'Cash confirmation error:',
-                      confirmationError
-                    );
-
-
-                    setAiStatus(
-                      confirmationError?.message ||
-                        'Could not complete cash sale.'
-                    );
-
-                  } finally {
-
-                    isProcessingCommand.current =
-                      false;
-                  }
-                },
-            },
-
-            {
-              text:
-                '📖 Udhaar',
-
-              onPress:
-                async () => {
-
-                  /*
-                   * Prevent double execution.
-                   */
-                  if (
-                    isProcessingCommand.current
-                  ) {
-                    return;
-                  }
-
-
-                  isProcessingCommand.current =
-                    true;
-
-
-                  try {
-
-                    const finalMsg =
-                      await confirmPendingSale(
-                        resultMessage.pendingSale,
-                        'KHATA'
-                      );
-
-
-                    setAiStatus(
-                      finalMsg
-                    );
-
-
-                    await fetchMetrics();
-
-                  } catch (
-                    confirmationError
-                  ) {
-
-                    console.error(
-                      'Khata confirmation error:',
-                      confirmationError
-                    );
-
-
-                    setAiStatus(
-                      confirmationError?.message ||
-                        'Could not complete Khata sale.'
-                    );
-
-                  } finally {
-
-                    isProcessingCommand.current =
-                      false;
-                  }
-                },
-            },
-
-            {
-              text:
-                'Cancel',
-
-              style:
-                'cancel',
-            },
-          ]
-        );
-
-
-        return;
-      }
-
-
-      /*
-       * =====================================================
-       * 15. NORMAL SUCCESS MESSAGE
-       * =====================================================
-       */
-      if (
-        typeof resultMessage ===
-        'string'
-      ) {
-
-        setAiStatus(
-          resultMessage
-        );
-
-      } else if (
-        resultMessage &&
-        typeof resultMessage.message ===
-          'string'
-      ) {
-
-        setAiStatus(
-          resultMessage.message
-        );
-
-      } else {
-
-        setAiStatus(
-          'Done.'
+        TelemetryService.logError(
+          'voice_ai',
+          errorMessage,
+          error?.stack
         );
       }
-
-
-      /*
-       * =====================================================
-       * 16. REFRESH HOME METRICS
-       * =====================================================
-       */
-      await fetchMetrics();
-
-    } catch (
-      error
-    ) {
-
-      const latencyMs =
-        Date.now() -
-        startTime;
-
-
-      console.error(
-        'Voice Pipeline Error:',
-        error
-      );
-
-
-      /*
-       * =====================================================
-       * IMPORTANT:
-       *
-       * Do NOT tell the user "Connection failed"
-       * for every error.
-       *
-       * Many failures are local database/parser errors
-       * and have nothing to do with internet.
-       * =====================================================
-       */
-      const errorMessage =
-        error?.message ||
-        'Could not process that command.';
-
-
-      setAiStatus(
-        errorMessage
-      );
-
-
-      TelemetryService.logVoice(
-        safeVoiceText ||
-          text ||
-          '',
-        'unknown',
-        'unknown',
-        'FAILED',
-        latencyMs,
-        errorMessage,
-        0
-      );
-
-
-      TelemetryService.logError(
-        'voice_ai',
-        errorMessage,
-        error?.stack
-      );
-    }
-  };
+    };
 
 
   /*
    * =========================================================
-   * MICROPHONE BUTTON
+   * MICROPHONE
    * =========================================================
    */
 
   const safeMicPress =
     async () => {
-
-      /*
-       * Home must never start its microphone while another
-       * modal/screen owns it.
-       */
       if (
         isModalOpen.current
       ) {
@@ -1672,9 +1625,9 @@ const HomeScreen = () => {
 
 
       try {
-
-        if (isListening) {
-
+        if (
+          isListening
+        ) {
           await SpeechEngine.stop();
 
           setIsListening(
@@ -1686,7 +1639,6 @@ const HomeScreen = () => {
           );
 
         } else {
-
           setTranscribedText(
             ''
           );
@@ -1703,7 +1655,6 @@ const HomeScreen = () => {
         }
 
       } catch (error) {
-
         setIsListening(
           false
         );
@@ -1729,7 +1680,6 @@ const HomeScreen = () => {
 
   const handleVoiceUnavailable =
     reason => {
-
       setAiStatus(
         'Voice unavailable — use manual entry below'
       );
@@ -1772,9 +1722,7 @@ const HomeScreen = () => {
 
   const handleManualSync =
     async () => {
-
       try {
-
         setIsSyncing(
           true
         );
@@ -1803,7 +1751,6 @@ const HomeScreen = () => {
         );
 
       } catch (error) {
-
         setIsSyncing(
           false
         );
@@ -1819,19 +1766,17 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * ONBOARDING SAVE
+   * SAVE ONBOARDING - USER SPECIFIC
    * =========================================================
    */
 
   const handleSaveOnboarding =
     async () => {
-
       if (
         !onboardingPhone ||
         onboardingPhone.length !==
           10
       ) {
-
         return Alert.alert(
           'Validation',
           'Please enter a valid 10-digit mobile number.'
@@ -1845,7 +1790,6 @@ const HomeScreen = () => {
           '@'
         )
       ) {
-
         return Alert.alert(
           'Validation',
           'Please enter a valid UPI ID (e.g., number@paytm).'
@@ -1859,24 +1803,101 @@ const HomeScreen = () => {
 
 
       try {
+        const ownerId =
+          currentUserId ||
+          (await requireCurrentUserId());
 
-        await AsyncStorage.setItem(
-          'userPhone',
-          onboardingPhone
+
+        setCurrentUserId(
+          ownerId
         );
 
 
+        /*
+         * =====================================================
+         * SAVE PROFILE UNDER CURRENT USER
+         * =====================================================
+         */
+
+        const profileKey =
+          getProfileKey(
+            ownerId
+          );
+
+
+        const existingProfileRaw =
+          await AsyncStorage.getItem(
+            profileKey
+          );
+
+
+        let existingProfile =
+          {};
+
+
+        if (
+          existingProfileRaw
+        ) {
+          try {
+            existingProfile =
+              JSON.parse(
+                existingProfileRaw
+              );
+          } catch {
+            existingProfile =
+              {};
+          }
+        }
+
+
+        const updatedProfile = {
+          ...existingProfile,
+
+          shopName:
+            shopName ||
+            'Your Store',
+
+          phone:
+            onboardingPhone,
+
+          upiId:
+            onboardingUpi,
+
+          avatarUri:
+            avatarUri,
+
+          onboardingCompleted:
+            true,
+        };
+
+
         await AsyncStorage.setItem(
-          'shopUpi',
+          profileKey,
+
+          JSON.stringify(
+            updatedProfile
+          )
+        );
+
+
+        /*
+         * Update screen immediately.
+         */
+
+        setOnboardingPhone(
+          onboardingPhone
+        );
+
+        setOnboardingUpi(
           onboardingUpi
         );
 
 
-        await AsyncStorage.setItem(
-          'onboardingDetailsCompleted',
-          'true'
-        );
-
+        /*
+         * =====================================================
+         * SERVER UPDATE
+         * =====================================================
+         */
 
         const token =
           await AsyncStorage.getItem(
@@ -1884,34 +1905,63 @@ const HomeScreen = () => {
           );
 
 
-        if (token) {
+        if (
+          token
+        ) {
+          try {
+            const response =
+              await fetch(
+                `${BASE_URL}/api/v1/auth/profile`,
+                {
+                  method:
+                    'PUT',
 
-          await fetch(
-            `${BASE_URL}/api/v1/auth/profile`,
-            {
-              method:
-                'PUT',
+                  headers: {
+                    'Content-Type':
+                      'application/json',
 
-              headers: {
-                'Content-Type':
-                  'application/json',
+                    Authorization:
+                      `Bearer ${token}`,
+                  },
 
-                'Authorization':
-                  `Bearer ${token}`,
-              },
+                  body:
+                    JSON.stringify({
+                      shop_name:
+                        shopName,
 
-              body:
-                JSON.stringify({
-                  shop_name:
-                    shopName,
+                      phone:
+                        onboardingPhone,
 
-                  phone:
-                    onboardingPhone,
-                }),
+                      upi_id:
+                        onboardingUpi,
+                    }),
+                }
+              );
+
+
+            if (
+              response.ok
+            ) {
+              console.log(
+                'Profile onboarding synced to server.'
+              );
+            } else {
+              console.log(
+                'Profile saved locally; server returned:',
+                response.status
+              );
             }
-          ).catch(
-            () => {}
-          );
+
+          } catch (
+            serverError
+          ) {
+            /*
+             * Offline is allowed.
+             */
+            console.log(
+              'Profile saved locally. Server unavailable.'
+            );
+          }
         }
 
 
@@ -1926,14 +1976,19 @@ const HomeScreen = () => {
         );
 
       } catch (error) {
+        console.error(
+          'Onboarding save error:',
+          error
+        );
+
 
         Alert.alert(
           'Error',
-          'Could not save details locally.'
+          error.message ||
+            'Could not save details locally.'
         );
 
       } finally {
-
         setIsSavingOnboarding(
           false
         );
@@ -1949,11 +2004,6 @@ const HomeScreen = () => {
 
   const handlePOSClose =
     () => {
-
-      /*
-       * Make sure Home does not continue listening after
-       * POS has closed.
-       */
       SpeechEngine.stop().catch(
         () => {}
       );
@@ -1989,7 +2039,6 @@ const HomeScreen = () => {
    */
 
   return (
-
     <View
       style={[
         styles.container,
@@ -2013,13 +2062,11 @@ const HomeScreen = () => {
       {/* OFFLINE BANNER */}
 
       {isOffline && (
-
         <View
           style={
             styles.offlineBanner
           }
         >
-
           <View
             style={
               styles.offlineDot
@@ -2033,9 +2080,7 @@ const HomeScreen = () => {
           >
             Offline — saving to this device
           </Text>
-
         </View>
-
       )}
 
 
@@ -2057,9 +2102,7 @@ const HomeScreen = () => {
             styles.avatarCircle
           }
         >
-
           {avatarUri ? (
-
             <Image
               source={{
                 uri:
@@ -2070,9 +2113,7 @@ const HomeScreen = () => {
                 styles.avatarImage
               }
             />
-
           ) : (
-
             <Text
               style={
                 styles.avatarText
@@ -2080,9 +2121,7 @@ const HomeScreen = () => {
             >
               {initial}
             </Text>
-
           )}
-
         </View>
 
 
@@ -2091,7 +2130,6 @@ const HomeScreen = () => {
             styles.storeInfo
           }
         >
-
           <Text
             style={
               styles.storeName
@@ -2116,7 +2154,6 @@ const HomeScreen = () => {
               ? 'Not backed up'
               : 'Backed up'}
           </Text>
-
         </View>
 
 
@@ -2137,16 +2174,12 @@ const HomeScreen = () => {
             0.7
           }
         >
-
           {isSyncing ? (
-
             <ActivityIndicator
               color="#0C9C4C"
               size="small"
             />
-
           ) : (
-
             <Text
               style={
                 styles.syncIconText
@@ -2154,9 +2187,7 @@ const HomeScreen = () => {
             >
               ☁
             </Text>
-
           )}
-
         </TouchableOpacity>
 
       </View>
@@ -2187,7 +2218,6 @@ const HomeScreen = () => {
         keyboardDismissMode="on-drag"
       >
 
-
         {/* BALANCE CARD */}
 
         <View
@@ -2206,7 +2236,6 @@ const HomeScreen = () => {
               styles.balanceHalf
             }
           >
-
             <Text
               style={
                 styles.balanceLabel
@@ -2219,6 +2248,7 @@ const HomeScreen = () => {
             <Text
               style={[
                 styles.balanceValue,
+
                 {
                   color:
                     '#0C9C4C',
@@ -2239,7 +2269,6 @@ const HomeScreen = () => {
             >
               Aaj ki Bikri
             </Text>
-
           </View>
 
 
@@ -2265,7 +2294,6 @@ const HomeScreen = () => {
               0.75
             }
           >
-
             <Text
               style={
                 styles.balanceLabel
@@ -2278,6 +2306,7 @@ const HomeScreen = () => {
             <Text
               style={[
                 styles.balanceValue,
+
                 {
                   color:
                     pendingKhata >
@@ -2301,7 +2330,6 @@ const HomeScreen = () => {
             >
               Baki Udhaar ›
             </Text>
-
           </TouchableOpacity>
 
         </View>
@@ -2336,17 +2364,16 @@ const HomeScreen = () => {
               0.8
             }
           >
-
             <View
               style={[
                 styles.actionIconWrap,
+
                 {
                   backgroundColor:
                     '#E7F7EE',
                 },
               ]}
             >
-
               <Text
                 style={
                   styles.actionIcon
@@ -2354,7 +2381,6 @@ const HomeScreen = () => {
               >
                 🛒
               </Text>
-
             </View>
 
 
@@ -2365,7 +2391,6 @@ const HomeScreen = () => {
             >
               New Sale
             </Text>
-
           </TouchableOpacity>
 
 
@@ -2384,17 +2409,16 @@ const HomeScreen = () => {
               0.8
             }
           >
-
             <View
               style={[
                 styles.actionIconWrap,
+
                 {
                   backgroundColor:
                     '#FDECEA',
                 },
               ]}
             >
-
               <Text
                 style={
                   styles.actionIcon
@@ -2402,7 +2426,6 @@ const HomeScreen = () => {
               >
                 📒
               </Text>
-
             </View>
 
 
@@ -2413,7 +2436,6 @@ const HomeScreen = () => {
             >
               Khata
             </Text>
-
           </TouchableOpacity>
 
 
@@ -2423,7 +2445,6 @@ const HomeScreen = () => {
             }
 
             onPress={() => {
-
               setManualEntryPrefill(
                 ''
               );
@@ -2431,24 +2452,22 @@ const HomeScreen = () => {
               setShowManualEntry(
                 true
               );
-
             }}
 
             activeOpacity={
               0.8
             }
           >
-
             <View
               style={[
                 styles.actionIconWrap,
+
                 {
                   backgroundColor:
                     '#EAF2FE',
                 },
               ]}
             >
-
               <Text
                 style={
                   styles.actionIcon
@@ -2456,7 +2475,6 @@ const HomeScreen = () => {
               >
                 ✍️
               </Text>
-
             </View>
 
 
@@ -2467,7 +2485,6 @@ const HomeScreen = () => {
             >
               Add Entry
             </Text>
-
           </TouchableOpacity>
 
         </View>
@@ -2502,7 +2519,6 @@ const HomeScreen = () => {
             >
 
               {isListening && (
-
                 <Animated.View
                   pointerEvents="none"
 
@@ -2522,7 +2538,6 @@ const HomeScreen = () => {
                     },
                   ]}
                 />
-
               )}
 
 
@@ -2542,7 +2557,6 @@ const HomeScreen = () => {
                   0.85
                 }
               >
-
                 <Text
                   style={
                     styles.micIcon
@@ -2552,7 +2566,6 @@ const HomeScreen = () => {
                     ? '⏹'
                     : '🎙'}
                 </Text>
-
               </TouchableOpacity>
 
             </View>
@@ -2591,7 +2604,6 @@ const HomeScreen = () => {
 
 
           {!!transcribedText && (
-
             <Text
               style={
                 styles.speechPreview
@@ -2599,13 +2611,11 @@ const HomeScreen = () => {
             >
               "{transcribedText}"
             </Text>
-
           )}
 
 
           <TouchableOpacity
             onPress={() => {
-
               setManualEntryPrefill(
                 ''
               );
@@ -2613,7 +2623,6 @@ const HomeScreen = () => {
               setShowManualEntry(
                 true
               );
-
             }}
 
             style={
@@ -2624,7 +2633,6 @@ const HomeScreen = () => {
               0.7
             }
           >
-
             <Text
               style={
                 styles.typeInsteadLink
@@ -2632,7 +2640,6 @@ const HomeScreen = () => {
             >
               Type instead
             </Text>
-
           </TouchableOpacity>
 
         </View>
@@ -2650,9 +2657,7 @@ const HomeScreen = () => {
             },
           ]}
         >
-
           <LowStockWidget />
-
         </View>
 
       </ScrollView>
@@ -2684,7 +2689,6 @@ const HomeScreen = () => {
           0.85
         }
       >
-
         <Text
           style={
             styles.fabIcon
@@ -2692,7 +2696,6 @@ const HomeScreen = () => {
         >
           +
         </Text>
-
       </TouchableOpacity>
 
 
@@ -2709,13 +2712,11 @@ const HomeScreen = () => {
           handlePOSClose
         }
       >
-
         <POSScreen
           onClose={
             handlePOSClose
           }
         />
-
       </Modal>
 
 
@@ -2729,7 +2730,6 @@ const HomeScreen = () => {
         animationType="slide"
 
         onRequestClose={() => {
-
           SpeechEngine.stop().catch(
             () => {}
           );
@@ -2741,10 +2741,8 @@ const HomeScreen = () => {
           fetchMetrics();
         }}
       >
-
         <KhataScreen
           onClose={() => {
-
             SpeechEngine.stop().catch(
               () => {}
             );
@@ -2756,7 +2754,6 @@ const HomeScreen = () => {
             fetchMetrics();
           }}
         />
-
       </Modal>
 
 
@@ -2770,7 +2767,6 @@ const HomeScreen = () => {
         animationType="slide"
 
         onRequestClose={() => {
-
           SpeechEngine.stop().catch(
             () => {}
           );
@@ -2778,18 +2774,14 @@ const HomeScreen = () => {
           setShowManualEntry(
             false
           );
-
         }}
       >
-
         <ManualEntryScreen
-
           initialQuery={
             manualEntryPrefill
           }
 
           onClose={() => {
-
             SpeechEngine.stop().catch(
               () => {}
             );
@@ -2797,24 +2789,20 @@ const HomeScreen = () => {
             setShowManualEntry(
               false
             );
-
           }}
 
           onSaved={() => {
-
             setAiStatus(
               'Entry saved'
             );
 
             fetchMetrics();
           }}
-
         />
-
       </Modal>
 
 
-      {/* ONBOARDING MODAL */}
+      {/* ONBOARDING */}
 
       <Modal
         visible={
@@ -2899,7 +2887,6 @@ const HomeScreen = () => {
                   styles.modalHeaderIcon
                 }
               >
-
                 <Text
                   style={
                     styles.modalHeaderEmoji
@@ -2907,7 +2894,6 @@ const HomeScreen = () => {
                 >
                   📱
                 </Text>
-
               </View>
 
 
@@ -3022,13 +3008,10 @@ const HomeScreen = () => {
               >
 
                 {isSavingOnboarding ? (
-
                   <ActivityIndicator
                     color="#fff"
                   />
-
                 ) : (
-
                   <Text
                     style={
                       styles.modalSaveBtnText
@@ -3036,7 +3019,6 @@ const HomeScreen = () => {
                   >
                     Save & Get Started
                   </Text>
-
                 )}
 
               </TouchableOpacity>
@@ -3069,34 +3051,32 @@ const styles =
         '#F5F7F6',
     },
 
-
     offlineBanner: {
       backgroundColor:
         '#1B1F23',
-
       paddingVertical:
         8,
-
       paddingHorizontal:
         12,
-
       flexDirection:
         'row',
-
       alignItems:
         'center',
-
       justifyContent:
         'center',
     },
 
     offlineDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+      width:
+        6,
+      height:
+        6,
+      borderRadius:
+        3,
       backgroundColor:
         '#E0433B',
-      marginRight: 8,
+      marginRight:
+        8,
     },
 
     offlineText: {
@@ -3104,13 +3084,13 @@ const styles =
         '#FFFFFF',
       fontWeight:
         '600',
-      fontSize: 12.5,
+      fontSize:
+        12.5,
       letterSpacing:
         0.2,
       textAlign:
         'center',
     },
-
 
     topBar: {
       flexDirection:
@@ -3128,9 +3108,12 @@ const styles =
     },
 
     avatarCircle: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
+      width:
+        42,
+      height:
+        42,
+      borderRadius:
+        21,
       backgroundColor:
         '#0C9C4C',
       alignItems:
@@ -3144,30 +3127,38 @@ const styles =
     },
 
     avatarImage: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
+      width:
+        42,
+      height:
+        42,
+      borderRadius:
+        21,
     },
 
     avatarText: {
       color:
         '#FFFFFF',
-      fontSize: 18,
+      fontSize:
+        18,
       fontWeight:
         '800',
     },
 
     storeInfo: {
       flex: 1,
-      marginLeft: 12,
-      minWidth: 0,
-      marginRight: 8,
+      marginLeft:
+        12,
+      minWidth:
+        0,
+      marginRight:
+        8,
     },
 
     storeName: {
       color:
         '#1B1F23',
-      fontSize: 17,
+      fontSize:
+        17,
       fontWeight:
         '800',
     },
@@ -3175,14 +3166,19 @@ const styles =
     syncStatus: {
       color:
         '#6B7280',
-      fontSize: 12,
-      marginTop: 1,
+      fontSize:
+        12,
+      marginTop:
+        1,
     },
 
     syncIconBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width:
+        36,
+      height:
+        36,
+      borderRadius:
+        18,
       alignItems:
         'center',
       justifyContent:
@@ -3194,17 +3190,16 @@ const styles =
     },
 
     syncIconText: {
-      fontSize: 17,
+      fontSize:
+        17,
       color:
         '#0C9C4C',
     },
-
 
     scrollContent: {
       paddingTop:
         0,
     },
-
 
     balanceCard: {
       flexDirection:
@@ -3248,7 +3243,8 @@ const styles =
     },
 
     balanceDivider: {
-      width: 1,
+      width:
+        1,
       backgroundColor:
         '#EAECEC',
     },
@@ -3256,7 +3252,8 @@ const styles =
     balanceLabel: {
       color:
         '#6B7280',
-      fontSize: 11,
+      fontSize:
+        11,
       fontWeight:
         '700',
       letterSpacing:
@@ -3266,7 +3263,8 @@ const styles =
     },
 
     balanceValue: {
-      fontSize: 23,
+      fontSize:
+        23,
       fontWeight:
         '800',
       flexShrink:
@@ -3276,11 +3274,11 @@ const styles =
     balanceSubLabel: {
       color:
         '#9CA3AF',
-      fontSize: 12,
+      fontSize:
+        12,
       marginTop:
         4,
     },
-
 
     actionGrid: {
       flexDirection:
@@ -3304,9 +3302,12 @@ const styles =
     },
 
     actionIconWrap: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width:
+        48,
+      height:
+        48,
+      borderRadius:
+        24,
       alignItems:
         'center',
       justifyContent:
@@ -3316,26 +3317,28 @@ const styles =
     },
 
     actionIcon: {
-      fontSize: 22,
+      fontSize:
+        22,
     },
 
     actionLabel: {
       color:
         '#1B1F23',
-      fontSize: 11,
+      fontSize:
+        11,
       fontWeight:
         '600',
       textAlign:
         'center',
     },
 
-
     aiCard: {
       backgroundColor:
         '#FFFFFF',
       marginTop:
         18,
-      padding: 16,
+      padding:
+        16,
       borderRadius:
         16,
       borderWidth:
@@ -3367,7 +3370,8 @@ const styles =
     aiTitle: {
       color:
         '#1B1F23',
-      fontSize: 15,
+      fontSize:
+        15,
       fontWeight:
         '800',
     },
@@ -3375,7 +3379,8 @@ const styles =
     aiSubtitle: {
       color:
         '#6B7280',
-      fontSize: 12.5,
+      fontSize:
+        12.5,
       marginTop:
         2,
     },
@@ -3383,21 +3388,25 @@ const styles =
     speechPreview: {
       color:
         '#1B1F23',
-      fontSize: 13.5,
+      fontSize:
+        13.5,
       fontStyle:
         'italic',
       marginTop:
         12,
       backgroundColor:
         '#F5F7F6',
-      padding: 10,
+      padding:
+        10,
       borderRadius:
         10,
     },
 
     micWrap: {
-      width: 56,
-      height: 56,
+      width:
+        56,
+      height:
+        56,
       alignItems:
         'center',
       justifyContent:
@@ -3409,9 +3418,12 @@ const styles =
     pulseRing: {
       position:
         'absolute',
-      width: 50,
-      height: 50,
-      borderRadius: 25,
+      width:
+        50,
+      height:
+        50,
+      borderRadius:
+        25,
       backgroundColor:
         '#E0433B',
     },
@@ -3419,9 +3431,12 @@ const styles =
     micButton: {
       backgroundColor:
         '#0C9C4C',
-      width: 50,
-      height: 50,
-      borderRadius: 25,
+      width:
+        50,
+      height:
+        50,
+      borderRadius:
+        25,
       justifyContent:
         'center',
       alignItems:
@@ -3434,7 +3449,8 @@ const styles =
     },
 
     micIcon: {
-      fontSize: 21,
+      fontSize:
+        21,
     },
 
     typeInsteadButton: {
@@ -3451,25 +3467,28 @@ const styles =
     typeInsteadLink: {
       color:
         '#0C9C4C',
-      fontSize: 13,
+      fontSize:
+        13,
       fontWeight:
         '700',
     },
-
 
     lowStockWrapper: {
       marginTop:
         4,
     },
 
-
     fab: {
       position:
         'absolute',
-      right: 20,
-      width: 58,
-      height: 58,
-      borderRadius: 29,
+      right:
+        20,
+      width:
+        58,
+      height:
+        58,
+      borderRadius:
+        29,
       backgroundColor:
         '#0C9C4C',
       alignItems:
@@ -3495,13 +3514,13 @@ const styles =
     fabIcon: {
       color:
         '#FFFFFF',
-      fontSize: 30,
+      fontSize:
+        30,
       fontWeight:
         '400',
       marginTop:
         -2,
     },
-
 
     modalKeyboardContainer: {
       flex: 1,
@@ -3527,7 +3546,8 @@ const styles =
         400,
       borderRadius:
         20,
-      padding: 24,
+      padding:
+        24,
       alignItems:
         'center',
       shadowColor:
@@ -3547,9 +3567,12 @@ const styles =
     },
 
     modalHeaderIcon: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width:
+        64,
+      height:
+        64,
+      borderRadius:
+        32,
       backgroundColor:
         '#E7F7EE',
       justifyContent:
@@ -3561,11 +3584,13 @@ const styles =
     },
 
     modalHeaderEmoji: {
-      fontSize: 30,
+      fontSize:
+        30,
     },
 
     modalTitle: {
-      fontSize: 20,
+      fontSize:
+        20,
       fontWeight:
         '800',
       color:
@@ -3577,7 +3602,8 @@ const styles =
     },
 
     modalSubtitle: {
-      fontSize: 13.5,
+      fontSize:
+        13.5,
       color:
         '#6B7280',
       textAlign:
@@ -3591,7 +3617,8 @@ const styles =
     inputLabel: {
       alignSelf:
         'flex-start',
-      fontSize: 12.5,
+      fontSize:
+        12.5,
       fontWeight:
         '600',
       color:
@@ -3609,8 +3636,10 @@ const styles =
         '#EAECEC',
       borderRadius:
         10,
-      padding: 14,
-      fontSize: 15,
+      padding:
+        14,
+      fontSize:
+        15,
       backgroundColor:
         '#F9FAFB',
       color:
@@ -3643,7 +3672,8 @@ const styles =
     modalSaveBtnText: {
       color:
         '#FFFFFF',
-      fontSize: 16,
+      fontSize:
+        16,
       fontWeight:
         '700',
       textAlign:
