@@ -52,5 +52,23 @@ export default schemaMigrations({
 
       steps: [],
     },
+
+    {
+      toVersion: 10,
+
+      steps: [
+        addColumns({
+          table: 'inventory_items',
+
+          columns: [
+            {
+              name: 'unit',
+              type: 'string',
+              isOptional: true,
+            },
+          ],
+        }),
+      ],
+    },
   ],
 });

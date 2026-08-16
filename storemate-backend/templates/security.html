@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#080908">
+<meta name="description" content="Countr Security & Privacy — understand how Countr approaches your shop and customer data.">
+<title>Security & Privacy — Countr</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{
+fontFamily:{sans:['Inter','ui-sans-serif','system-ui','sans-serif']},
+keyframes:{
+float:{'0%,100%':{transform:'translateY(0)'},'50%':{transform:'translateY(-10px)'}},
+pulse:{'0%':{transform:'scale(.8)',opacity:.7},'100%':{transform:'scale(1.5)',opacity:0}},
+scan:{'0%':{top:'0%'},'100%':{top:'100%'}}
+},
+animation:{float:'float 5s ease-in-out infinite',pulse:'pulse 2s ease-out infinite'}
+}}}
+</script>
+
+<style>
+*{scroll-behavior:smooth}
+body{overflow-x:hidden}
+::selection{background:#b8ff3d;color:#080908}
+.grid{
+background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),
+linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);
+background-size:55px 55px
+}
+.glass{
+background:rgba(255,255,255,.055);
+border:1px solid rgba(255,255,255,.10);
+backdrop-filter:blur(18px);
+-webkit-backdrop-filter:blur(18px)
+}
+.reveal{opacity:0;transform:translateY(28px);transition:.8s ease}
+.reveal.show{opacity:1;transform:translateY(0)}
+.shield{
+width:min(300px,75vw);aspect-ratio:1;
+clip-path:polygon(50% 0%,92% 16%,92% 58%,75% 82%,50% 100%,25% 82%,8% 58%,8% 16%);
+background:linear-gradient(145deg,#b8ff3d,#86c91e);
+display:flex;align-items:center;justify-content:center;
+box-shadow:0 30px 100px rgba(184,255,61,.15)
+}
+.shield-inner{
+width:82%;height:82%;
+clip-path:inherit;background:#0c0e0b;
+display:flex;align-items:center;justify-content:center;
+position:relative
+}
+.scan{
+position:absolute;left:8%;right:8%;height:2px;
+background:#b8ff3d;box-shadow:0 0 18px #b8ff3d;
+animation:scan 2.8s linear infinite
+}
+.card-hover{transition:.35s ease}
+.card-hover:hover{transform:translateY(-6px);background:rgba(255,255,255,.08);border-color:rgba(184,255,61,.28)}
+</style>
+</head>
+
+<body class="bg-[#080908] text-white font-sans">
+
+<header class="fixed top-0 left-0 right-0 z-50 px-4 md:px-8 pt-4">
+<div class="max-w-7xl mx-auto glass rounded-2xl px-5 md:px-7 py-3.5 flex items-center justify-between">
+<a href="/" class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black">C</div>
+<span class="text-xl font-black">countr</span>
+</a>
+
+<nav class="hidden md:flex gap-8 text-sm text-white/60">
+<a href="/" class="hover:text-white">Home</a>
+<a href="/how-it-works" class="hover:text-white">How it works</a>
+<a href="/features" class="hover:text-white">Features</a>
+<a href="/security" class="text-white">Security</a>
+</nav>
+
+<a href="/#get-started" class="bg-white text-black rounded-xl px-5 py-2.5 text-sm font-bold hover:bg-[#b8ff3d] transition">Get started</a>
+</div>
+</header>
+
+<main>
+
+<!-- HERO -->
+<section class="relative min-h-[90vh] pt-36 pb-24 px-5 overflow-hidden">
+<div class="absolute inset-0 grid opacity-70"></div>
+<div class="absolute w-[650px] h-[650px] bg-[#b8ff3d]/8 blur-[140px] rounded-full -top-40 left-1/2 -translate-x-1/2"></div>
+
+<div class="relative z-10 max-w-7xl mx-auto grid lg:grid-cols-2 gap-14 items-center">
+<div class="reveal">
+<div class="inline-flex items-center gap-2 glass rounded-full px-4 py-2 text-xs font-bold text-white/70">
+<span class="w-2 h-2 bg-[#b8ff3d] rounded-full"></span>
+Security & Privacy
+</div>
+
+<h1 class="mt-8 text-[clamp(3.5rem,7vw,6.8rem)] leading-[.88] font-black tracking-[-.07em]">
+Your shop data<br>
+<span class="text-[#b8ff3d]">matters.</span>
+</h1>
+
+<p class="mt-7 text-lg md:text-xl text-white/45 max-w-xl leading-relaxed">
+Countr is built around an important principle: your shop data is yours. We aim to make privacy and responsible data handling part of the product from the beginning.
+</p>
+
+<div class="mt-8 flex flex-wrap gap-3">
+<a href="#principles" class="bg-[#b8ff3d] text-black rounded-2xl px-6 py-4 font-black">Our approach ↓</a>
+<a href="/privacy" class="glass rounded-2xl px-6 py-4 font-bold hover:bg-white/10 transition">Read Privacy Policy</a>
+</div>
+</div>
+
+<div class="reveal flex justify-center" style="transition-delay:.15s">
+<div class="relative">
+<div class="absolute inset-[-80px] rounded-full bg-[#b8ff3d]/8 blur-3xl"></div>
+<div class="shield relative">
+<div class="shield-inner">
+<div class="scan"></div>
+<div class="text-center">
+<div class="text-6xl">✓</div>
+<p class="mt-4 text-[#b8ff3d] text-xs font-black uppercase tracking-[.2em]">Countr</p>
+<p class="mt-2 text-white/45 text-xs">Privacy by design</p>
+</div>
+</div>
+</div>
+
+<div class="absolute -right-10 top-16 glass rounded-2xl px-4 py-3 animate-float">
+<p class="text-[10px] text-white/30 uppercase tracking-wider">Principle</p>
+<p class="text-sm font-black mt-1">Data matters</p>
+</div>
+
+<div class="absolute -left-12 bottom-12 glass rounded-2xl px-4 py-3">
+<p class="text-[10px] text-white/30 uppercase tracking-wider">Control</p>
+<p class="text-sm font-black mt-1 text-[#b8ff3d]">You decide</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- PRINCIPLES -->
+<section id="principles" class="py-28 px-5 bg-[#0d0f0c] border-y border-white/7">
+<div class="max-w-7xl mx-auto">
+
+<div class="reveal text-center max-w-3xl mx-auto">
+<p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">Our principles</p>
+<h2 class="mt-4 text-4xl md:text-6xl font-black tracking-[-.05em]">Security shouldn't<br>be an afterthought.</h2>
+<p class="mt-6 text-lg text-white/45">These are the product principles we want Countr to follow as it grows.</p>
+</div>
+
+<div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mt-16">
+
+<div class="reveal glass rounded-3xl p-7 card-hover">
+<div class="w-12 h-12 rounded-2xl bg-[#b8ff3d] text-black flex items-center justify-center text-xl">01</div>
+<h3 class="mt-8 text-2xl font-black">Privacy</h3>
+<p class="mt-3 text-white/40 leading-relaxed text-sm">Collect and use information for clear product purposes, with privacy in mind.</p>
+</div>
+
+<div class="reveal glass rounded-3xl p-7 card-hover" style="transition-delay:.08s">
+<div class="w-12 h-12 rounded-2xl bg-white text-black flex items-center justify-center text-xl">02</div>
+<h3 class="mt-8 text-2xl font-black">Transparency</h3>
+<p class="mt-3 text-white/40 leading-relaxed text-sm">Make it clear what information the service handles and how it is used.</p>
+</div>
+
+<div class="reveal glass rounded-3xl p-7 card-hover" style="transition-delay:.16s">
+<div class="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-xl">03</div>
+<h3 class="mt-8 text-2xl font-black">Control</h3>
+<p class="mt-3 text-white/40 leading-relaxed text-sm">Give users meaningful choices around their account and information.</p>
+</div>
+
+<div class="reveal glass rounded-3xl p-7 card-hover" style="transition-delay:.24s">
+<div class="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-xl">04</div>
+<h3 class="mt-8 text-2xl font-black">Responsibility</h3>
+<p class="mt-3 text-white/40 leading-relaxed text-sm">Treat business and customer information as something that deserves care.</p>
+</div>
+
+</div>
+</div>
+</section>
+
+<!-- DATA FLOW -->
+<section class="py-32 px-5 relative overflow-hidden">
+<div class="absolute inset-0 grid opacity-40"></div>
+
+<div class="relative z-10 max-w-7xl mx-auto">
+<div class="reveal max-w-2xl">
+<p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">Think about the data flow</p>
+<h2 class="mt-4 text-4xl md:text-6xl font-black tracking-[-.05em]">From your shop<br>to Countr — with purpose.</h2>
+<p class="mt-6 text-lg text-white/45 leading-relaxed">
+Your shop creates information every day. Countr should handle that information deliberately and transparently.
+</p>
+</div>
+
+<div class="mt-16 grid md:grid-cols-3 gap-5">
+
+<div class="reveal glass rounded-3xl p-8 card-hover">
+<span class="text-5xl">🏪</span>
+<p class="mt-8 text-xs uppercase tracking-[.2em] text-white/30 font-black">01 / Your shop</p>
+<h3 class="mt-3 text-2xl font-black">You create the data</h3>
+<p class="mt-3 text-white/40">Sales, Khata, inventory and customer information can become part of your shop workflow.</p>
+</div>
+
+<div class="reveal glass rounded-3xl p-8 card-hover" style="transition-delay:.1s">
+<span class="text-5xl">→</span>
+<p class="mt-8 text-xs uppercase tracking-[.2em] text-white/30 font-black">02 / Countr</p>
+<h3 class="mt-3 text-2xl font-black">The product processes it</h3>
+<p class="mt-3 text-white/40">Countr uses information to provide the features and workflows you ask it to perform.</p>
+</div>
+
+<div class="reveal glass rounded-3xl p-8 card-hover" style="transition-delay:.2s">
+<span class="text-5xl">✓</span>
+<p class="mt-8 text-xs uppercase tracking-[.2em] text-white/30 font-black">03 / Your control</p>
+<h3 class="mt-3 text-2xl font-black">You stay informed</h3>
+<p class="mt-3 text-white/40">Our privacy documentation explains the applicable collection, use and handling practices.</p>
+</div>
+
+</div>
+</div>
+</section>
+
+<!-- WHAT WE DON'T CLAIM -->
+<section class="py-28 px-5 bg-[#0d0f0c] border-y border-white/7">
+<div class="max-w-5xl mx-auto">
+<div class="reveal text-center">
+<p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">Clear over complicated</p>
+<h2 class="mt-4 text-4xl md:text-5xl font-black tracking-[-.05em]">No vague security promises.</h2>
+<p class="mt-5 text-white/45 max-w-2xl mx-auto">
+Security depends on the actual implementation, infrastructure and policies behind the service. We don't want this page to promise protections that aren't documented.
+</p>
+</div>
+
+<div class="mt-12 glass rounded-3xl p-7 md:p-10">
+<div class="grid md:grid-cols-3 gap-8">
+<div>
+<p class="text-[#b8ff3d] font-black">01</p>
+<h3 class="mt-3 text-xl font-black">Product security</h3>
+<p class="mt-2 text-sm text-white/40">Document the technical controls actually implemented in the product.</p>
+</div>
+<div>
+<p class="text-[#b8ff3d] font-black">02</p>
+<h3 class="mt-3 text-xl font-black">Data practices</h3>
+<p class="mt-2 text-sm text-white/40">Explain collection, processing, retention and sharing practices clearly.</p>
+</div>
+<div>
+<p class="text-[#b8ff3d] font-black">03</p>
+<h3 class="mt-3 text-xl font-black">Policy</h3>
+<p class="mt-2 text-sm text-white/40">Keep the Privacy Policy and Terms aligned with the service as it evolves.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- PRIVACY CTA -->
+<section class="py-28 px-5">
+<div class="max-w-7xl mx-auto grid lg:grid-cols-2 gap-5">
+
+<div class="reveal glass rounded-[32px] p-8 md:p-12">
+<span class="text-5xl">🔐</span>
+<h2 class="mt-8 text-4xl font-black">Want the details?</h2>
+<p class="mt-5 text-white/45 leading-relaxed">
+The Privacy Policy is the source of truth for Countr's data practices. Review it before using the service.
+</p>
+<a href="/privacy" class="inline-flex mt-8 bg-[#b8ff3d] text-black rounded-2xl px-6 py-4 font-black">Read Privacy Policy →</a>
+</div>
+
+<div class="reveal glass rounded-[32px] p-8 md:p-12" style="transition-delay:.12s">
+<span class="text-5xl">📄</span>
+<h2 class="mt-8 text-4xl font-black">Terms of Service</h2>
+<p class="mt-5 text-white/45 leading-relaxed">
+Understand the terms that govern your use of Countr and the responsibilities of the service and its users.
+</p>
+<a href="/terms" class="inline-flex mt-8 bg-white text-black rounded-2xl px-6 py-4 font-black hover:bg-[#b8ff3d] transition">Read Terms →</a>
+</div>
+
+</div>
+</section>
+
+<!-- CTA -->
+<section class="py-32 px-5 relative overflow-hidden">
+<div class="absolute inset-0 bg-[#b8ff3d]"></div>
+<div class="relative max-w-5xl mx-auto text-center text-black">
+<p class="text-sm font-black uppercase tracking-[.25em] opacity-50">Countr Technology Pvt. Ltd.</p>
+<h2 class="mt-5 text-[clamp(3rem,7vw,6rem)] leading-[.9] font-black tracking-[-.07em]">
+Build your shop<br>with confidence.
+</h2>
+<p class="mt-7 max-w-xl mx-auto text-lg text-black/60">
+Simple shop management should also mean clear, responsible data practices.
+</p>
+<a href="/#get-started" class="inline-flex mt-9 bg-black text-white rounded-2xl px-7 py-4 font-black hover:scale-[1.03] transition">Get Countr →</a>
+</div>
+</section>
+
+</main>
+
+<footer class="bg-[#080908] px-5 py-12 border-t border-white/8">
+<div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between gap-8">
+<div>
+<a href="/" class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black">C</div>
+<span class="text-xl font-black">countr</span>
+</a>
+<p class="mt-4 text-sm text-white/35">Voice-first shop management.</p>
+</div>
+<div class="flex flex-wrap gap-7 text-sm text-white/45">
+<a href="/" class="hover:text-white">Home</a>
+<a href="/how-it-works" class="hover:text-white">How it works</a>
+<a href="/features" class="hover:text-white">Features</a>
+<a href="/privacy" class="hover:text-white">Privacy</a>
+<a href="/terms" class="hover:text-white">Terms</a>
+</div>
+</div>
+<div class="max-w-7xl mx-auto mt-10 pt-6 border-t border-white/8 text-xs text-white/25">
+© 2026 Countr Technology Pvt. Ltd. All rights reserved.
+</div>
+</footer>
+
+<script>
+const observer=new IntersectionObserver(entries=>{
+entries.forEach(e=>{
+if(e.isIntersecting){
+e.target.classList.add('show');
+observer.unobserve(e.target);
+}
+});
+},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+</script>
+
+</body>
+</html>

@@ -570,13 +570,20 @@ async function exportProfileData(ownerId) {
  */
 
 async function exportLocalData() {
-  const ownerId =
-    await requireCurrentUserId();
+  const ownerId = await requireCurrentUserId();
+
+  // ===== TEMPORARY DEBUG — remove after we confirm the cause =====
+  console.log('BACKUP DEBUG — current ownerId:', JSON.stringify(ownerId));
+
+  const debugAllInventory = await database.get('inventory_items').query().fetch();
+  console.log(
+    'BACKUP DEBUG — all inventory_items owner_id values:',
+    debugAllInventory.map(r => ({ id: r.id, owner_id: r._raw.owner_id, product: r.productName }))
+  );
+  // ===== END TEMPORARY DEBUG =====
 
   const payload = {
-    version:
-      BACKUP_VERSION,
-
+    version: BACKUP_VERSION,
     ownerId,
 
     exportedAt:

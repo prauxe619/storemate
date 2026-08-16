@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export default appSchema({
-  version: 9,
+  version: 10,
 
   tables: [
     tableSchema({
@@ -82,6 +82,25 @@ export default appSchema({
           name: 'quantity',
           type: 'number',
         },
+
+        /*
+         * UNIVERSAL INVENTORY UNIT
+         *
+         * Examples:
+         *
+         * KG
+         * GRAM
+         * LITRE
+         * ML
+         * PCS
+         * PACK
+         * BOX
+         * BOTTLE
+         * DOZEN
+         * STRIP
+         * CARTON
+         * BUNDLE
+         */
 
         {
           name: 'unit',

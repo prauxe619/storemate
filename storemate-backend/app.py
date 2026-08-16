@@ -8,8 +8,8 @@ import traceback
 import random
 import datetime
 from datetime import timedelta
-
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from functools import wraps
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -40,6 +40,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Reject any request body over 10MB before it's even fully read into memory
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB
 
 # Check Debug Mode
 IS_DEBUG = os.getenv('FLASK_DEBUG', '0') == '1'
@@ -118,6 +120,9 @@ ai_client = genai.Client(api_key=google_api_key) if google_api_key else None
 # ==========================================
 # 4. JWT ERROR HANDLING CALLBACKS
 # ==========================================
+@app.errorhandler(413)
+def file_too_large(e):
+    return jsonify({"error": "File is too large. Maximum upload size is 10MB."}), 413
 
 @jwt.unauthorized_loader
 def unauthorized(reason):
@@ -134,6 +139,28 @@ def expired(jwt_header, jwt_payload):
     print("JWT Expired")
     return jsonify(error="Token expired"), 401
 
+def admin_session_required(f):
+    """Blocks direct access to admin HTML pages unless a valid
+    admin session already exists (same check used by the '/' route)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not (session.get('admin_email') and session.get('admin_role')):
+            return redirect(url_for('admin_web.login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def is_strong_password(password):
+    """Returns (True, None) if valid, or (False, reason) if not."""
+    if not password or len(password) < 8:
+        return False, "Password must be at least 8 characters long."
+
+    if not re.search(r'[A-Za-z]', password):
+        return False, "Password must contain at least one letter."
+
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one number."
+
+    return True, None
 # ==========================================
 # 5. DATABASE BINDING
 # ==========================================
@@ -143,8 +170,8 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-@app.route("/")
-def home():
+@app.route('/admin_dashboard')
+def admin_dashboard(): 
     # If already logged in as admin, go directly to dashboard
     if session.get('admin_email') and session.get('admin_role'):
         return redirect(url_for('admin_web.dashboard'))
@@ -159,118 +186,900 @@ def home():
 @app.route('/api/sync', methods=['POST'])
 @jwt_required()
 def sync_data():
-    current_user_email = get_jwt_identity()
-    user = User.query.filter_by(email=current_user_email).first()
-    
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
+    """
+    StoreMate mobile -> cloud synchronization.
 
-    data = request.json
-    if not data:
-        return jsonify({"error": "No payload data provided"}), 400
+    Security rules:
+    - JWT determines the merchant.
+    - Mobile NEVER controls owner_id.
+    - Every record is forced to the authenticated owner.
+    - Records belonging to another merchant are rejected/skipped.
+    - Inventory supports universal units and decimal quantities.
+    - Khata preserves phone/note fields.
+    - Sales preserves payment type and timestamps.
+    """
+
+    current_user_email = get_jwt_identity()
+
+    user = User.query.filter_by(email=current_user_email).first()
+
+    if not user:
+        return jsonify({"status": "error", "error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+
+    if not isinstance(payload, dict):
+        return jsonify({"status": "error", "error": "Invalid sync payload"}), 400
 
     try:
-        # MASS ASSIGNMENT DEFENSE: Strictly define the exact fields allowed to be updated.
-        ALLOWED_INVENTORY = ['id', 'barcode', 'product_name', 'quantity', 'purchase_price', 'selling_price', 'updated_at']
-        ALLOWED_LEDGER = ['id', 'customer_id', 'amount', 'entry_type', 'created_at']
-        ALLOWED_SALES = ['id', 'total_amount', 'payment_type', 'created_at']
 
-        def sanitize_data(incoming_data, allowed_fields):
-            return {k: v for k, v in incoming_data.items() if k in allowed_fields}
+        # =====================================================
+        # HELPERS
+        # =====================================================
 
-        # 1. Sync Inventory
-        for item_data in data.get('inventory', []):
-            clean_data = sanitize_data(item_data, ALLOWED_INVENTORY)
-            item = db.session.get(InventoryItem, clean_data.get('id'))
-            
+        def safe_float(value, default=0.0):
+            try:
+                number = float(value)
+
+                if number != number:
+                    return default
+
+                if number in (float("inf"), float("-inf")):
+                    return default
+
+                return number
+
+            except (TypeError, ValueError):
+                return default
+
+
+        def safe_int(value, default=None):
+            try:
+                if value is None:
+                    return default
+
+                return int(value)
+
+            except (TypeError, ValueError):
+                return default
+
+
+        def safe_string(value, default=None, max_length=1000):
+            if value is None:
+                return default
+
+            try:
+                value = str(value).strip()
+            except Exception:
+                return default
+
+            if not value:
+                return default
+
+            return value[:max_length]
+
+
+        def normalize_unit(value):
+            """
+            Normalize all supported StoreMate inventory units.
+            """
+
+            if not value:
+                return None
+
+            value = str(value).strip().upper()
+
+            aliases = {
+                "KG": "KG",
+                "KGS": "KG",
+                "KILO": "KG",
+                "KILOGRAM": "KG",
+                "KILOGRAMS": "KG",
+                "G": "GRAM",
+                "GM": "GRAM",
+                "GMS": "GRAM",
+                "GRAM": "GRAM",
+                "GRAMS": "GRAM",
+                "L": "LITRE",
+                "LTR": "LITRE",
+                "LITER": "LITRE",
+                "LITRE": "LITRE",
+                "LITRES": "LITRE",
+                "LITERS": "LITRE",
+                "ML": "ML",
+                "MILLILITER": "ML",
+                "MILLILITRE": "ML",
+                "MILLILITERS": "ML",
+                "MILLILITRES": "ML",
+                "PC": "PIECE",
+                "PCS": "PIECE",
+                "PIECE": "PIECE",
+                "PIECES": "PIECE",
+                "PACK": "PACK",
+                "PACKET": "PACK",
+                "PACKETS": "PACK",
+                "BOTTLE": "BOTTLE",
+                "BOTTLES": "BOTTLE",
+                "BOX": "BOX",
+                "BOXES": "BOX",
+                "DOZEN": "DOZEN",
+                "DOZ": "DOZEN",
+                "STRIP": "STRIP",
+                "STRIPS": "STRIP",
+                "CARTON": "CARTON",
+                "CARTONS": "CARTON",
+                "BUNDLE": "BUNDLE",
+                "BUNDLES": "BUNDLE",
+            }
+
+            return aliases.get(value, value[:30])
+
+
+        def sanitize(data, allowed_fields):
+            if not isinstance(data, dict):
+                return {}
+
+            return {
+                key: value
+                for key, value in data.items()
+                if key in allowed_fields
+            }
+
+
+        # =====================================================
+        # ALLOWED MOBILE FIELDS
+        # =====================================================
+
+        ALLOWED_INVENTORY = {
+            "id",
+            "barcode",
+            "product_name",
+            "quantity",
+            "unit",
+            "purchase_price",
+            "selling_price",
+            "category",
+            "image_url",
+            "created_at",
+            "updated_at",
+            "is_synced",
+        }
+
+        ALLOWED_LEDGER = {
+            "id",
+            "customer_id",
+            "amount",
+            "entry_type",
+            "customer_phone",
+            "note",
+            "created_at",
+            "is_synced",
+        }
+
+        ALLOWED_SALES = {
+            "id",
+            "total_amount",
+            "payment_type",
+            "created_at",
+            "is_synced",
+        }
+
+
+        # =====================================================
+        # INPUT ARRAYS
+        # =====================================================
+
+        inventory_data = payload.get("inventory", [])
+        ledger_data = payload.get("ledger", [])
+        sales_data = payload.get("sales", [])
+
+        if not isinstance(inventory_data, list):
+            inventory_data = []
+
+        if not isinstance(ledger_data, list):
+            ledger_data = []
+
+        if not isinstance(sales_data, list):
+            sales_data = []
+
+
+        # =====================================================
+        # COUNTERS
+        # =====================================================
+
+        inventory_created = 0
+        inventory_updated = 0
+        inventory_skipped = 0
+
+        ledger_created = 0
+        ledger_updated = 0
+        ledger_skipped = 0
+
+        sales_created = 0
+        sales_updated = 0
+        sales_skipped = 0
+
+
+        # =====================================================
+        # OWNER ID
+        # =====================================================
+
+        owner_id = str(user.id)
+
+
+        # =====================================================
+        # 1. INVENTORY SYNC
+        # =====================================================
+
+        for raw_item in inventory_data:
+
+            item_data = sanitize(raw_item, ALLOWED_INVENTORY)
+
+            item_id = safe_string(item_data.get("id"), max_length=255)
+
+            if not item_id:
+                inventory_skipped += 1
+                continue
+
+            product_name = safe_string(item_data.get("product_name"), max_length=255)
+
+            if not product_name:
+                inventory_skipped += 1
+                continue
+
+            quantity = safe_float(item_data.get("quantity"), 0)
+
+            purchase_price = safe_float(item_data.get("purchase_price"), 0)
+
+            selling_price = safe_float(item_data.get("selling_price"), 0)
+
+            unit = normalize_unit(item_data.get("unit"))
+
+            created_at = safe_int(item_data.get("created_at"))
+
+            updated_at = safe_int(item_data.get("updated_at"))
+
+            if updated_at is None:
+                updated_at = int(datetime.utcnow().timestamp() * 1000)
+
+            item = db.session.get(InventoryItem, item_id)
+
             if item:
-                # BOLA/IDOR DEFENSE: Ensure this item actually belongs to the user trying to modify it
-                if getattr(item, 'user_id', user.id) == user.id:
-                    for key, value in clean_data.items():
-                        setattr(item, key, value)
-            else:
-                clean_data['user_id'] = user.id
-                db.session.add(InventoryItem(**clean_data))
 
-        # 2. Sync Ledger
-        for entry_data in data.get('ledger', []):
-            clean_data = sanitize_data(entry_data, ALLOWED_LEDGER)
-            entry = db.session.get(LedgerEntry, clean_data.get('id'))
-            
+                existing_owner = getattr(item, "owner_id", None)
+
+                if existing_owner is not None and str(existing_owner) != owner_id:
+                    print("⚠️ BLOCKED INVENTORY ACCESS:", item_id, "attempted by user", owner_id)
+                    inventory_skipped += 1
+                    continue
+
+                item.owner_id = owner_id
+                item.product_name = product_name
+                item.barcode = safe_string(item_data.get("barcode"), max_length=100)
+                item.quantity = quantity
+                item.unit = unit
+                item.purchase_price = purchase_price
+                item.selling_price = selling_price
+                item.category = safe_string(item_data.get("category"), max_length=100)
+                item.image_url = safe_string(item_data.get("image_url"), max_length=1000)
+
+                if created_at is not None:
+                    item.created_at = created_at
+
+                item.updated_at = updated_at
+                item.is_synced = True
+
+                inventory_updated += 1
+
+            else:
+
+                item = InventoryItem(
+                    id=item_id,
+                    owner_id=owner_id,
+                    product_name=product_name,
+                    barcode=safe_string(item_data.get("barcode"), max_length=100),
+                    quantity=quantity,
+                    unit=unit,
+                    purchase_price=purchase_price,
+                    selling_price=selling_price,
+                    category=safe_string(item_data.get("category"), max_length=100),
+                    image_url=safe_string(item_data.get("image_url"), max_length=1000),
+                    is_synced=True,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                )
+
+                db.session.add(item)
+
+                inventory_created += 1
+
+
+        # =====================================================
+        # 2. KHATA / LEDGER SYNC
+        # =====================================================
+
+        for raw_entry in ledger_data:
+
+            entry_data = sanitize(raw_entry, ALLOWED_LEDGER)
+
+            entry_id = safe_string(entry_data.get("id"), max_length=255)
+
+            if not entry_id:
+                ledger_skipped += 1
+                continue
+
+            customer_id = safe_string(entry_data.get("customer_id"), max_length=255)
+
+            if not customer_id:
+                ledger_skipped += 1
+                continue
+
+            amount = safe_float(entry_data.get("amount"), 0)
+
+            entry_type = safe_string(entry_data.get("entry_type"), max_length=50)
+
+            if entry_type:
+                entry_type = entry_type.upper()
+
+            if entry_type not in ("CREDIT", "PAYMENT"):
+                ledger_skipped += 1
+                continue
+
+            created_at = safe_int(entry_data.get("created_at"))
+
+            if created_at is None:
+                created_at = int(datetime.utcnow().timestamp() * 1000)
+
+            entry = db.session.get(LedgerEntry, entry_id)
+
             if entry:
-                if getattr(entry, 'user_id', user.id) == user.id:
-                    for key, value in clean_data.items():
-                        setattr(entry, key, value)
-            else:
-                clean_data['user_id'] = user.id
-                db.session.add(LedgerEntry(**clean_data))
 
-        # 3. Sync Sales
-        sales_count = 0
-        for sale_data in data.get('sales', []):
-            clean_data = sanitize_data(sale_data, ALLOWED_SALES)
-            sale = db.session.get(SalesTransaction, clean_data.get('id'))
-            
-            if sale:
-                if getattr(sale, 'user_id', user.id) == user.id:
-                    for key, value in clean_data.items():
-                        setattr(sale, key, value)
+                existing_owner = getattr(entry, "owner_id", None)
+
+                if existing_owner is not None and str(existing_owner) != owner_id:
+                    print("⚠️ BLOCKED LEDGER ACCESS:", entry_id, "attempted by user", owner_id)
+                    ledger_skipped += 1
+                    continue
+
+                entry.owner_id = owner_id
+                entry.customer_id = customer_id
+                entry.amount = amount
+                entry.entry_type = entry_type
+                entry.customer_phone = safe_string(entry_data.get("customer_phone"), max_length=50)
+                entry.note = safe_string(entry_data.get("note"), max_length=2000)
+                entry.created_at = created_at
+                entry.is_synced = True
+
+                ledger_updated += 1
+
             else:
-                clean_data['user_id'] = user.id
-                db.session.add(SalesTransaction(**clean_data))
-                sales_count += 1
+
+                entry = LedgerEntry(
+                    id=entry_id,
+                    owner_id=owner_id,
+                    customer_id=customer_id,
+                    amount=amount,
+                    entry_type=entry_type,
+                    customer_phone=safe_string(entry_data.get("customer_phone"), max_length=50),
+                    note=safe_string(entry_data.get("note"), max_length=2000),
+                    is_synced=True,
+                    created_at=created_at,
+                )
+
+                db.session.add(entry)
+
+                ledger_created += 1
+
+
+        # =====================================================
+        # 3. SALES SYNC
+        # =====================================================
+
+        for raw_sale in sales_data:
+
+            sale_data = sanitize(raw_sale, ALLOWED_SALES)
+
+            sale_id = safe_string(sale_data.get("id"), max_length=255)
+
+            if not sale_id:
+                sales_skipped += 1
+                continue
+
+            total_amount = safe_float(sale_data.get("total_amount"), 0)
+
+            payment_type = safe_string(sale_data.get("payment_type"), max_length=50)
+
+            if payment_type:
+                payment_type = payment_type.upper()
+
+            if payment_type not in ("CASH", "KHATA"):
+                sales_skipped += 1
+                continue
+
+            created_at = safe_int(sale_data.get("created_at"))
+
+            if created_at is None:
+                created_at = int(datetime.utcnow().timestamp() * 1000)
+
+            sale = db.session.get(SalesTransaction, sale_id)
+
+            if sale:
+
+                existing_owner = getattr(sale, "owner_id", None)
+
+                if existing_owner is not None and str(existing_owner) != owner_id:
+                    print("⚠️ BLOCKED SALES ACCESS:", sale_id, "attempted by user", owner_id)
+                    sales_skipped += 1
+                    continue
+
+                sale.owner_id = owner_id
+                sale.total_amount = total_amount
+                sale.payment_type = payment_type
+                sale.created_at = created_at
+                sale.is_synced = True
+
+                sales_updated += 1
+
+            else:
+
+                sale = SalesTransaction(
+                    id=sale_id,
+                    owner_id=owner_id,
+                    total_amount=total_amount,
+                    payment_type=payment_type,
+                    is_synced=True,
+                    created_at=created_at,
+                )
+
+                db.session.add(sale)
+
+                sales_created += 1
+
+
+        # =====================================================
+        # COMMIT
+        # =====================================================
 
         db.session.commit()
-        print(f"✅ Secure Sync: {len(data.get('inventory', []))} items, {len(data.get('ledger', []))} khata, {sales_count} sales for user {user.id}.")
-        return jsonify({"status": "success", "message": "Database updated securely"}), 200
+
+
+        # =====================================================
+        # RESPONSE COUNTERS
+        # =====================================================
+
+        total_created = inventory_created + ledger_created + sales_created
+
+        total_updated = inventory_updated + ledger_updated + sales_updated
+
+        total_skipped = inventory_skipped + ledger_skipped + sales_skipped
+
+
+        print("✅ STOREMATE SYNC SUCCESS")
+        print(f"User: {user.id}")
+        print(f"Inventory created: {inventory_created}")
+        print(f"Inventory updated: {inventory_updated}")
+        print(f"Ledger created: {ledger_created}")
+        print(f"Ledger updated: {ledger_updated}")
+        print(f"Sales created: {sales_created}")
+        print(f"Sales updated: {sales_updated}")
+
+
+        return jsonify({
+            "status": "success",
+            "message": "StoreMate data synchronized successfully.",
+            "owner_id": owner_id,
+            "synced": {
+                "inventory": {
+                    "created": inventory_created,
+                    "updated": inventory_updated,
+                    "skipped": inventory_skipped,
+                },
+                "ledger": {
+                    "created": ledger_created,
+                    "updated": ledger_updated,
+                    "skipped": ledger_skipped,
+                },
+                "sales": {
+                    "created": sales_created,
+                    "updated": sales_updated,
+                    "skipped": sales_skipped,
+                },
+            },
+            "totals": {
+                "created": total_created,
+                "updated": total_updated,
+                "skipped": total_skipped,
+            },
+        }), 200
+
 
     except Exception as e:
+
         db.session.rollback()
-        print("❌ SECURE SYNC CRASHED!")
+
+        import traceback
+
         traceback.print_exc()
-        return jsonify({"status": "error", "message": "Internal processing error"}), 500
+
+        return jsonify({
+            "status": "error",
+            "message": "Synchronization failed.",
+            "error": str(e),
+        }), 500
 
 
 # ==========================================
 # 🤖 DUAL-ENGINE INVOICE SCANNER ROUTE
 # ==========================================
 
+def normalize_inventory_unit(value):
+    """
+    Normalize any OCR/Gemini unit into StoreMate's universal units.
+
+    Supported:
+    KG, GRAM, LITRE, ML,
+    PCS, PACK, BOX, BOTTLE,
+    DOZEN, STRIP, CARTON, BUNDLE
+    """
+
+    if value is None:
+        return "PCS"
+
+    raw = str(value).strip().lower()
+
+    if not raw:
+        return "PCS"
+
+    raw = re.sub(r"[\(\)\[\]\{\}\.,:;!?]", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+
+    # PCS
+    if raw in {
+        "pcs", "pc", "piece", "pieces",
+        "unit", "units", "item", "items",
+        "nos", "no", "number", "numbers",
+        "nag", "n",
+        "नग", "पीस", "पीसेज"
+    }:
+        return "PCS"
+
+    # PACK
+    if raw in {
+        "pack", "packs",
+        "packet", "packets",
+        "pkt", "pk",
+        "pouch", "pouches",
+        "sachet", "sachets",
+        "पैक", "पैकेट", "पाउच", "सैशे"
+    }:
+        return "PACK"
+
+    # BOX
+    if raw in {
+        "box", "boxes",
+        "dabba", "dabbas",
+        "डब्बा", "डिब्बा", "डब्बे", "डिब्बे"
+    }:
+        return "BOX"
+
+    # BOTTLE
+    if raw in {
+        "bottle", "bottles",
+        "bot", "btl",
+        "बोतल", "बॉटल"
+    }:
+        return "BOTTLE"
+
+    # KG
+    if raw in {
+        "kg", "kgs",
+        "kilo", "kilos",
+        "kilogram", "kilograms",
+        "kilogramme", "kilogrammes",
+        "किलो", "किलोग्राम", "किलो ग्राम"
+    }:
+        return "KG"
+
+    # GRAM
+    if raw in {
+        "g", "gm", "gms",
+        "gram", "grams",
+        "gramme", "grammes",
+        "ग्राम", "ग्राम्स"
+    }:
+        return "GRAM"
+
+    # LITRE
+    if raw in {
+        "l", "ltr", "ltrs",
+        "litre", "litres",
+        "liter", "liters",
+        "लीटर", "लीटर्स"
+    }:
+        return "LITRE"
+
+    # ML
+    if raw in {
+        "ml", "mls",
+        "millilitre", "millilitres",
+        "milliliter", "milliliters",
+        "मिली", "मिलीलीटर", "मिलिलीटर"
+    }:
+        return "ML"
+
+    # DOZEN
+    if raw in {
+        "dozen", "dozens",
+        "dz", "doz",
+        "दर्जन"
+    }:
+        return "DOZEN"
+
+    # STRIP
+    if raw in {
+        "strip", "strips",
+        "tablet strip",
+        "medicine strip",
+        "स्ट्रिप"
+    }:
+        return "STRIP"
+
+    # CARTON
+    if raw in {
+        "carton", "cartons",
+        "ctn",
+        "कार्टन"
+    }:
+        return "CARTON"
+
+    # BUNDLE
+    if raw in {
+        "bundle", "bundles",
+        "bunch", "bunches",
+        "बंडल", "गट्ठर"
+    }:
+        return "BUNDLE"
+
+    # Phrase detection
+    if re.search(
+        r"\b(kg|kgs|kilo|kilos|kilogram|kilograms)\b",
+        raw,
+        re.I
+    ):
+        return "KG"
+
+    if re.search(
+        r"\b(g|gm|gms|gram|grams|gramme|grammes)\b",
+        raw,
+        re.I
+    ):
+        return "GRAM"
+
+    if re.search(
+        r"\b(ml|millilitre|millilitres|milliliter|milliliters)\b",
+        raw,
+        re.I
+    ):
+        return "ML"
+
+    if re.search(
+        r"\b(l|ltr|ltrs|litre|litres|liter|liters)\b",
+        raw,
+        re.I
+    ):
+        return "LITRE"
+
+    if re.search(
+        r"\b(pack|packs|packet|packets|pkt|pouch|pouches)\b",
+        raw,
+        re.I
+    ):
+        return "PACK"
+
+    if re.search(
+        r"\b(box|boxes)\b",
+        raw,
+        re.I
+    ):
+        return "BOX"
+
+    if re.search(
+        r"\b(bottle|bottles|btl)\b",
+        raw,
+        re.I
+    ):
+        return "BOTTLE"
+
+    if re.search(
+        r"\b(dozen|dozens|doz|dz)\b",
+        raw,
+        re.I
+    ):
+        return "DOZEN"
+
+    if re.search(
+        r"\b(strip|strips)\b",
+        raw,
+        re.I
+    ):
+        return "STRIP"
+
+    if re.search(
+        r"\b(carton|cartons|ctn)\b",
+        raw,
+        re.I
+    ):
+        return "CARTON"
+
+    if re.search(
+        r"\b(bundle|bundles|bunch|bunches)\b",
+        raw,
+        re.I
+    ):
+        return "BUNDLE"
+
+    if re.search(
+        r"\b(piece|pieces|pcs|pc|nos|items?)\b",
+        raw,
+        re.I
+    ):
+        return "PCS"
+
+    return "PCS"
+
 def clean_donut_output(donut_data):
-    """Fallback Parser: Cleans raw Donut ML output if Gemini fails"""
+    """Fallback Parser: Cleans raw Donut ML output if Gemini fails."""
+
     extracted_items = []
-    
+
     def find_items_list(d):
-        if isinstance(d, list): return d
+        if isinstance(d, list):
+            return d
+
         if isinstance(d, dict):
             for k, v in d.items():
-                if isinstance(v, list): return v
+                if isinstance(v, list):
+                    return v
+
                 res = find_items_list(v)
-                if res: return res
+
+                if res:
+                    return res
+
         return []
 
     raw_items = find_items_list(donut_data)
-    
+
     for idx, item in enumerate(raw_items):
-        if not isinstance(item, dict): continue
-        
-        name = (item.get("productName") or item.get("item_name") or item.get("name") or 
-                item.get("nm") or item.get("item_title") or item.get("desc") or f"Item #{idx + 1}")
-        
-        qty_str = str(item.get("quantity") or item.get("qty") or item.get("num") or "1")
-        qty_match = re.search(r'(\d+(\.\d+)?)', qty_str)
-        qty = float(qty_match.group(1)) if qty_match else 1.0
-        
-        price_str = str(item.get("purchasePrice") or item.get("price") or item.get("unitprice") or "0")
-        price_match = re.search(r'(\d+(\.\d+)?)', price_str)
-        price = float(price_match.group(1)) if price_match else 0.0
-        
+
+        if not isinstance(item, dict):
+            continue
+
+        # ------------------------------------------
+        # PRODUCT NAME
+        # ------------------------------------------
+
+        name = (
+            item.get("productName")
+            or item.get("item_name")
+            or item.get("product_name")
+            or item.get("name")
+            or item.get("nm")
+            or item.get("item_title")
+            or item.get("desc")
+            or f"Item #{idx + 1}"
+        )
+
+        # ------------------------------------------
+        # QUANTITY
+        # ------------------------------------------
+
+        qty_str = str(
+            item.get("quantity")
+            or item.get("qty")
+            or item.get("num")
+            or "1"
+        )
+
+        qty_match = re.search(
+            r"(\d+(?:\.\d+)?)",
+            qty_str
+        )
+
+        qty = (
+            float(qty_match.group(1))
+            if qty_match
+            else 1.0
+        )
+
+        # ------------------------------------------
+        # UNIT
+        # ------------------------------------------
+
+        unit = (
+            item.get("unit")
+            or item.get("units")
+            or item.get("Unit")
+            or item.get("UNIT")
+            or item.get("productUnit")
+            or item.get("product_unit")
+            or item.get("quantityUnit")
+            or item.get("quantity_unit")
+            or item.get("uom")
+            or item.get("UOM")
+            or ""
+        )
+
+        unit = normalize_inventory_unit(unit)
+
+        # ------------------------------------------
+        # PURCHASE PRICE
+        # ------------------------------------------
+
+        price_str = str(
+            item.get("purchasePrice")
+            or item.get("purchase_price")
+            or item.get("price")
+            or item.get("unitprice")
+            or "0"
+        )
+
+        price_match = re.search(
+            r"(\d+(?:\.\d+)?)",
+            price_str
+        )
+
+        price = (
+            float(price_match.group(1))
+            if price_match
+            else 0.0
+        )
+
+        # ------------------------------------------
+        # SELLING PRICE
+        # ------------------------------------------
+
+        selling_price = (
+            item.get("sellingPrice")
+            or item.get("selling_price")
+            or item.get("mrp")
+        )
+
+        try:
+            selling_price = float(
+                selling_price
+            )
+        except (TypeError, ValueError):
+            selling_price = 0.0
+
+        if selling_price <= 0 and price > 0:
+            selling_price = round(
+                price * 1.2
+            )
+
+        # ------------------------------------------
+        # BARCODE
+        # ------------------------------------------
+
+        barcode = str(
+            item.get("barcode")
+            or item.get("bar_code")
+            or ""
+        ).strip()
+
+        # ------------------------------------------
+        # NORMALIZED ITEM
+        # ------------------------------------------
+
         extracted_items.append({
-            "productName": str(name).title(),
+            "productName": str(name).strip().title(),
             "quantity": qty,
+            "unit": unit,
             "purchasePrice": price,
-            "sellingPrice": round(price * 1.2) if price > 0 else 0
+            "sellingPrice": selling_price,
+            "barcode": barcode
         })
-        
+
     return extracted_items
 
 
@@ -286,8 +1095,24 @@ def upload_invoice():
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
+    # Validate the extension AND the actual file content —
+    # extension alone can be spoofed
+    ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+    filename_lower = file.filename.lower()
+    if not any(filename_lower.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+        return jsonify({"error": "Only JPG, PNG, or WEBP images are allowed."}), 400
+
+
     # 🚀 SAFE HANDLING: Read into memory so BOTH Cloud and Local can read it safely
     file_bytes = file.read()
+
+    # Confirm it's actually a valid, openable image (not just a
+    # renamed .exe or corrupted file with a fake extension)
+    try:
+        test_image = Image.open(BytesIO(file_bytes))
+        test_image.verify()
+    except Exception:
+        return jsonify({"error": "The uploaded file is not a valid image."}), 400
     
     # STAGE 1: Try Fast Gemini Cloud Engine (Strict Schema)
     try:
@@ -298,11 +1123,166 @@ def upload_invoice():
         image.thumbnail((1500, 1500)) 
 
         prompt = """
-        Extract purchased items from this wholesale bill.
-        CRITICAL RULES:
-        1. If a loose bulk item is listed (e.g. 'SUGAR 50KG Rs 2000'), calculate quantity as 50, purchasePrice as 40, productName as 'Sugar (Per KG)'.
-        2. 'sellingPrice' must default to purchasePrice * 1.2
-        """
+            Extract every purchased inventory item from this wholesale bill.
+
+            You are building inventory for a general Indian kirana / grocery shop.
+
+            For EVERY item, return:
+
+            1. productName
+            2. quantity
+            3. unit
+            4. purchasePrice
+            5. sellingPrice
+
+            ==================================================
+            UNIVERSAL UNIT RULE
+            ==================================================
+
+            The unit MUST be one of:
+
+            PCS
+            GRAM
+            KG
+            ML
+            LITRE
+            PACK
+            BOX
+            BOTTLE
+            DOZEN
+            STRIP
+            CARTON
+            BUNDLE
+
+            ==================================================
+            IMPORTANT UNIT DISTINCTION
+            ==================================================
+
+            Do NOT confuse quantity with unit.
+
+            Examples:
+
+            "500g sugar"
+            quantity = 500
+            unit = "GRAM"
+
+            "2 kg sugar"
+            quantity = 2
+            unit = "KG"
+
+            "5 litre oil"
+            quantity = 5
+            unit = "LITRE"
+
+            "6 bottles milk"
+            quantity = 6
+            unit = "BOTTLE"
+
+            "10 packets biscuits"
+            quantity = 10
+            unit = "PACK"
+
+            "4 biscuit packets"
+            quantity = 4
+            unit = "PACK"
+
+            "12 pieces soap"
+            quantity = 12
+            unit = "PCS"
+
+            "2 boxes biscuits"
+            quantity = 2
+            unit = "BOX"
+
+            "1 dozen eggs"
+            quantity = 1
+            unit = "DOZEN"
+
+            ==================================================
+            KIRANA-SPECIFIC RULE
+            ==================================================
+
+            For packaged products, use the package unit.
+
+            Examples:
+
+            Biscuit packet -> PACK
+            Milk packet -> PACK
+            Chips packet -> PACK
+            Noodles packet -> PACK
+            Soap bar -> PCS
+            Shampoo bottle -> BOTTLE
+            Oil bottle -> BOTTLE
+            Water bottle -> BOTTLE
+            Medicine strip -> STRIP
+            Carton of bottles -> CARTON
+
+            Do not convert PACK into PCS unless the bill explicitly says individual pieces.
+
+            ==================================================
+            WEIGHTED BULK ITEMS
+            ==================================================
+
+            If the bill says:
+
+            "SUGAR 50KG Rs 2000"
+
+            then:
+
+            quantity = 50
+            unit = "KG"
+            purchasePrice = 40
+
+            because Rs 2000 / 50 KG = Rs 40 per KG.
+
+            Do NOT return:
+
+            quantity = 2000
+            unit = KG
+
+            ==================================================
+            PRICING
+            ==================================================
+
+            purchasePrice should represent the cost corresponding to ONE inventory unit.
+
+            Examples:
+
+            50 KG sugar costing Rs 2000:
+
+            quantity = 50
+            unit = KG
+            purchasePrice = 40
+
+            10 biscuit packets costing Rs 300:
+
+            quantity = 10
+            unit = PACK
+            purchasePrice = 30
+
+            6 bottles oil costing Rs 900:
+
+            quantity = 6
+            unit = BOTTLE
+            purchasePrice = 150
+
+            If sellingPrice/MRP is visible, use it.
+
+            If sellingPrice is not visible:
+
+            sellingPrice = purchasePrice * 1.2
+
+            ==================================================
+            OCR UNCERTAINTY
+            ==================================================
+
+            If the unit cannot be confidently determined from the bill,
+            use PCS.
+
+            Never invent a unit that is not supported by the image.
+
+            Return ONLY valid JSON matching the requested schema.
+            """
 
         response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
@@ -318,12 +1298,47 @@ def upload_invoice():
                             "items": {
                                 "type": "OBJECT",
                                 # 🚀 ENFORCEMENT: All 4 keys must be returned for every item
-                                "required": ["productName", "quantity", "purchasePrice", "sellingPrice"],
+                                "required": [
+                                        "productName",
+                                        "quantity",
+                                        "unit",
+                                        "purchasePrice",
+                                        "sellingPrice"
+                                    ],
                                 "properties": {
-                                    "productName": {"type": "STRING"},
-                                    "quantity": {"type": "NUMBER"},
-                                    "purchasePrice": {"type": "NUMBER"},
-                                    "sellingPrice": {"type": "NUMBER"}
+                                    "productName": {
+                                        "type": "STRING"
+                                    },
+
+                                    "quantity": {
+                                        "type": "NUMBER"
+                                    },
+
+                                    "unit": {
+                                        "type": "STRING",
+                                        "enum": [
+                                            "PCS",
+                                            "GRAM",
+                                            "KG",
+                                            "ML",
+                                            "LITRE",
+                                            "PACK",
+                                            "BOX",
+                                            "BOTTLE",
+                                            "DOZEN",
+                                            "STRIP",
+                                            "CARTON",
+                                            "BUNDLE"
+                                        ]
+                                    },
+
+                                    "purchasePrice": {
+                                        "type": "NUMBER"
+                                    },
+
+                                    "sellingPrice": {
+                                        "type": "NUMBER"
+                                    }
                                 }
                             }
                         }
@@ -369,10 +1384,11 @@ def health_check():
 # ==========================================
 
 @app.route('/api/v1/ai/parse-intent', methods=['POST'])
+@jwt_required()
 def parse_intent():
     data = request.json or {}
     text = data.get('text', '')
-    inventory_names = data.get('inventory_names', []) 
+    inventory_names = data.get('inventory_names', [])
 
     if not text:
         return jsonify({"error": "No speech text provided"}), 400
@@ -394,16 +1410,24 @@ def parse_intent():
 # ==========================================
 
 @app.route('/api/v1/auth/register', methods=['POST'])
+@limiter.limit("5 per hour")
 def register():
     data = request.json or {}
-    # 🚀 FIX: Normalize email
     email = data.get('email', '').strip().lower()
     password = data.get('password')
     shop_name = data.get('shop_name')
 
     if not email or not password:
         return jsonify({"error": "Email and password required"}), 400
-    
+
+    # Basic email format check
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        return jsonify({"error": "Please enter a valid email address."}), 400
+
+    is_valid, reason = is_strong_password(password)
+    if not is_valid:
+        return jsonify({"error": reason}), 400
+
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "User already exists"}), 400
 
@@ -414,12 +1438,13 @@ def register():
     )
     db.session.add(new_user)
     db.session.commit()
-    
+
     return jsonify({"message": "Shop registered successfully"}), 201
 
 
 
 @app.route('/api/v1/auth/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     data = request.json or {}
     
@@ -451,6 +1476,7 @@ def login():
     return jsonify({"access_token": access_token, "user_id": user.id, "email": user.email, "shop_name": user.shop_name}), 200
 
 @app.route('/api/v1/auth/forgot-password', methods=['POST'])
+@limiter.limit("3 per hour")
 def forgot_password():
     data = request.get_json() or {}
     # 🚀 FIX: Normalize email
@@ -479,6 +1505,7 @@ def forgot_password():
 
 
 @app.route('/api/v1/auth/reset-password', methods=['POST'])
+@limiter.limit("5 per 10 minute")
 def reset_password():
     data = request.get_json() or {}
     email = data.get('email')
@@ -663,19 +1690,93 @@ def get_all_users():
         "users": user_list
     }), 200
 
-# 1. Telemetry Control Center Dashboard
 @app.route('/admin/telemetry-dashboard')
+@admin_session_required
 def admin_dashboard_ui():
     return render_template('admin_dashboard.html')
 
-# 2. Main Merchant Management Dashboard
 @app.route('/admin/dashboard')
+@admin_session_required
 def admin_merchant_dashboard():
     return render_template('dashboard.html')
 
-@app.route('/health')
-def health():
-    return {'status': 'ok'}, 200
+
+#--------------User Facing Routes----------------#
+
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/how-it-works")
+def how_it_works():
+    return render_template("how-it-works.html")
+
+
+@app.route("/features")
+def features():
+    return render_template("features.html")
+
+
+@app.route("/security")
+def security():
+    return render_template("security.html")
+
+
+@app.route("/about")
+def about():
+    return render_template("about.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+@app.route("/contact", methods=["GET", "POST"])
+def contact():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        reason = request.form.get("reason", "").strip()
+        message = request.form.get("message", "").strip()
+
+        # TODO: validate, rate-limit, CSRF-protect, and save/send safely.
+        if not name or not email or not message:
+            flash("Please complete the required fields.", "error")
+            return redirect(url_for("contact"))
+
+        # TODO: send via your configured email provider or save to DB.
+        flash("Thanks. Your message has been received.", "success")
+        return redirect(url_for("contact"))
+
+    return render_template("contact.html")
+
+
+@app.route("/get-started")
+def get_started():
+    return render_template("get-started.html")
+
+
+@app.errorhandler(404)
+def page_not_found(error):
+    return render_template("404.html"), 404
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    return app.send_static_file("sitemap.xml")
+
+
+@app.route("/robots.txt")
+def robots():
+    return app.send_static_file("robots.txt")
+
 #________________________________________________________________________________________
 
 if __name__ == '__main__':

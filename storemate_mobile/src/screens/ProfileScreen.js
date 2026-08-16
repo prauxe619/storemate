@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useContext,
+} from 'react';
 
 import {
   View,
@@ -9,7 +13,6 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  Share as RNShare,
   Modal,
   ScrollView,
   KeyboardAvoidingView,
@@ -18,509 +21,461 @@ import {
 } from 'react-native';
 
 import AdminDashboard from './AdminDashboard';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import RNFS from 'react-native-fs';
-import { Q } from '@nozbe/watermelondb';
-import { database } from '../core/database';
-import { AuthContext } from '../../App';
-import Share from 'react-native-share';
-import { launchImageLibrary } from 'react-native-image-picker';
-import AnalyticsScreen from './AnalyticsScreen';
-import { SecureStorage } from '../utils/secureStorage';
-import { backupNow } from '../services/BackupService';
-import { BASE_URL } from '../config/api';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getCurrentUserId } from '../core/auth/localUser';
 
-const PROFILE_KEY_PREFIX = 'storemate_profile_';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import RNFS from 'react-native-fs';
+
+import { Q } from '@nozbe/watermelondb';
+
+import { database } from '../core/database';
+
+import { AuthContext } from '../../App';
+
+import Share from 'react-native-share';
+
+import {
+  launchImageLibrary,
+} from 'react-native-image-picker';
+
+import AnalyticsScreen from './AnalyticsScreen';
+
+import {
+  backupNow,
+} from '../services/BackupService';
+
+import {
+  BASE_URL,
+} from '../config/api';
+
+import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+
+import {
+  getCurrentUserId,
+} from '../core/auth/localUser';
+
+
+/* ============================================================
+   PROFILE STORAGE
+   ============================================================ */
+
+const PROFILE_KEY_PREFIX =
+  'storemate_profile_';
 
 const profileStorageKey = userId =>
-  `${PROFILE_KEY_PREFIX}${String(userId).trim()}`;
+  `${PROFILE_KEY_PREFIX}${String(
+    userId
+  ).trim()}`;
+
+
+/* ============================================================
+   PROFILE SCREEN
+   ============================================================ */
 
 const ProfileScreen = () => {
-  const { logout } = useContext(AuthContext);
-  const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
+  const { logout } =
+    useContext(AuthContext);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isBackingUp, setIsBackingUp] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const insets =
+    useSafeAreaInsets();
 
-  const [email, setEmail] = useState('');
-  const [shopName, setShopName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [avatarUri, setAvatarUri] = useState(null);
-  const [upiId, setUpiId] = useState('');
+  const {
+    width: windowWidth,
+  } = useWindowDimensions();
 
-  const [currentUserId, setCurrentUserId] = useState(null);
 
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [isFeedbackModalVisible, setFeedbackModalVisible] = useState(false);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  /* ==========================================================
+     STATE
+     ========================================================== */
 
-  /*
-   * ============================================================
-   * INITIAL LOAD
-   * ============================================================
-   */
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
+
+  const [
+    isSaving,
+    setIsSaving,
+  ] = useState(false);
+
+  const [
+    isExporting,
+    setIsExporting,
+  ] = useState(false);
+
+  const [
+    isBackingUp,
+    setIsBackingUp,
+  ] = useState(false);
+
+  const [
+    isEditing,
+    setIsEditing,
+  ] = useState(false);
+
+
+  /* ==========================================================
+     PROFILE
+     ========================================================== */
+
+  const [
+    email,
+    setEmail,
+  ] = useState('');
+
+  const [
+    shopName,
+    setShopName,
+  ] = useState('');
+
+  const [
+    phone,
+    setPhone,
+  ] = useState('');
+
+  const [
+    address,
+    setAddress,
+  ] = useState('');
+
+  const [
+    avatarUri,
+    setAvatarUri,
+  ] = useState(null);
+
+  const [
+    upiId,
+    setUpiId,
+  ] = useState('');
+
+  const [
+    currentUserId,
+    setCurrentUserId,
+  ] = useState(null);
+
+
+  /* ==========================================================
+     MODALS
+     ========================================================== */
+
+  const [
+    showAdmin,
+    setShowAdmin,
+  ] = useState(false);
+
+  const [
+    showAnalytics,
+    setShowAnalytics,
+  ] = useState(false);
+
+  const [
+    isFeedbackModalVisible,
+    setFeedbackModalVisible,
+  ] = useState(false);
+
+
+  /* ==========================================================
+     FEEDBACK
+     ========================================================== */
+
+  const [
+    feedbackText,
+    setFeedbackText,
+  ] = useState('');
+
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] = useState(false);
+
+
+  /* ==========================================================
+     INITIAL LOAD
+     ========================================================== */
 
   useEffect(() => {
     let mounted = true;
 
-    const load = async () => {
-      await fetchProfile(mounted);
+    const loadProfile = async () => {
+      await fetchProfile(
+        mounted
+      );
     };
 
-    load();
+    loadProfile();
 
     return () => {
       mounted = false;
     };
   }, []);
 
-  /*
-   * ============================================================
-   * FETCH PROFILE
-   * ============================================================
-   *
-   * IMPORTANT:
-   *
-   * Profile data is ONLY loaded from:
-   *
-   * storemate_profile_<currentUserId>
-   *
-   * We intentionally DO NOT read:
-   *
-   * shopName
-   * userPhone
-   * userAddress
-   * avatarUri
-   * shopUpi
-   *
-   * from global AsyncStorage keys.
-   *
-   * Those old global keys could belong to another user.
-   * ============================================================
-   */
 
-  const fetchProfile = async mounted => {
-    try {
-      const userId = await getCurrentUserId();
+  /* ==========================================================
+     FETCH PROFILE
+     ========================================================== */
 
-      if (!userId) {
-        console.warn('Profile: no active user found.');
-
-        if (mounted) {
-          setCurrentUserId(null);
-          setIsLoading(false);
-        }
-
-        return;
-      }
-
-      if (mounted) {
-        setCurrentUserId(userId);
-      }
-
-      const key = profileStorageKey(userId);
-
-      let localProfile = {};
-
-      /*
-       * ========================================================
-       * USER-SPECIFIC LOCAL PROFILE
-       * ========================================================
-       */
-
-      const storedProfile =
-        await AsyncStorage.getItem(key);
-
-      if (storedProfile) {
-        try {
-          const parsed =
-            JSON.parse(storedProfile);
-
-          if (
-            parsed &&
-            typeof parsed === 'object' &&
-            !Array.isArray(parsed)
-          ) {
-            localProfile = parsed;
-          }
-        } catch (error) {
-          console.warn(
-            'Profile data parse failed:',
-            error
-          );
-        }
-      }
-
-      /*
-       * ========================================================
-       * LOAD LOCAL DATA FIRST
-       * ========================================================
-       *
-       * Offline-first.
-       */
-
-      const localEmail =
-        String(localProfile.email || '').trim();
-
-      const localShopName =
-        String(localProfile.shopName || '').trim();
-
-      const localPhone =
-        String(localProfile.phone || '').trim();
-
-      const localAddress =
-        String(localProfile.address || '').trim();
-
-      const localAvatar =
-        localProfile.avatarUri || null;
-
-      const localUpiId =
-        String(localProfile.upiId || '').trim();
-
-      if (mounted) {
-        setEmail(localEmail);
-        setShopName(localShopName);
-        setPhone(localPhone);
-        setAddress(localAddress);
-        setAvatarUri(localAvatar);
-        setUpiId(localUpiId);
-      }
-
-      /*
-       * ========================================================
-       * SERVER PROFILE
-       * ========================================================
-       *
-       * Local profile is already loaded.
-       *
-       * Server data is only an enhancement when online.
-       */
-
-      const token =
-        (await SecureStorage.getToken()) ||
-        (await AsyncStorage.getItem('userToken'));
-
-      if (!token) {
-        return;
-      }
-
+  const fetchProfile =
+    async mounted => {
       try {
-        const response =
-          await fetch(
-            `${BASE_URL}/api/v1/auth/profile`,
-            {
-              method: 'GET',
+        const userId =
+          await getCurrentUserId();
 
-              headers: {
-                'Content-Type':
-                  'application/json',
-
-                Authorization:
-                  `Bearer ${token}`,
-              },
-            }
+        if (!userId) {
+          console.warn(
+            'Profile: no active user found.'
           );
 
-        if (!response.ok) {
+          if (mounted) {
+            setCurrentUserId(
+              null
+            );
+
+            setIsLoading(
+              false
+            );
+          }
+
           return;
         }
 
-        const data =
-          await response.json();
+        if (mounted) {
+          setCurrentUserId(
+            userId
+          );
+        }
 
-        /*
-         * NEVER replace valid local values with
-         * empty server values.
-         */
 
-        const updatedEmail =
-          String(
-            data?.email ||
-              localEmail ||
+        /* ------------------------------------------------------
+           LOCAL PROFILE
+           ------------------------------------------------------ */
+
+        const key =
+          profileStorageKey(
+            userId
+          );
+
+        const stored =
+          await AsyncStorage.getItem(
+            key
+          );
+
+        if (stored) {
+          try {
+            const parsed =
+              JSON.parse(
+                stored
+              );
+
+            if (mounted) {
+              setEmail(
+                parsed.email || ''
+              );
+
+              setShopName(
+                parsed.shopName || ''
+              );
+
+              setPhone(
+                parsed.phone || ''
+              );
+
+              setAddress(
+                parsed.address || ''
+              );
+
+              setAvatarUri(
+                parsed.avatarUri ||
+                  null
+              );
+
+              setUpiId(
+                parsed.upiId || ''
+              );
+            }
+          } catch (error) {
+            console.warn(
+              'Profile JSON parse error:',
+              error
+            );
+          }
+        }
+
+
+        /* ------------------------------------------------------
+           SERVER PROFILE
+           ------------------------------------------------------ */
+
+        const token =
+          await AsyncStorage.getItem(
+            'userToken'
+          );
+
+        if (!token) {
+          return;
+        }
+
+        try {
+          const response =
+            await fetch(
+              `${BASE_URL}/api/v1/auth/profile`,
+              {
+                method: 'GET',
+
+                headers: {
+                  Authorization:
+                    `Bearer ${token}`,
+                },
+              }
+            );
+
+          if (!response.ok) {
+            return;
+          }
+
+          const serverProfile =
+            await response.json();
+
+          if (!mounted) {
+            return;
+          }
+
+          setEmail(
+            serverProfile?.email ||
+              serverProfile?.user?.email ||
               ''
-          ).trim();
+          );
 
-        const updatedShopName =
-          String(
-            data?.shop_name ||
-              localShopName ||
+          setShopName(
+            serverProfile?.shop_name ||
+              serverProfile?.shopName ||
               ''
-          ).trim();
+          );
 
-        const updatedPhone =
-          String(
-            data?.phone ||
-              localPhone ||
+          setPhone(
+            serverProfile?.phone ||
               ''
-          ).trim();
+          );
 
-        const updatedAddress =
-          String(
-            data?.address ||
-              localAddress ||
+          setAddress(
+            serverProfile?.address ||
               ''
-          ).trim();
+          );
 
-        const updatedUpi =
-          String(
-            data?.upi_id ||
-              localUpiId ||
+          setUpiId(
+            serverProfile?.upi_id ||
+              serverProfile?.upiId ||
               ''
-          ).trim();
-
-        const updatedAvatar =
-          localAvatar;
-
-        const updatedProfile = {
-          email:
-            updatedEmail,
-
-          shopName:
-            updatedShopName,
-
-          phone:
-            updatedPhone,
-
-          address:
-            updatedAddress,
-
-          avatarUri:
-            updatedAvatar,
-
-          upiId:
-            updatedUpi,
-        };
-
-        /*
-         * Save ONLY under the current user's key.
-         */
-
-        await AsyncStorage.setItem(
-          key,
-          JSON.stringify(updatedProfile)
+          );
+        } catch (
+          serverError
+        ) {
+          console.log(
+            'Server profile unavailable:',
+            serverError?.message
+          );
+        }
+      } catch (error) {
+        console.error(
+          'Failed to load profile:',
+          error
         );
 
         if (mounted) {
-          setEmail(updatedEmail);
-          setShopName(updatedShopName);
-          setPhone(updatedPhone);
-          setAddress(updatedAddress);
-          setAvatarUri(updatedAvatar);
-          setUpiId(updatedUpi);
+          Alert.alert(
+            'Profile',
+            'Unable to load your shop profile.'
+          );
         }
-
-      } catch (serverError) {
-        /*
-         * No internet/server unavailable.
-         *
-         * This is completely valid.
-         *
-         * Local profile remains active.
-         */
-
-        console.log(
-          'Server unavailable. Using offline profile data.'
-        );
+      } finally {
+        if (mounted) {
+          setIsLoading(
+            false
+          );
+        }
       }
-
-    } catch (error) {
-      console.error(
-        'fetchProfile failed:',
-        error
-      );
-    } finally {
-      if (mounted) {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  /*
-   * ============================================================
-   * SAVE LOCAL PROFILE
-   * ============================================================
-   */
-
-  const saveLocalProfile = async profile => {
-    if (!currentUserId) {
-      throw new Error(
-        'No active StoreMate user.'
-      );
-    }
-
-    const key =
-      profileStorageKey(
-        currentUserId
-      );
-
-    await AsyncStorage.setItem(
-      key,
-      JSON.stringify({
-        email:
-          String(profile.email || '').trim(),
-
-        shopName:
-          String(profile.shopName || '').trim(),
-
-        phone:
-          String(profile.phone || '').trim(),
-
-        address:
-          String(profile.address || '').trim(),
-
-        avatarUri:
-          profile.avatarUri || null,
-
-        upiId:
-          String(profile.upiId || '').trim(),
-      })
-    );
-  };
-
-  /*
-   * ============================================================
-   * PICK AVATAR
-   * ============================================================
-   */
-
-  const handlePickAvatar = async () => {
-    try {
-      if (!currentUserId) {
-        Alert.alert(
-          'Session Error',
-          'No active StoreMate user was found.'
-        );
-
-        return;
-      }
-
-      const result =
-        await launchImageLibrary({
-          mediaType: 'photo',
-          quality: 0.5,
-        });
-
-      if (
-        result.didCancel ||
-        result.errorCode ||
-        !result.assets ||
-        !result.assets.length
-      ) {
-        return;
-      }
-
-      const uri =
-        result.assets[0]?.uri;
-
-      if (!uri) {
-        return;
-      }
-
-      setAvatarUri(uri);
-
-      /*
-       * Save immediately to THIS USER'S profile.
-       */
-
-      await saveLocalProfile({
-        email,
-        shopName,
-        phone,
-        address,
-        avatarUri: uri,
-        upiId,
-      });
-
-    } catch (error) {
-      console.error(
-        'Avatar selection failed:',
-        error
-      );
-
-      Alert.alert(
-        'Error',
-        'Could not pick an image.'
-      );
-    }
-  };
-
-  /*
-   * ============================================================
-   * SAVE PROFILE
-   * ============================================================
-   */
-
-  const handleSave = async () => {
-    if (!shopName.trim()) {
-      return Alert.alert(
-        'Validation',
-        'Shop name cannot be empty.'
-      );
-    }
-
-    if (!currentUserId) {
-      return Alert.alert(
-        'Session Error',
-        'No active StoreMate user was found. Please log in again.'
-      );
-    }
-
-    setIsSaving(true);
-
-    const profile = {
-      email:
-        email.trim(),
-
-      shopName:
-        shopName.trim(),
-
-      phone:
-        phone.trim(),
-
-      address:
-        address.trim(),
-
-      avatarUri,
-
-      upiId:
-        upiId.trim(),
     };
 
-    try {
-      /*
-       * ======================================================
-       * OFFLINE-FIRST
-       * ======================================================
-       *
-       * Local save ALWAYS happens first.
-       */
 
-      await saveLocalProfile(
-        profile
+  /* ==========================================================
+     SAVE PROFILE
+     ========================================================== */
+
+  const saveProfile =
+    async () => {
+      if (!currentUserId) {
+        Alert.alert(
+          'Profile',
+          'No active user found.'
+        );
+
+        return;
+      }
+
+      if (!shopName.trim()) {
+        Alert.alert(
+          'Shop name required',
+          'Please enter your shop name.'
+        );
+
+        return;
+      }
+
+      setIsSaving(
+        true
       );
 
-      /*
-       * ======================================================
-       * SERVER UPDATE
-       * ======================================================
-       */
+      try {
+        const profile = {
+          email:
+            email.trim(),
 
-      const token =
-        (await SecureStorage.getToken()) ||
-        (await AsyncStorage.getItem('userToken'));
+          shopName:
+            shopName.trim(),
 
-      if (token) {
-        try {
-          const response =
+          phone:
+            phone.trim(),
+
+          address:
+            address.trim(),
+
+          avatarUri:
+            avatarUri || null,
+
+          upiId:
+            upiId.trim(),
+
+          onboardingCompleted:
+            true,
+        };
+
+
+        /* ------------------------------------------------------
+           LOCAL SAVE
+           ------------------------------------------------------ */
+
+        await AsyncStorage.setItem(
+          profileStorageKey(
+            currentUserId
+          ),
+          JSON.stringify(
+            profile
+          )
+        );
+
+
+        /* ------------------------------------------------------
+           SERVER SAVE
+           ------------------------------------------------------ */
+
+        const token =
+          await AsyncStorage.getItem(
+            'userToken'
+          );
+
+        if (token) {
+          try {
             await fetch(
               `${BASE_URL}/api/v1/auth/profile`,
               {
@@ -537,263 +492,170 @@ const ProfileScreen = () => {
                 body:
                   JSON.stringify({
                     shop_name:
-                      profile.shopName,
+                      shopName.trim(),
 
                     phone:
-                      profile.phone,
-
-                    upi_id:
-                      profile.upiId,
+                      phone.trim(),
 
                     address:
-                      profile.address,
+                      address.trim(),
+
+                    upi_id:
+                      upiId.trim(),
                   }),
               }
             );
-
-          if (!response.ok) {
-            throw new Error(
-              `Profile server update failed (${response.status})`
+          } catch (
+            serverError
+          ) {
+            console.log(
+              'Profile server update failed:',
+              serverError?.message
             );
           }
+        }
 
-        } catch (serverError) {
-          /*
-           * Local profile has already been saved.
-           *
-           * Therefore the user does not lose data
-           * when offline.
-           */
+        setIsEditing(
+          false
+        );
 
-          console.log(
-            'Profile saved locally; server update deferred:',
-            serverError.message
+        Alert.alert(
+          'Saved',
+          'Your shop profile has been updated.'
+        );
+      } catch (error) {
+        console.error(
+          'Save profile error:',
+          error
+        );
+
+        Alert.alert(
+          'Save failed',
+          'Could not save your profile. Please try again.'
+        );
+      } finally {
+        setIsSaving(
+          false
+        );
+      }
+    };
+
+
+  /* ==========================================================
+     SELECT AVATAR
+     ========================================================== */
+
+  const selectAvatar =
+    async () => {
+      try {
+        const result =
+          await launchImageLibrary({
+            mediaType:
+              'photo',
+
+            selectionLimit:
+              1,
+
+            quality:
+              0.85,
+          });
+
+        if (
+          result.didCancel ||
+          !result.assets ||
+          !result.assets.length
+        ) {
+          return;
+        }
+
+        const selected =
+          result.assets[0];
+
+        if (selected.uri) {
+          setAvatarUri(
+            selected.uri
           );
         }
+      } catch (error) {
+        console.error(
+          'Avatar selection error:',
+          error
+        );
+
+        Alert.alert(
+          'Photo',
+          'Unable to select the shop photo.'
+        );
+      }
+    };
+
+
+  /* ==========================================================
+     BACKUP
+     ========================================================== */
+
+  const handleBackup =
+    async () => {
+      if (isBackingUp) {
+        return;
       }
 
-      setIsEditing(false);
-
-      Alert.alert(
-        'Saved',
-        'Profile updated on this device. It will sync when online.'
+      setIsBackingUp(
+        true
       );
 
-    } catch (error) {
-      console.error(
-        'handleSave failed:',
-        error
-      );
-
-      Alert.alert(
-        'Save Failed',
-        error.message ||
-          'Could not save your profile.'
-      );
-
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  /*
-   * ============================================================
-   * GOOGLE DRIVE BACKUP
-   * ============================================================
-   */
-
-  const handleDriveBackup = async () => {
-    if (isBackingUp) {
-      return;
-    }
-
-    if (!currentUserId) {
-      Alert.alert(
-        'Session Error',
-        'No active StoreMate user was found.'
-      );
-
-      return;
-    }
-
-    setIsBackingUp(true);
-
-    try {
-      const result =
+      try {
         await backupNow();
 
-      const profileStatus =
-        result?.profileIncluded === false
-          ? 'Profile: ⚠'
-          : 'Profile: ✓';
-
-      const avatarStatus =
-        result?.avatarIncluded === false
-          ? 'Photo: ⚠'
-          : 'Photo: ✓';
-
-      const inventoryCount =
-        result?.counts?.inventory ??
-        result?.inventoryCount ??
-        '—';
-
-      const ledgerCount =
-        result?.counts?.ledger ??
-        result?.ledgerCount ??
-        '—';
-
-      const salesCount =
-        result?.counts?.sales ??
-        result?.salesCount ??
-        '—';
-
-      Alert.alert(
-        'Backup Successful ☁️',
-        'Your shop data is safely saved to Google Drive.'
-      );
-
-    } catch (error) {
-      console.error(
-        'BACKUP ERROR:',
-        error
-      );
-
-      Alert.alert(
-        'Backup Error',
-        error?.message ||
-          'Failed to back up to Google Drive.'
-      );
-
-    } finally {
-      setIsBackingUp(false);
-    }
-  };
-
-  /*
-   * ============================================================
-   * CSV EXPORT
-   * ============================================================
-   */
-
-  const handleExportCSV = async () => {
-    try {
-      setIsExporting(true);
-
-      if (!currentUserId) {
-        throw new Error(
-          'No active StoreMate user.'
-        );
-      }
-
-      const ledgerEntries =
-        await database
-          .get('ledger_entries')
-          .query(
-            Q.where(
-              'owner_id',
-              currentUserId
-            )
-          )
-          .fetch();
-
-      if (
-        !ledgerEntries ||
-        ledgerEntries.length === 0
-      ) {
         Alert.alert(
-          'No Data',
-          'There are no ledger entries to export yet.'
+          'Backup complete',
+          'Your Countr data backup has been completed.'
+        );
+      } catch (error) {
+        console.error(
+          'Backup error:',
+          error
         );
 
+        Alert.alert(
+          'Backup failed',
+          error?.message ||
+            'Unable to create backup right now.'
+        );
+      } finally {
+        setIsBackingUp(
+          false
+        );
+      }
+    };
+
+
+  /* ==========================================================
+     EXPORT KHATA
+     ========================================================== */
+
+  const exportData =
+    async () => {
+      if (isExporting) {
         return;
       }
 
-      const csvHeader =
-        'Customer Name,Amount (INR),Entry Type,Date\n';
-
-      const csvRows =
-        ledgerEntries
-          .map(entry => {
-            const dateFormatted =
-              new Date(
-                entry.createdAt ||
-                  Date.now()
-              ).toLocaleDateString(
-                'en-IN'
-              );
-
-            const customerName =
-              String(
-                entry.customerId ||
-                  ''
-              ).replace(
-                /"/g,
-                '""'
-              );
-
-            const amount =
-              Number(
-                entry.amount ||
-                  0
-              );
-
-            const entryType =
-              String(
-                entry.entryType ||
-                  ''
-              ).replace(
-                /"/g,
-                '""'
-              );
-
-            return (
-              `"${customerName}",` +
-              `${amount},` +
-              `"${entryType}",` +
-              `"${dateFormatted}"`
-            );
-          })
-          .join('\n');
-
-      const path =
-        `${RNFS.CachesDirectoryPath}/Storemate_Ledger.csv`;
-
-      await RNFS.writeFile(
-        path,
-        csvHeader + csvRows,
-        'utf8'
+      setIsExporting(
+        true
       );
-
-      await Share.open({
-        url:
-          `file://${path}`,
-
-        type:
-          'text/csv',
-
-        filename:
-          'Storemate_Ledger',
-      });
-
-    } catch (error) {
-
-      if (
-        error?.message ===
-        'User did not share'
-      ) {
-        return;
-      }
 
       try {
         if (!currentUserId) {
           throw new Error(
-            'No active StoreMate user.'
+            'No active user found.'
           );
         }
 
-        const textRows =
+        const entries =
           await database
-            .get('ledger_entries')
+            .get(
+              'ledger_entries'
+            )
             .query(
               Q.where(
                 'owner_id',
@@ -802,173 +664,305 @@ const ProfileScreen = () => {
             )
             .fetch();
 
-        const simpleText =
-          textRows
-            .map(
-              entry =>
-                `${entry.customerId} | ₹${entry.amount} | ${entry.entryType}`
-            )
-            .join('\n');
+        const rows = [
+          [
+            'Date',
+            'Customer',
+            'Type',
+            'Amount',
+            'Note',
+          ],
+        ];
 
-        await RNShare.share({
-          message:
-            `📊 Storemate Ledger Report\n\n${simpleText}`,
-        });
+        entries.forEach(
+          entry => {
+            rows.push([
+              new Date(
+                entry.createdAt ||
+                  Date.now()
+              ).toISOString(),
 
-      } catch {
-        Alert.alert(
-          'Export Failed',
-          'Could not open the share menu on this device.'
-        );
-      }
+              entry.customerName ||
+                '',
 
-    } finally {
-      setIsExporting(false);
-    }
-  };
+              entry.entryType ||
+                '',
 
-  /*
-   * ============================================================
-   * FEEDBACK
-   * ============================================================
-   */
+              String(
+                entry.amount ||
+                  0
+              ),
 
-  const handleFeedbackSubmit = async () => {
-    if (!feedbackText.trim()) {
-      return Alert.alert(
-        'Empty',
-        'Please type a message first.'
-      );
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const userId =
-        currentUserId ||
-        (await AsyncStorage.getItem(
-          'userEmail'
-        ));
-
-      const token =
-        (await SecureStorage.getToken()) ||
-        (await AsyncStorage.getItem('userToken'));
-
-      const response =
-        await fetch(
-          `${BASE_URL}/api/v1/feedback`,
-          {
-            method: 'POST',
-
-            headers: {
-              'Content-Type':
-                'application/json',
-
-              ...(token
-                ? {
-                    Authorization:
-                      `Bearer ${token}`,
-                  }
-                : {}),
-            },
-
-            body:
-              JSON.stringify({
-                user_id:
-                  userId,
-
-                message:
-                  feedbackText.trim(),
-              }),
+              entry.note ||
+                '',
+            ]);
           }
         );
 
-      if (response.ok) {
-        Alert.alert(
-          'Sent!',
-          'Thanks for your feedback. We will look into it.'
+        const csv =
+          rows
+            .map(
+              row =>
+                row
+                  .map(
+                    value => {
+                      const text =
+                        String(
+                          value ??
+                            ''
+                        );
+
+                      return `"${text.replace(
+                        /"/g,
+                        '""'
+                      )}"`;
+                    }
+                  )
+                  .join(',')
+            )
+            .join('\n');
+
+        const path =
+          `${RNFS.CachesDirectoryPath}/countr-khata-${Date.now()}.csv`;
+
+        await RNFS.writeFile(
+          path,
+          csv,
+          'utf8'
         );
 
-        setFeedbackText('');
+        await Share.open({
+          url:
+            `file://${path}`,
 
-        setFeedbackModalVisible(false);
+          type:
+            'text/csv',
 
-      } else {
-        throw new Error(
-          `Failed to send (${response.status})`
+          filename:
+            'countr-khata.csv',
+
+          failOnCancel:
+            false,
+        });
+      } catch (error) {
+        console.error(
+          'Export error:',
+          error
+        );
+
+        Alert.alert(
+          'Export failed',
+          error?.message ||
+            'Unable to export your Khata.'
+        );
+      } finally {
+        setIsExporting(
+          false
         );
       }
+    };
 
-    } catch (error) {
-      Alert.alert(
-        'Error',
-        'Could not send feedback. Check your internet connection.'
+
+  /* ==========================================================
+     FEEDBACK
+     ========================================================== */
+
+  const submitFeedback =
+    async () => {
+      const message =
+        feedbackText.trim();
+
+      if (!message) {
+        Alert.alert(
+          'Feedback',
+          'Please write your feedback first.'
+        );
+
+        return;
+      }
+
+      setIsSubmitting(
+        true
       );
 
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+      try {
+        const token =
+          await AsyncStorage.getItem(
+            'userToken'
+          );
 
-  /*
-   * ============================================================
-   * LOGOUT
-   * ============================================================
-   */
+        const response =
+          await fetch(
+            `${BASE_URL}/api/v1/feedback`,
+            {
+              method:
+                'POST',
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
+              headers: {
+                'Content-Type':
+                  'application/json',
 
-      'Are you sure you want to securely log out of your shop?',
+                ...(token
+                  ? {
+                      Authorization:
+                        `Bearer ${token}`,
+                    }
+                  : {}),
+              },
 
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+              body:
+                JSON.stringify({
+                  message,
 
-        {
-          text: 'Logout',
-          style: 'destructive',
+                  user_id:
+                    currentUserId,
 
-          onPress: async () => {
-            /*
-             * AuthContext.logout() is responsible for:
-             *
-             * 1. clearing the active session
-             * 2. clearing the token
-             * 3. navigating to login
-             *
-             * We DO NOT delete user-specific profile data,
-             * inventory, Khata or sales here.
-             */
-
-            try {
-              await logout();
-            } catch (error) {
-              console.error(
-                'Logout failed:',
-                error
-              );
-
-              Alert.alert(
-                'Logout Error',
-                error?.message ||
-                  'Could not log out safely.'
-              );
+                  source:
+                    'profile_screen',
+                }),
             }
-          },
-        },
-      ]
-    );
-  };
+          );
 
-  /*
-   * ============================================================
-   * LOADING
-   * ============================================================
-   */
+        if (!response.ok) {
+          throw new Error(
+            'Feedback submission failed.'
+          );
+        }
+
+        setFeedbackText(
+          ''
+        );
+
+        setFeedbackModalVisible(
+          false
+        );
+
+        Alert.alert(
+          'Thank you',
+          'Your feedback has been sent to the Countr team.'
+        );
+      } catch (error) {
+        console.error(
+          'Feedback error:',
+          error
+        );
+
+        Alert.alert(
+          'Could not send',
+          'Please try again later.'
+        );
+      } finally {
+        setIsSubmitting(
+          false
+        );
+      }
+    };
+
+
+  /* ==========================================================
+     LOGOUT
+     ========================================================== */
+
+  const handleLogout =
+    () => {
+      Alert.alert(
+        'Log out of Countr?',
+
+        'You can sign back in anytime. Your shop data stays associated with your account.',
+
+        [
+          {
+            text:
+              'Cancel',
+
+            style:
+              'cancel',
+          },
+
+          {
+            text:
+              'Log out',
+
+            style:
+              'destructive',
+
+            onPress:
+              async () => {
+                try {
+                  await logout();
+                } catch (
+                  error
+                ) {
+                  console.error(
+                    'Logout error:',
+                    error
+                  );
+                }
+              },
+          },
+        ]
+      );
+    };
+
+
+  /* ==========================================================
+     INITIALS
+     ========================================================== */
+
+  const getInitials =
+    value => {
+      const text =
+        String(
+          value ||
+            'Countr'
+        ).trim();
+
+      if (!text) {
+        return 'C';
+      }
+
+      const parts =
+        text.split(
+          /\s+/
+        );
+
+      if (
+        parts.length ===
+        1
+      ) {
+        return parts[0]
+          .slice(
+            0,
+            2
+          )
+          .toUpperCase();
+      }
+
+      return (
+        parts[0][0] +
+        parts[1][0]
+      ).toUpperCase();
+    };
+
+
+  /* ==========================================================
+     RESPONSIVE WIDTH
+     ========================================================== */
+
+  const isTablet =
+    windowWidth >=
+    600;
+
+  const contentWidth =
+    isTablet
+      ? 560
+      : windowWidth -
+        32;
+
+
+  /* ==========================================================
+     LOADING
+     ========================================================== */
 
   if (isLoading) {
     return (
@@ -978,31 +972,54 @@ const ProfileScreen = () => {
           {
             paddingTop:
               insets.top,
-
-            paddingBottom:
-              insets.bottom,
           },
         ]}
       >
+        <View
+          style={
+            styles.loadingLogo
+          }
+        >
+          <Text
+            style={
+              styles.loadingLogoText
+            }
+          >
+            C
+          </Text>
+        </View>
+
+        <Text
+          style={
+            styles.loadingTitle
+          }
+        >
+          countr
+        </Text>
+
         <ActivityIndicator
-          size="large"
-          color="#0C9C4C"
+          size="small"
+          color="#B8FF3D"
+          style={
+            styles.loadingSpinner
+          }
         />
+
+        <Text
+          style={
+            styles.loadingSubtitle
+          }
+        >
+          Loading your shop…
+        </Text>
       </View>
     );
   }
 
-  const feedbackModalWidth =
-    Math.min(
-      windowWidth - 32,
-      520
-    );
 
-  /*
-   * ============================================================
-   * SCREEN
-   * ============================================================
-   */
+  /* ==========================================================
+     MAIN UI
+     ========================================================== */
 
   return (
     <View
@@ -1011,509 +1028,1269 @@ const ProfileScreen = () => {
         {
           paddingTop:
             insets.top,
-
           paddingBottom:
             insets.bottom,
         },
       ]}
     >
-      <KeyboardAvoidingView
-        behavior={
-          Platform.OS === 'ios'
-            ? 'padding'
-            : 'height'
-        }
+
+      {/* ======================================================
+          HEADER
+          ====================================================== */}
+
+      <View
         style={
-          styles.keyboardContainer
+          styles.topBar
         }
       >
-        <View style={styles.headerRow}>
-          <Text style={styles.header}>
-            Profile & Settings
+        <View>
+          <Text
+            style={
+              styles.brandLabel
+            }
+          >
+            COUNTR
           </Text>
 
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() =>
-              isEditing
-                ? handleSave()
-                : setIsEditing(true)
+          <Text
+            style={
+              styles.pageTitle
             }
-            disabled={isSaving}
-            activeOpacity={0.85}
           >
-            {isSaving ? (
-              <ActivityIndicator
-                color="#fff"
-                size="small"
-              />
-            ) : (
-              <Text
-                style={
-                  styles.actionBtnText
-                }
-              >
-                {isEditing
-                  ? 'Save'
-                  : 'Edit'}
-              </Text>
-            )}
-          </TouchableOpacity>
+            Dukaan Profile
+          </Text>
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={
-            false
-          }
-          contentContainerStyle={[
-            styles.scrollContent,
-            {
-              paddingBottom:
-                Math.max(
-                  insets.bottom + 24,
-                  40
-                ),
-            },
+        <TouchableOpacity
+          style={[
+            styles.editButton,
+            isEditing &&
+              styles.editButtonActive,
           ]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          onPress={() =>
+            setIsEditing(
+              previous =>
+                !previous
+            )
+          }
+          activeOpacity={0.8}
         >
-          <View style={styles.card}>
-            <View style={styles.avatarRow}>
-              <TouchableOpacity
-                onPress={
-                  handlePickAvatar
+          <Text
+            style={[
+              styles.editButtonText,
+              isEditing &&
+                styles.editButtonTextActive,
+            ]}
+          >
+            {isEditing
+              ? 'Cancel'
+              : 'Edit'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            width:
+              Math.min(
+                contentWidth,
+                680
+              ),
+
+            alignSelf:
+              'center',
+
+            paddingBottom:
+              40 +
+              insets.bottom,
+          },
+        ]}
+      >
+
+        {/* ==================================================
+            SHOP IDENTITY
+            ================================================== */}
+
+        <View
+          style={
+            styles.identityCard
+          }
+        >
+          <View
+            style={
+              styles.identityTop
+            }
+          >
+
+            <TouchableOpacity
+              style={
+                styles.avatarWrapper
+              }
+              onPress={
+                isEditing
+                  ? selectAvatar
+                  : undefined
+              }
+              activeOpacity={
+                isEditing
+                  ? 0.75
+                  : 1
+              }
+            >
+              {avatarUri ? (
+                <Image
+                  source={{
+                    uri:
+                      avatarUri,
+                  }}
+                  style={
+                    styles.avatar
+                  }
+                />
+              ) : (
+                <View
+                  style={
+                    styles.avatarFallback
+                  }
+                >
+                  <Text
+                    style={
+                      styles.avatarInitials
+                    }
+                  >
+                    {getInitials(
+                      shopName
+                    )}
+                  </Text>
+                </View>
+              )}
+
+              {isEditing && (
+                <View
+                  style={
+                    styles.cameraBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.cameraBadgeText
+                    }
+                  >
+                    ✎
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+
+            <View
+              style={
+                styles.identityDetails
+              }
+            >
+              <View
+                style={
+                  styles.activeRow
                 }
-                activeOpacity={0.8}
               >
                 <View
                   style={
-                    styles.avatarCircle
+                    styles.activeDot
                   }
-                >
-                  {avatarUri ? (
-                    <Image
-                      source={{
-                        uri:
-                          avatarUri,
-                      }}
-                      style={
-                        styles.avatarImage
-                      }
-                    />
-                  ) : (
-                    <Text
-                      style={
-                        styles.avatarText
-                      }
-                    >
-                      {(
-                        shopName ||
-                        email ||
-                        'S'
-                      )
-                        .trim()
-                        .charAt(0)
-                        .toUpperCase()}
-                    </Text>
-                  )}
-
-                  <View
-                    style={
-                      styles.editBadge
-                    }
-                  >
-                    <Text
-                      style={{
-                        fontSize: 10,
-                      }}
-                    >
-                      📷
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              <View
-                style={
-                  styles.avatarInfo
-                }
-              >
-                <Text
-                  style={
-                    styles.avatarShopName
-                  }
-                  numberOfLines={1}
-                >
-                  {shopName ||
-                    'Your Shop'}
-                </Text>
+                />
 
                 <Text
                   style={
-                    styles.avatarEmail
+                    styles.activeText
                   }
-                  numberOfLines={1}
                 >
-                  {email ||
-                    'No email registered'}
+                  ACTIVE SHOP
                 </Text>
               </View>
+
+              <Text
+                style={
+                  styles.identityShopName
+                }
+                numberOfLines={
+                  2
+                }
+              >
+                {shopName ||
+                  'Your Dukaan'}
+              </Text>
+
+              <Text
+                style={
+                  styles.identityEmail
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                {email ||
+                  'No email added'}
+              </Text>
+            </View>
+          </View>
+
+
+          <View
+            style={
+              styles.identityDivider
+            }
+          />
+
+
+          <View
+            style={
+              styles.identityStats
+            }
+          >
+            <View
+              style={
+                styles.identityStat
+              }
+            >
+              <Text
+                style={
+                  styles.identityStatLabel
+                }
+              >
+                MOBILE
+              </Text>
+
+              <Text
+                style={
+                  styles.identityStatValue
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                {phone ||
+                  'Not added'}
+              </Text>
+            </View>
+
+
+            <View
+              style={
+                styles.identityStatDivider
+              }
+            />
+
+
+            <View
+              style={
+                styles.identityStat
+              }
+            >
+              <Text
+                style={
+                  styles.identityStatLabel
+                }
+              >
+                KHATA UPI
+              </Text>
+
+              <Text
+                style={
+                  styles.identityStatValue
+                }
+                numberOfLines={
+                  1
+                }
+              >
+                {upiId ||
+                  'Not added'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+
+        {/* ==================================================
+            SHOP DETAILS
+            ================================================== */}
+
+        <View
+          style={
+            styles.sectionHeader
+          }
+        >
+          <Text
+            style={
+              styles.sectionEyebrow
+            }
+          >
+            SHOP DETAILS
+          </Text>
+
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Your dukaan information
+          </Text>
+        </View>
+
+
+        <View
+          style={
+            styles.detailsCard
+          }
+        >
+
+          {/* SHOP NAME */}
+
+          <View
+            style={
+              styles.fieldBlock
+            }
+          >
+            <View
+              style={
+                styles.fieldIcon
+              }
+            >
+              <Text
+                style={
+                  styles.fieldIconText
+                }
+              >
+                🏪
+              </Text>
             </View>
 
             <View
-              style={styles.divider}
-            />
-
-            <Text style={styles.label}>
-              Shop Name
-            </Text>
-
-            <TextInput
-              style={[
-                styles.input,
-                isEditing
-                  ? styles.inputEditable
-                  : styles.inputDisabled,
-              ]}
-              value={shopName}
-              onChangeText={
-                setShopName
-              }
-              editable={isEditing}
-              placeholder="Enter Shop Name"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={styles.label}>
-              Mobile Number
-            </Text>
-
-            <TextInput
-              style={[
-                styles.input,
-                isEditing
-                  ? styles.inputEditable
-                  : styles.inputDisabled,
-              ]}
-              value={phone}
-              onChangeText={setPhone}
-              editable={isEditing}
-              keyboardType="phone-pad"
-              placeholder="e.g. 9876543210"
-              placeholderTextColor="#9CA3AF"
-              maxLength={10}
-            />
-
-            <Text style={styles.label}>
-              Store Address
-            </Text>
-
-            <TextInput
-              style={[
-                styles.input,
-                styles.textArea,
-                isEditing
-                  ? styles.inputEditable
-                  : styles.inputDisabled,
-              ]}
-              value={address}
-              onChangeText={
-                setAddress
-              }
-              editable={isEditing}
-              multiline
-              placeholder="Full shop address"
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          <View style={styles.card}>
-            <Text
               style={
-                styles.sectionTitle
+                styles.fieldContent
               }
             >
-              Payment Integration
-            </Text>
+              <Text
+                style={
+                  styles.fieldLabel
+                }
+              >
+                Shop Name
+              </Text>
 
-            <Text style={styles.label}>
-              Shop UPI ID (For Khata Payments)
-            </Text>
+              {isEditing ? (
+                <TextInput
+                  value={
+                    shopName
+                  }
+                  onChangeText={
+                    setShopName
+                  }
+                  placeholder="Your shop name"
+                  placeholderTextColor="#68756D"
+                  style={
+                    styles.input
+                  }
+                  autoCapitalize="words"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.fieldValue
+                  }
+                  numberOfLines={
+                    1
+                  }
+                >
+                  {shopName ||
+                    'Add your shop name'}
+                </Text>
+              )}
+            </View>
+          </View>
 
-            <TextInput
-              style={[
-                styles.input,
-                isEditing
-                  ? styles.inputEditable
-                  : styles.inputDisabled,
-              ]}
-              value={upiId}
-              onChangeText={setUpiId}
-              editable={isEditing}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholder="e.g. 9876543210@paytm"
-              placeholderTextColor="#9CA3AF"
-            />
+
+          <View
+            style={
+              styles.fieldDivider
+            }
+          />
+
+
+          {/* PHONE */}
+
+          <View
+            style={
+              styles.fieldBlock
+            }
+          >
+            <View
+              style={
+                styles.fieldIcon
+              }
+            >
+              <Text
+                style={
+                  styles.fieldIconText
+                }
+              >
+                📱
+              </Text>
+            </View>
+
+            <View
+              style={
+                styles.fieldContent
+              }
+            >
+              <Text
+                style={
+                  styles.fieldLabel
+                }
+              >
+                Mobile Number
+              </Text>
+
+              {isEditing ? (
+                <TextInput
+                  value={
+                    phone
+                  }
+                  onChangeText={
+                    setPhone
+                  }
+                  placeholder="Shop mobile number"
+                  placeholderTextColor="#68756D"
+                  style={
+                    styles.input
+                  }
+                  keyboardType="phone-pad"
+                  maxLength={
+                    15
+                  }
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.fieldValue
+                  }
+                >
+                  {phone ||
+                    'Add mobile number'}
+                </Text>
+              )}
+            </View>
+          </View>
+
+
+          <View
+            style={
+              styles.fieldDivider
+            }
+          />
+
+
+          {/* ADDRESS */}
+
+          <View
+            style={
+              styles.fieldBlock
+            }
+          >
+            <View
+              style={
+                styles.fieldIcon
+              }
+            >
+              <Text
+                style={
+                  styles.fieldIconText
+                }
+              >
+                📍
+              </Text>
+            </View>
+
+            <View
+              style={
+                styles.fieldContent
+              }
+            >
+              <Text
+                style={
+                  styles.fieldLabel
+                }
+              >
+                Shop Address
+              </Text>
+
+              {isEditing ? (
+                <TextInput
+                  value={
+                    address
+                  }
+                  onChangeText={
+                    setAddress
+                  }
+                  placeholder="Add shop address"
+                  placeholderTextColor="#68756D"
+                  style={[
+                    styles.input,
+                    styles.multilineInput,
+                  ]}
+                  multiline
+                  numberOfLines={
+                    3
+                  }
+                  textAlignVertical="top"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.fieldValue
+                  }
+                  numberOfLines={
+                    2
+                  }
+                >
+                  {address ||
+                    'Add your shop address'}
+                </Text>
+              )}
+            </View>
+          </View>
+        </View>
+
+
+        {/* ==================================================
+            SAVE
+            ================================================== */}
+
+        {isEditing && (
+          <TouchableOpacity
+            style={
+              styles.saveButton
+            }
+            onPress={
+              saveProfile
+            }
+            disabled={
+              isSaving
+            }
+            activeOpacity={
+              0.85
+            }
+          >
+            {isSaving ? (
+              <ActivityIndicator
+                color="#071009"
+              />
+            ) : (
+              <>
+                <Text
+                  style={
+                    styles.saveButtonText
+                  }
+                >
+                  Save Shop Details
+                </Text>
+
+                <Text
+                  style={
+                    styles.saveButtonArrow
+                  }
+                >
+                  →
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+
+        {/* ==================================================
+            PAYMENTS
+            ================================================== */}
+
+        <View
+          style={[
+            styles.sectionHeader,
+            {
+              marginTop:
+                30,
+            },
+          ]}
+        >
+          <Text
+            style={
+              styles.sectionEyebrow
+            }
+          >
+            PAYMENTS
+          </Text>
+
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Khata payment setup
+          </Text>
+        </View>
+
+
+        <View
+          style={
+            styles.upiCard
+          }
+        >
+          <View
+            style={
+              styles.upiIcon
+            }
+          >
+            <Text
+              style={
+                styles.upiIconText
+              }
+            >
+              ₹
+            </Text>
           </View>
 
           <View
             style={
-              styles.toolsSection
+              styles.upiContent
             }
           >
-            <Text
+            <View
               style={
-                styles.sectionTitle
+                styles.upiHeaderRow
               }
             >
-              Business Tools
-            </Text>
-
-            {email ===
-              'connect.manim@gmail.com' && (
-              <TouchableOpacity
-                style={[
-                  styles.exportCard,
-                  styles.adminCard,
-                ]}
-                onPress={() =>
-                  setShowAdmin(true)
+              <Text
+                style={
+                  styles.upiLabel
                 }
-                activeOpacity={0.85}
+              >
+                Shop UPI ID
+              </Text>
+
+              <View
+                style={
+                  styles.readyBadge
+                }
               >
                 <View
-                  style={{
-                    flex: 1,
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.exportTitle,
-                      {
-                        color:
-                          '#B7791F',
-                      },
-                    ]}
-                  >
-                    👑 Super Admin Dashboard
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.exportSubtitle
-                    }
-                  >
-                    Manage users and monitor system health.
-                  </Text>
-                </View>
-
-                <Text
-                  style={{
-                    fontSize: 24,
-                  }}
-                >
-                  🚀
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={
-                styles.exportCard
-              }
-              onPress={() =>
-                setShowAnalytics(true)
-              }
-              activeOpacity={0.85}
-            >
-              <View
-                style={{
-                  flex: 1,
-                  marginRight: 10,
-                }}
-              >
-                <Text
                   style={
-                    styles.exportTitle
+                    styles.readyDot
                   }
-                >
-                  Business Analytics
-                </Text>
+                />
 
                 <Text
                   style={
-                    styles.exportSubtitle
+                    styles.readyText
                   }
                 >
-                  View your profit, total sales, and market dues.
+                  {upiId
+                    ? 'READY'
+                    : 'SET UP'}
                 </Text>
               </View>
+            </View>
 
+            {isEditing ? (
+              <TextInput
+                value={
+                  upiId
+                }
+                onChangeText={
+                  setUpiId
+                }
+                placeholder="yourshop@upi"
+                placeholderTextColor="#68756D"
+                style={
+                  styles.upiInput
+                }
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            ) : (
               <Text
-                style={{
-                  fontSize: 24,
-                }}
+                style={
+                  styles.upiValue
+                }
+                numberOfLines={
+                  1
+                }
               >
-                📈
+                {upiId ||
+                  'Add UPI ID for Khata payments'}
               </Text>
-            </TouchableOpacity>
-
-            <View
-              style={
-                styles.exportCard
-              }
-            >
-              <View
-                style={{
-                  flex: 1,
-                  marginRight: 10,
-                }}
-              >
-                <Text
-                  style={
-                    styles.exportTitle
-                  }
-                >
-                  Google Drive Cloud Backup
-                </Text>
-
-                <Text
-                  style={
-                    styles.exportSubtitle
-                  }
-                >
-                  Save your shop records to your private Google Drive space.
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={
-                  styles.exportBtn
-                }
-                onPress={
-                  handleDriveBackup
-                }
-                disabled={
-                  isBackingUp
-                }
-                activeOpacity={0.85}
-              >
-                {isBackingUp ? (
-                  <ActivityIndicator
-                    color="#fff"
-                    size="small"
-                  />
-                ) : (
-                  <Text
-                    style={
-                      styles.exportBtnText
-                    }
-                  >
-                    Backup
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View
-              style={
-                styles.exportCard
-              }
-            >
-              <View
-                style={{
-                  flex: 1,
-                  marginRight: 10,
-                }}
-              >
-                <Text
-                  style={
-                    styles.exportTitle
-                  }
-                >
-                  Export Khata for Accountant
-                </Text>
-
-                <Text
-                  style={
-                    styles.exportSubtitle
-                  }
-                >
-                  Generate an Excel-ready (.csv) report of credits.
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={
-                  styles.exportBtn
-                }
-                onPress={
-                  handleExportCSV
-                }
-                disabled={
-                  isExporting
-                }
-                activeOpacity={0.85}
-              >
-                {isExporting ? (
-                  <ActivityIndicator
-                    color="#fff"
-                    size="small"
-                  />
-                ) : (
-                  <Text
-                    style={
-                      styles.exportBtnText
-                    }
-                  >
-                    Export
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            )}
           </View>
+        </View>
+
+
+        {/* ==================================================
+            TOOLS
+            ================================================== */}
+
+        <View
+          style={[
+            styles.sectionHeader,
+            {
+              marginTop:
+                30,
+            },
+          ]}
+        >
+          <Text
+            style={
+              styles.sectionEyebrow
+            }
+          >
+            DUKAAN TOOLS
+          </Text>
+
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Manage your business
+          </Text>
+        </View>
+
+
+        <View
+          style={
+            styles.toolsGrid
+          }
+        >
+
+          {/* ANALYTICS */}
 
           <TouchableOpacity
             style={
-              styles.feedbackBtn
+              styles.toolCard
             }
             onPress={() =>
-              setFeedbackModalVisible(
+              setShowAnalytics(
                 true
               )
             }
-            activeOpacity={0.85}
+            activeOpacity={
+              0.8
+            }
           >
-            <Text
+            <View
               style={
-                styles.feedbackBtnText
+                styles.toolIcon
               }
             >
-              🐞 Report a Bug / Feedback
+              <Text
+                style={
+                  styles.toolIconText
+                }
+              >
+                ↗
+              </Text>
+            </View>
+
+            <Text
+              style={
+                styles.toolTitle
+              }
+            >
+              Analytics
+            </Text>
+
+            <Text
+              style={
+                styles.toolSubtitle
+              }
+            >
+              Sales & reports
+            </Text>
+
+            <Text
+              style={
+                styles.toolArrow
+              }
+            >
+              →
             </Text>
           </TouchableOpacity>
 
+
+          {/* BACKUP */}
+
           <TouchableOpacity
             style={
-              styles.logoutBtn
+              styles.toolCard
             }
             onPress={
-              handleLogout
+              handleBackup
             }
-            activeOpacity={0.85}
+            disabled={
+              isBackingUp
+            }
+            activeOpacity={
+              0.8
+            }
+          >
+            <View
+              style={
+                styles.toolIcon
+              }
+            >
+              {isBackingUp ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#B8FF3D"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.toolIconText
+                  }
+                >
+                  ☁
+                </Text>
+              )}
+            </View>
+
+            <Text
+              style={
+                styles.toolTitle
+              }
+            >
+              Backup
+            </Text>
+
+            <Text
+              style={
+                styles.toolSubtitle
+              }
+            >
+              Save your data
+            </Text>
+
+            <Text
+              style={
+                styles.toolArrow
+              }
+            >
+              →
+            </Text>
+          </TouchableOpacity>
+
+
+          {/* EXPORT */}
+
+          <TouchableOpacity
+            style={
+              styles.toolCard
+            }
+            onPress={
+              exportData
+            }
+            disabled={
+              isExporting
+            }
+            activeOpacity={
+              0.8
+            }
+          >
+            <View
+              style={
+                styles.toolIcon
+              }
+            >
+              {isExporting ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#B8FF3D"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.toolIconText
+                  }
+                >
+                  ↓
+                </Text>
+              )}
+            </View>
+
+            <Text
+              style={
+                styles.toolTitle
+              }
+            >
+              Export
+            </Text>
+
+            <Text
+              style={
+                styles.toolSubtitle
+              }
+            >
+              Khata CSV
+            </Text>
+
+            <Text
+              style={
+                styles.toolArrow
+              }
+            >
+              →
+            </Text>
+          </TouchableOpacity>
+
+
+          {/* ADMIN */}
+
+          <TouchableOpacity
+            style={
+              styles.toolCard
+            }
+            onPress={() =>
+              setShowAdmin(
+                true
+              )
+            }
+            activeOpacity={
+              0.8
+            }
+          >
+            <View
+              style={
+                styles.toolIcon
+              }
+            >
+              <Text
+                style={
+                  styles.toolIconText
+                }
+              >
+                ★
+              </Text>
+            </View>
+
+            <Text
+              style={
+                styles.toolTitle
+              }
+            >
+              Admin
+            </Text>
+
+            <Text
+              style={
+                styles.toolSubtitle
+              }
+            >
+              Shop controls
+            </Text>
+
+            <Text
+              style={
+                styles.toolArrow
+              }
+            >
+              →
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+
+        {/* ==================================================
+            FEEDBACK
+            ================================================== */}
+
+        <TouchableOpacity
+          style={
+            styles.feedbackCard
+          }
+          onPress={() =>
+            setFeedbackModalVisible(
+              true
+            )
+          }
+          activeOpacity={
+            0.8
+          }
+        >
+          <View
+            style={
+              styles.feedbackIcon
+            }
           >
             <Text
               style={
-                styles.logoutBtnText
+                styles.feedbackIconText
               }
             >
-              Logout of Storemate
+              ?
             </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </View>
+
+          <View
+            style={
+              styles.feedbackContent
+            }
+          >
+            <Text
+              style={
+                styles.feedbackTitle
+              }
+            >
+              Something not working?
+            </Text>
+
+            <Text
+              style={
+                styles.feedbackSubtitle
+              }
+            >
+              Tell the Countr team
+            </Text>
+          </View>
+
+          <Text
+            style={
+              styles.feedbackArrow
+            }
+          >
+            →
+          </Text>
+        </TouchableOpacity>
+
+
+        {/* ==================================================
+            TRUST
+            ================================================== */}
+
+        <View
+          style={
+            styles.trustCard
+          }
+        >
+          <View
+            style={
+              styles.trustIcon
+            }
+          >
+            <Text
+              style={
+                styles.trustIconText
+              }
+            >
+              ✓
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.trustContent
+            }
+          >
+            <Text
+              style={
+                styles.trustTitle
+              }
+            >
+              Your shop, your data
+            </Text>
+
+            <Text
+              style={
+                styles.trustText
+              }
+            >
+              Countr is designed
+              offline-first. Your
+              shop should keep
+              working even when
+              the internet doesn't.
+            </Text>
+          </View>
+        </View>
+
+
+        {/* ==================================================
+            LOGOUT
+            ================================================== */}
+
+        <TouchableOpacity
+          style={
+            styles.logoutButton
+          }
+          onPress={
+            handleLogout
+          }
+          activeOpacity={
+            0.8
+          }
+        >
+          <Text
+            style={
+              styles.logoutIcon
+            }
+          >
+            ↪
+          </Text>
+
+          <Text
+            style={
+              styles.logoutText
+            }
+          >
+            Log out of Countr
+          </Text>
+        </TouchableOpacity>
+
+
+        <Text
+          style={
+            styles.versionText
+          }
+        >
+          COUNTR • SHOP MANAGEMENT
+        </Text>
+
+      </ScrollView>
+
+
+      {/* ======================================================
+          ANALYTICS
+          ====================================================== */}
+
+      <Modal
+        visible={
+          showAnalytics
+        }
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() =>
+          setShowAnalytics(
+            false
+          )
+        }
+      >
+        <View
+          style={
+            styles.modalScreen
+          }
+        >
+          <View
+            style={
+              styles.modalHeader
+            }
+          >
+            <Text
+              style={
+                styles.modalTitle
+              }
+            >
+              Analytics
+            </Text>
+
+            <TouchableOpacity
+              style={
+                styles.modalClose
+              }
+              onPress={() =>
+                setShowAnalytics(
+                  false
+                )
+              }
+            >
+              <Text
+                style={
+                  styles.modalCloseText
+                }
+              >
+                ×
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <AnalyticsScreen />
+        </View>
+      </Modal>
+
+
+      {/* ======================================================
+          ADMIN
+          ====================================================== */}
+
+      <Modal
+        visible={
+          showAdmin
+        }
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() =>
+          setShowAdmin(
+            false
+          )
+        }
+      >
+        <View
+          style={
+            styles.modalScreen
+          }
+        >
+          <View
+            style={
+              styles.modalHeader
+            }
+          >
+            <Text
+              style={
+                styles.modalTitle
+              }
+            >
+              Admin
+            </Text>
+
+            <TouchableOpacity
+              style={
+                styles.modalClose
+              }
+              onPress={() =>
+                setShowAdmin(
+                  false
+                )
+              }
+            >
+              <Text
+                style={
+                  styles.modalCloseText
+                }
+              >
+                ×
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <AdminDashboard />
+        </View>
+      </Modal>
+
+
+      {/* ======================================================
+          FEEDBACK
+          ====================================================== */}
 
       <Modal
         visible={
@@ -1521,7 +2298,6 @@ const ProfileScreen = () => {
         }
         transparent
         animationType="fade"
-        statusBarTranslucent
         onRequestClose={() =>
           setFeedbackModalVisible(
             false
@@ -1530,523 +2306,1016 @@ const ProfileScreen = () => {
       >
         <KeyboardAvoidingView
           style={
-            styles.modalKeyboardContainer
+            styles.feedbackOverlay
           }
           behavior={
-            Platform.OS === 'ios'
+            Platform.OS ===
+            'ios'
               ? 'padding'
-              : 'height'
+              : undefined
           }
         >
           <View
-            style={[
-              styles.modalOverlay,
-              {
-                paddingTop:
-                  insets.top,
-
-                paddingBottom:
-                  insets.bottom,
-              },
-            ]}
+            style={
+              styles.feedbackModal
+            }
           >
+
             <View
-              style={[
-                styles.modalContent,
-                {
-                  width:
-                    feedbackModalWidth,
-                },
-              ]}
+              style={
+                styles.feedbackModalHeader
+              }
             >
-              <Text
-                style={
-                  styles.modalTitle
-                }
-              >
-                How can we improve?
-              </Text>
-
-              <Text
-                style={
-                  styles.modalSubtitle
-                }
-              >
-                Found a bug or need a new feature? Let us know!
-              </Text>
-
-              <TextInput
-                style={
-                  styles.feedbackInput
-                }
-                placeholder="Describe the issue here..."
-                placeholderTextColor="#9CA3AF"
-                multiline
-                numberOfLines={4}
-                value={feedbackText}
-                onChangeText={
-                  setFeedbackText
-                }
-                textAlignVertical="top"
-              />
-
-              <View
-                style={
-                  styles.modalBtnRow
-                }
-              >
-                <TouchableOpacity
+              <View>
+                <Text
                   style={
-                    styles.cancelBtn
-                  }
-                  onPress={() =>
-                    setFeedbackModalVisible(
-                      false
-                    )
+                    styles.feedbackModalEyebrow
                   }
                 >
-                  <Text
-                    style={
-                      styles.cancelBtnText
-                    }
-                  >
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
+                  COUNTR SUPPORT
+                </Text>
 
-                <TouchableOpacity
+                <Text
                   style={
-                    styles.submitBtn
+                    styles.feedbackModalTitle
                   }
-                  onPress={
-                    handleFeedbackSubmit
-                  }
-                  disabled={
-                    isSubmitting
-                  }
-                  activeOpacity={0.85}
                 >
-                  {isSubmitting ? (
-                    <ActivityIndicator
-                      color="#fff"
-                      size="small"
-                    />
-                  ) : (
-                    <Text
-                      style={
-                        styles.submitBtnText
-                      }
-                    >
-                      Send Feedback
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                  Tell us what's happening
+                </Text>
               </View>
+
+              <TouchableOpacity
+                style={
+                  styles.modalClose
+                }
+                onPress={() =>
+                  setFeedbackModalVisible(
+                    false
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.modalCloseText
+                  }
+                >
+                  ×
+                </Text>
+              </TouchableOpacity>
             </View>
+
+
+            <Text
+              style={
+                styles.feedbackModalDescription
+              }
+            >
+              Your feedback helps us
+              make Countr better for
+              shopkeepers.
+            </Text>
+
+
+            <TextInput
+              value={
+                feedbackText
+              }
+              onChangeText={
+                setFeedbackText
+              }
+              placeholder="What happened?"
+              placeholderTextColor="#68756D"
+              style={
+                styles.feedbackInput
+              }
+              multiline
+              numberOfLines={
+                7
+              }
+              textAlignVertical="top"
+              maxLength={
+                2000
+              }
+            />
+
+
+            <TouchableOpacity
+              style={
+                styles.feedbackSubmit
+              }
+              onPress={
+                submitFeedback
+              }
+              disabled={
+                isSubmitting
+              }
+              activeOpacity={
+                0.85
+              }
+            >
+              {isSubmitting ? (
+                <ActivityIndicator
+                  color="#071009"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.feedbackSubmitText
+                  }
+                >
+                  Send Feedback →
+                </Text>
+              )}
+            </TouchableOpacity>
+
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        visible={showAdmin}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() =>
-          setShowAdmin(false)
-        }
-      >
-        <View
-          style={{
-            flex: 1,
-
-            paddingTop:
-              insets.top,
-
-            paddingBottom:
-              insets.bottom,
-          }}
-        >
-          <AdminDashboard
-            onClose={() =>
-              setShowAdmin(false)
-            }
-          />
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showAnalytics}
-        animationType="slide"
-        onRequestClose={() =>
-          setShowAnalytics(false)
-        }
-      >
-        <View
-          style={{
-            flex: 1,
-
-            paddingTop:
-              insets.top,
-
-            paddingBottom:
-              insets.bottom,
-          }}
-        >
-          <AnalyticsScreen
-            onClose={() =>
-              setShowAnalytics(false)
-            }
-          />
-        </View>
-      </Modal>
     </View>
   );
 };
 
+
+/* ============================================================
+   STYLES
+   ============================================================ */
+
 const styles = StyleSheet.create({
+
+  /* ============================================================
+     GLOBAL
+     ============================================================ */
+
   container: {
     flex: 1,
-    backgroundColor: '#F5F7F6',
-  },
-
-  keyboardContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    backgroundColor: '#F7F8F5',
   },
 
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#F5F7F6',
-    justifyContent: 'center',
+    backgroundColor: '#F7F8F5',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
 
-  headerRow: {
+  loadingLogo: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: '#B8FF3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+
+  loadingLogoText: {
+    color: '#102015',
+    fontSize: 28,
+    fontWeight: '900',
+  },
+
+  loadingTitle: {
+    color: '#102015',
+    fontSize: 25,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+
+  loadingSpinner: {
+    marginTop: 28,
+  },
+
+  loadingSubtitle: {
+    color: '#7B857E',
+    fontSize: 13,
+    marginTop: 12,
+  },
+
+
+  /* ============================================================
+     HEADER
+     ============================================================ */
+
+  topBar: {
+    minHeight: 76,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    marginBottom: 6,
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8ECE8',
   },
 
-  header: {
-    fontSize: 22,
-    color: '#1B1F23',
-    fontWeight: '800',
-    flex: 1,
-    marginRight: 12,
+  brandLabel: {
+    color: '#527D20',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 2.4,
+    marginBottom: 3,
   },
 
-  actionBtn: {
-    backgroundColor: '#0C9C4C',
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    minWidth: 75,
+  pageTitle: {
+    color: '#142019',
+    fontSize: 23,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+  },
+
+  editButton: {
+    minWidth: 68,
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: 13,
+    backgroundColor: '#F0F3EF',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  actionBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
+  editButtonActive: {
+    backgroundColor: '#B8FF3D',
   },
+
+  editButtonText: {
+    color: '#142019',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  editButtonTextActive: {
+    color: '#102015',
+  },
+
+
+  /* ============================================================
+     SCROLL
+     ============================================================ */
 
   scrollContent: {
-    paddingBottom: 40,
-    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 18,
   },
 
-  card: {
+
+  /* ============================================================
+     SHOP IDENTITY
+     ============================================================ */
+
+  identityCard: {
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EAECEC',
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
+    borderColor: '#E3E9E3',
+    borderRadius: 25,
+    padding: 19,
+    overflow: 'hidden',
+
+    shadowColor: '#102015',
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 2,
   },
 
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#374151',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-
-  avatarRow: {
+  identityTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
   },
 
-  avatarCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#0C9C4C',
-    alignItems: 'center',
-    justifyContent: 'center',
+  avatarWrapper: {
+    width: 78,
+    height: 78,
+    borderRadius: 24,
     position: 'relative',
   },
 
-  avatarText: {
-    color: '#fff',
-    fontSize: 24,
+  avatar: {
+    width: 78,
+    height: 78,
+    borderRadius: 24,
+    backgroundColor: '#EEF2ED',
+  },
+
+  avatarFallback: {
+    width: 78,
+    height: 78,
+    borderRadius: 24,
+    backgroundColor: '#B8FF3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  avatarInitials: {
+    color: '#102015',
+    fontSize: 27,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+
+  cameraBadge: {
+    position: 'absolute',
+    right: -5,
+    bottom: -5,
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: '#142019',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+
+  cameraBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  identityDetails: {
+    flex: 1,
+    marginLeft: 15,
+    minWidth: 0,
+  },
+
+  activeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+
+  activeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 7,
+    backgroundColor: '#65A52A',
+    marginRight: 6,
+  },
+
+  activeText: {
+    color: '#528320',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+
+  identityShopName: {
+    color: '#142019',
+    fontSize: 23,
+    lineHeight: 27,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+  },
+
+  identityEmail: {
+    color: '#7B857E',
+    fontSize: 12,
+    marginTop: 5,
+  },
+
+  identityDivider: {
+    height: 1,
+    backgroundColor: '#E8ECE8',
+    marginTop: 19,
+    marginBottom: 16,
+  },
+
+  identityStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  identityStat: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  identityStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E4E9E4',
+    marginHorizontal: 15,
+  },
+
+  identityStatLabel: {
+    color: '#87918A',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 4,
+  },
+
+  identityStatValue: {
+    color: '#27342C',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+
+  /* ============================================================
+     SECTIONS
+     ============================================================ */
+
+  sectionHeader: {
+    marginTop: 25,
+    marginBottom: 10,
+    paddingHorizontal: 3,
+  },
+
+  sectionEyebrow: {
+    color: '#5C8D25',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.7,
+    marginBottom: 4,
+  },
+
+  sectionTitle: {
+    color: '#142019',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+
+
+  /* ============================================================
+     DETAILS
+     ============================================================ */
+
+  detailsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E3E9E3',
+    overflow: 'hidden',
+
+    shadowColor: '#102015',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+
+  fieldBlock: {
+    minHeight: 78,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  fieldIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: '#F0F4EF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 13,
+  },
+
+  fieldIconText: {
+    fontSize: 18,
+  },
+
+  fieldContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  fieldLabel: {
+    color: '#87918A',
+    fontSize: 10,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+
+  fieldValue: {
+    color: '#27342C',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  fieldDivider: {
+    height: 1,
+    backgroundColor: '#E9EDE9',
+    marginLeft: 70,
+  },
+
+  input: {
+    color: '#142019',
+    fontSize: 15,
+    fontWeight: '700',
+    paddingVertical: 3,
+    paddingHorizontal: 0,
+    margin: 0,
+  },
+
+  multilineInput: {
+    minHeight: 62,
+    paddingTop: 5,
+  },
+
+
+  /* ============================================================
+     SAVE
+     ============================================================ */
+
+  saveButton: {
+    marginTop: 12,
+    minHeight: 54,
+    borderRadius: 17,
+    backgroundColor: '#B8FF3D',
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+
+    shadowColor: '#5D8A2A',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+
+  saveButtonText: {
+    color: '#102015',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  saveButtonArrow: {
+    color: '#102015',
+    fontSize: 20,
+    fontWeight: '900',
+    marginLeft: 10,
+  },
+
+
+  /* ============================================================
+     UPI
+     ============================================================ */
+
+  upiCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDE7D8',
+    borderRadius: 22,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+
+    shadowColor: '#102015',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+
+  upiIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#B8FF3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+
+  upiIconText: {
+    color: '#102015',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+
+  upiContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  upiHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  upiLabel: {
+    color: '#7D8981',
+    fontSize: 10,
     fontWeight: '800',
   },
 
-  avatarImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  readyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#EEF8E8',
   },
 
-  editBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
+  readyDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 5,
+    backgroundColor: '#65A52A',
+    marginRight: 5,
+  },
+
+  readyText: {
+    color: '#568A25',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+
+  upiValue: {
+    color: '#27342C',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 7,
+  },
+
+  upiInput: {
+    color: '#142019',
+    fontSize: 14,
+    fontWeight: '700',
+    paddingVertical: 5,
+    paddingHorizontal: 0,
+    marginTop: 2,
+  },
+
+
+  /* ============================================================
+     TOOLS
+     ============================================================ */
+
+  toolsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  toolCard: {
+    width: '48.5%',
+    minHeight: 148,
+    marginBottom: 10,
+    padding: 16,
+    borderRadius: 21,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    borderWidth: 1,
+    borderColor: '#E3E9E3',
+    position: 'relative',
+
+    shadowColor: '#102015',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+
+  toolIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: '#F0F4EF',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#EAECEC',
   },
 
-  avatarInfo: {
-    marginLeft: 14,
-    flex: 1,
+  toolIconText: {
+    color: '#5D8F27',
+    fontSize: 20,
+    fontWeight: '900',
   },
 
-  avatarShopName: {
-    color: '#1B1F23',
+  toolTitle: {
+    color: '#17231B',
+    fontSize: 15,
+    fontWeight: '900',
+    marginTop: 17,
+  },
+
+  toolSubtitle: {
+    color: '#7D8981',
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  toolArrow: {
+    position: 'absolute',
+    right: 15,
+    bottom: 14,
+    color: '#829087',
     fontSize: 18,
     fontWeight: '800',
   },
 
-  avatarEmail: {
-    color: '#6B7280',
-    fontSize: 13,
-    marginTop: 2,
-  },
 
-  divider: {
-    height: 1,
-    backgroundColor: '#EAECEC',
-    marginBottom: 14,
-  },
+  /* ============================================================
+     FEEDBACK
+     ============================================================ */
 
-  label: {
-    color: '#6B7280',
-    fontSize: 12.5,
-    marginBottom: 6,
-    fontWeight: '600',
-  },
-
-  input: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 14,
-    fontSize: 14.5,
-    minHeight: 46,
-  },
-
-  inputEditable: {
+  feedbackCard: {
+    minHeight: 74,
+    marginTop: 8,
+    borderRadius: 21,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
     backgroundColor: '#FFFFFF',
-    color: '#1B1F23',
-    borderColor: '#0C9C4C',
-  },
-
-  inputDisabled: {
-    borderColor: '#EAECEC',
-    color: '#6B7280',
-    backgroundColor: '#F9FAFB',
-  },
-
-  textArea: {
-    height: 65,
-    textAlignVertical: 'top',
-  },
-
-  toolsSection: {
-    marginBottom: 6,
-  },
-
-  exportCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EAECEC',
+    borderColor: '#E1E9DE',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
+
+    shadowColor: '#102015',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
     elevation: 1,
   },
 
-  adminCard: {
-    borderColor: '#F3D9A8',
-    backgroundColor: '#FFF9EE',
-  },
-
-  exportTitle: {
-    color: '#1B1F23',
-    fontSize: 14.5,
-    fontWeight: '700',
-    marginBottom: 3,
-  },
-
-  exportSubtitle: {
-    color: '#6B7280',
-    fontSize: 11.5,
-    lineHeight: 15,
-  },
-
-  exportBtn: {
-    backgroundColor: '#0C9C4C',
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    justifyContent: 'center',
+  feedbackIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: '#B8FF3D',
     alignItems: 'center',
-    minWidth: 70,
+    justifyContent: 'center',
+    marginRight: 13,
   },
 
-  exportBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+  feedbackIconText: {
+    color: '#102015',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  feedbackContent: {
+    flex: 1,
+  },
+
+  feedbackTitle: {
+    color: '#17231B',
     fontSize: 13,
+    fontWeight: '900',
   },
 
-  feedbackBtn: {
-    backgroundColor: '#FDECEA',
+  feedbackSubtitle: {
+    color: '#7D8981',
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  feedbackArrow: {
+    color: '#5C8D25',
+    fontSize: 20,
+    fontWeight: '800',
+    marginLeft: 10,
+  },
+
+
+  /* ============================================================
+     TRUST
+     ============================================================ */
+
+  trustCard: {
+    marginTop: 18,
     padding: 15,
-    borderRadius: 12,
-    marginTop: 10,
-    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#F0F8EC',
     borderWidth: 1,
-    borderColor: '#F7C9C4',
+    borderColor: '#DDEBD5',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
 
-  feedbackBtnText: {
-    color: '#E0433B',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-
-  logoutBtn: {
-    backgroundColor: '#FFFFFF',
-    marginTop: 12,
-    marginBottom: 20,
-    padding: 15,
-    borderRadius: 12,
+  trustIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: '#E2F3D6',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#EAECEC',
-  },
-
-  logoutBtnText: {
-    color: '#6B7280',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  modalKeyboardContainer: {
-    flex: 1,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: 'rgba(27,31,35,0.55)',
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+    marginRight: 11,
   },
 
-  modalContent: {
-    backgroundColor: '#FFF',
-    padding: 24,
+  trustIconText: {
+    color: '#5A8C27',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  trustContent: {
+    flex: 1,
+  },
+
+  trustTitle: {
+    color: '#40513F',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  trustText: {
+    color: '#748078',
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 4,
+  },
+
+
+  /* ============================================================
+     LOGOUT
+     ============================================================ */
+
+  logoutButton: {
+    marginTop: 25,
+    minHeight: 52,
     borderRadius: 16,
-    maxWidth: 520,
     borderWidth: 1,
-    borderColor: '#EAECEC',
+    borderColor: '#E5E8E5',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+
+  logoutIcon: {
+    color: '#A45D5D',
+    fontSize: 18,
+    fontWeight: '800',
+    marginRight: 8,
+  },
+
+  logoutText: {
+    color: '#A45D5D',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  versionText: {
+    color: '#A2AAA4',
+    textAlign: 'center',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+
+
+  /* ============================================================
+     MODALS
+     ============================================================ */
+
+  modalScreen: {
+    flex: 1,
+    backgroundColor: '#F7F8F5',
+  },
+
+  modalHeader: {
+    minHeight: 64,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5EAE5',
   },
 
   modalTitle: {
+    color: '#142019',
     fontSize: 20,
-    fontWeight: '800',
-    color: '#1B1F23',
-    marginBottom: 5,
+    fontWeight: '900',
   },
 
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 20,
-  },
-
-  feedbackInput: {
-    backgroundColor: '#F5F7F6',
-    borderRadius: 10,
-    padding: 15,
-    minHeight: 100,
-    maxHeight: 180,
-    textAlignVertical: 'top',
-    color: '#1B1F23',
-    borderWidth: 1,
-    borderColor: '#EAECEC',
-    marginBottom: 20,
-    fontSize: 16,
-  },
-
-  modalBtnRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-
-  cancelBtn: {
-    padding: 15,
-    marginRight: 10,
-  },
-
-  cancelBtnText: {
-    color: '#6B7280',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-
-  submitBtn: {
-    backgroundColor: '#0C9C4C',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    minWidth: 120,
+  modalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: '#F0F3EF',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  submitBtnText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 15,
+  modalCloseText: {
+    color: '#27342C',
+    fontSize: 26,
+    fontWeight: '300',
+    lineHeight: 28,
+  },
+
+
+  /* ============================================================
+     FEEDBACK MODAL
+     ============================================================ */
+
+  feedbackOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(20,32,25,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+
+  feedbackModal: {
+    width: '100%',
+    maxWidth: 560,
+    borderRadius: 27,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E7DF',
+    padding: 20,
+
+    shadowColor: '#102015',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 25,
+    elevation: 8,
+  },
+
+  feedbackModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+
+  feedbackModalEyebrow: {
+    color: '#5C8D25',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.6,
+    marginBottom: 5,
+  },
+
+  feedbackModalTitle: {
+    color: '#142019',
+    fontSize: 21,
+    lineHeight: 26,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    maxWidth: 270,
+  },
+
+  feedbackModalDescription: {
+    color: '#748078',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+    marginBottom: 15,
+  },
+
+  feedbackInput: {
+    minHeight: 145,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#DDE4DD',
+    backgroundColor: '#F7F9F6',
+    color: '#142019',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  feedbackSubmit: {
+    height: 53,
+    borderRadius: 16,
+    marginTop: 13,
+    backgroundColor: '#B8FF3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  feedbackSubmitText: {
+    color: '#102015',
+    fontSize: 13,
+    fontWeight: '900',
   },
 });
 

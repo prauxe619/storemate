@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
 
 import {
   View,
@@ -17,15 +21,32 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Q } from '@nozbe/watermelondb';
-import { database } from '../core/database';
-import { syncWithCloud } from '../core/sync/sync';
+import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+
+import {
+  Q,
+} from '@nozbe/watermelondb';
+
+import {
+  database,
+} from '../core/database';
+
+import {
+  syncWithCloud,
+} from '../core/sync/sync';
+
 import POSScreen from '../screens/POSScreen';
+
 import NetInfo from '@react-native-community/netinfo';
+
 import KhataScreen from '../screens/KhataScreen';
+
 import LowStockWidget from '../components/LowStockWidget';
+
 import ManualEntryScreen from '../screens/Manualentryscreen';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
@@ -33,30 +54,46 @@ import {
   confirmPendingSale,
 } from '../core/ai/IntentHandler';
 
-import { SpeechEngine } from '../core/speech/SpeechEngine';
-import { BASE_URL } from '../config/api';
-import { parseVoiceCommand } from '../core/ai/VoiceCommandRouter';
+import {
+  SpeechEngine,
+} from '../core/speech/SpeechEngine';
+
+import {
+  BASE_URL,
+} from '../config/api';
+
+import {
+  parseVoiceCommand,
+} from '../core/ai/VoiceCommandRouter';
+
 import TelemetryService from '../services/TelemetryService';
-import { requireCurrentUserId } from '../core/auth/localUser';
+
+import {
+  requireCurrentUserId,
+} from '../core/auth/localUser';
 
 
-const PROFILE_KEY_PREFIX = 'storemate_profile_';
+const PROFILE_KEY_PREFIX =
+  'storemate_profile_';
 
 
 const HomeScreen = () => {
-  const insets = useSafeAreaInsets();
+
+  const insets =
+    useSafeAreaInsets();
 
   const {
     width: windowWidth,
-    height: windowHeight,
-  } = useWindowDimensions();
+  } =
+    useWindowDimensions();
+
 
   const screenPadding =
     windowWidth < 360
       ? 14
       : windowWidth < 600
-      ? 16
-      : 24;
+      ? 18
+      : 26;
 
 
   /*
@@ -65,61 +102,99 @@ const HomeScreen = () => {
    * =========================================================
    */
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showPOS, setShowPOS] = useState(false);
-  const [showKhata, setShowKhata] = useState(false);
-  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [
+    isSyncing,
+    setIsSyncing,
+  ] = useState(false);
 
-  const [manualEntryPrefill, setManualEntryPrefill] =
-    useState('');
+  const [
+    showPOS,
+    setShowPOS,
+  ] = useState(false);
 
-  const [todaySales, setTodaySales] = useState(0);
-  const [pendingKhata, setPendingKhata] = useState(0);
-  const [isOffline, setIsOffline] = useState(false);
+  const [
+    showKhata,
+    setShowKhata,
+  ] = useState(false);
 
-  const [isListening, setIsListening] = useState(false);
+  const [
+    showManualEntry,
+    setShowManualEntry,
+  ] = useState(false);
 
-  const [aiStatus, setAiStatus] = useState(
-    'Tap the mic to speak a command'
+  const [
+    manualEntryPrefill,
+    setManualEntryPrefill,
+  ] = useState('');
+
+  const [
+    todaySales,
+    setTodaySales,
+  ] = useState(0);
+
+  const [
+    pendingKhata,
+    setPendingKhata,
+  ] = useState(0);
+
+  const [
+    isOffline,
+    setIsOffline,
+  ] = useState(false);
+
+  const [
+    isListening,
+    setIsListening,
+  ] = useState(false);
+
+  const [
+    aiStatus,
+    setAiStatus,
+  ] = useState(
+    'Tap the mic and speak'
   );
 
-  const [transcribedText, setTranscribedText] =
-    useState('');
+  const [
+    transcribedText,
+    setTranscribedText,
+  ] = useState('');
 
-  const [shopName, setShopName] =
-    useState('Your Store');
+  const [
+    shopName,
+    setShopName,
+  ] = useState(
+    'Your Store'
+  );
 
-  const [avatarUri, setAvatarUri] =
-    useState(null);
+  const [
+    avatarUri,
+    setAvatarUri,
+  ] = useState(null);
 
+  const [
+    currentUserId,
+    setCurrentUserId,
+  ] = useState(null);
 
-  /*
-   * =========================================================
-   * CURRENT USER
-   * =========================================================
-   */
+  const [
+    showOnboardingModal,
+    setShowOnboardingModal,
+  ] = useState(false);
 
-  const [currentUserId, setCurrentUserId] =
-    useState(null);
+  const [
+    onboardingPhone,
+    setOnboardingPhone,
+  ] = useState('');
 
+  const [
+    onboardingUpi,
+    setOnboardingUpi,
+  ] = useState('');
 
-  /*
-   * =========================================================
-   * ONBOARDING
-   * =========================================================
-   */
-
-  const [showOnboardingModal, setShowOnboardingModal] =
-    useState(false);
-
-  const [onboardingPhone, setOnboardingPhone] =
-    useState('');
-
-  const [onboardingUpi, setOnboardingUpi] =
-    useState('');
-
-  const [isSavingOnboarding, setIsSavingOnboarding] =
-    useState(false);
+  const [
+    isSavingOnboarding,
+    setIsSavingOnboarding,
+  ] = useState(false);
 
 
   /*
@@ -129,7 +204,9 @@ const HomeScreen = () => {
    */
 
   const pulseAnim =
-    useRef(new Animated.Value(0)).current;
+    useRef(
+      new Animated.Value(0)
+    ).current;
 
 
   /*
@@ -144,7 +221,7 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * MODAL / MIC OWNERSHIP
+   * MODAL STATE
    * =========================================================
    */
 
@@ -153,11 +230,13 @@ const HomeScreen = () => {
 
 
   useEffect(() => {
+
     isModalOpen.current =
       showPOS ||
       showKhata ||
       showManualEntry ||
       showOnboardingModal;
+
   }, [
     showPOS,
     showKhata,
@@ -168,21 +247,23 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * USER PROFILE KEY
+   * PROFILE
    * =========================================================
    */
 
-  const getProfileKey = userId =>
-    `${PROFILE_KEY_PREFIX}${userId}`;
+  const getProfileKey =
+    userId =>
+      `${PROFILE_KEY_PREFIX}${userId}`;
 
 
   /*
    * =========================================================
-   * STOP HOME SPEECH WHEN MODAL OPENS
+   * STOP SPEECH WHEN MODAL OPENS
    * =========================================================
    */
 
   useEffect(() => {
+
     const modalIsOpen =
       showPOS ||
       showKhata ||
@@ -190,12 +271,18 @@ const HomeScreen = () => {
       showOnboardingModal;
 
     if (modalIsOpen) {
-      setIsListening(false);
 
-      isProcessingCommand.current = false;
+      setIsListening(
+        false
+      );
 
-      SpeechEngine.stop().catch(() => {});
+      isProcessingCommand.current =
+        false;
+
+      SpeechEngine.stop()
+        .catch(() => {});
     }
+
   }, [
     showPOS,
     showKhata,
@@ -211,428 +298,470 @@ const HomeScreen = () => {
    */
 
   useEffect(() => {
+
     let loop;
 
     if (isListening) {
+
       pulseAnim.setValue(0);
 
-      loop = Animated.loop(
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1400,
-          useNativeDriver: true,
-        })
-      );
+      loop =
+        Animated.loop(
+          Animated.timing(
+            pulseAnim,
+            {
+              toValue: 1,
+              duration: 1400,
+              useNativeDriver: true,
+            }
+          )
+        );
 
       loop.start();
+
     } else {
+
       pulseAnim.setValue(0);
     }
 
     return () => {
+
       if (loop) {
         loop.stop();
       }
+
     };
-  }, [isListening, pulseAnim]);
+
+  }, [
+    isListening,
+    pulseAnim,
+  ]);
 
 
   const pulseScale =
     pulseAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [1, 1.7],
+      inputRange: [
+        0,
+        1,
+      ],
+
+      outputRange: [
+        1,
+        1.75,
+      ],
     });
 
 
   const pulseOpacity =
     pulseAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0.35, 0],
+      inputRange: [
+        0,
+        1,
+      ],
+
+      outputRange: [
+        0.30,
+        0,
+      ],
     });
 
 
   /*
    * =========================================================
-   * FETCH DASHBOARD METRICS
+   * FETCH METRICS
    * =========================================================
    */
 
-  const fetchMetrics = async () => {
-    try {
-      const ownerId =
-        await requireCurrentUserId();
+  const fetchMetrics =
+    async () => {
 
-      const today = new Date();
+      try {
 
-      today.setHours(
-        0,
-        0,
-        0,
-        0
-      );
+        const ownerId =
+          await requireCurrentUserId();
+
+        const today =
+          new Date();
+
+        today.setHours(
+          0,
+          0,
+          0,
+          0
+        );
 
 
-      const sales =
-        await database
-          .get('sales_transactions')
-          .query(
-            Q.where(
-              'owner_id',
-              ownerId
-            ),
+        const sales =
+          await database
+            .get(
+              'sales_transactions'
+            )
+            .query(
+              Q.where(
+                'owner_id',
+                ownerId
+              ),
 
-            Q.where(
-              'created_at',
-              Q.gte(
-                today.getTime()
+              Q.where(
+                'created_at',
+                Q.gte(
+                  today.getTime()
+                )
               )
             )
+            .fetch();
+
+
+        setTodaySales(
+          sales.reduce(
+            (
+              sum,
+              sale
+            ) =>
+              sum +
+              Number(
+                sale.totalAmount ||
+                  0
+              ),
+
+            0
           )
-          .fetch();
+        );
 
 
-      setTodaySales(
-        sales.reduce(
-          (sum, sale) =>
-            sum +
-            Number(
-              sale.totalAmount ||
-                0
-            ),
-
-          0
-        )
-      );
-
-
-      const entries =
-        await database
-          .get('ledger_entries')
-          .query(
-            Q.where(
-              'owner_id',
-              ownerId
+        const entries =
+          await database
+            .get(
+              'ledger_entries'
             )
+            .query(
+              Q.where(
+                'owner_id',
+                ownerId
+              )
+            )
+            .fetch();
+
+
+        let totalKhata =
+          0;
+
+
+        entries.forEach(
+          entry => {
+
+            if (
+              entry.entryType ===
+              'CREDIT'
+            ) {
+
+              totalKhata +=
+                Number(
+                  entry.amount ||
+                    0
+                );
+            }
+
+
+            if (
+              entry.entryType ===
+              'PAYMENT'
+            ) {
+
+              totalKhata -=
+                Number(
+                  entry.amount ||
+                    0
+                );
+            }
+
+          }
+        );
+
+
+        setPendingKhata(
+          Math.max(
+            totalKhata,
+            0
           )
-          .fetch();
+        );
 
+      } catch (error) {
 
-      let totalKhata = 0;
-
-
-      entries.forEach(
-        entry => {
-          if (
-            entry.entryType ===
-            'CREDIT'
-          ) {
-            totalKhata +=
-              Number(
-                entry.amount ||
-                  0
-              );
-          }
-
-          if (
-            entry.entryType ===
-            'PAYMENT'
-          ) {
-            totalKhata -=
-              Number(
-                entry.amount ||
-                  0
-              );
-          }
-        }
-      );
-
-
-      setPendingKhata(
-        Math.max(
-          totalKhata,
-          0
-        )
-      );
-
-    } catch (error) {
-      console.error(
-        'Metrics error:',
-        error
-      );
-    }
-  };
+        console.error(
+          'Metrics error:',
+          error
+        );
+      }
+    };
 
 
   /*
    * =========================================================
-   * LOAD CURRENT USER PROFILE
+   * LOAD PROFILE
    * =========================================================
    */
 
-  const loadProfileData = async () => {
-    try {
-      const ownerId =
-        await requireCurrentUserId();
+  const loadProfileData =
+    async () => {
 
-      setCurrentUserId(
-        ownerId
-      );
+      try {
 
+        const ownerId =
+          await requireCurrentUserId();
 
-      /*
-       * =====================================================
-       * ONLY USER-SPECIFIC PROFILE STORAGE
-       * =====================================================
-       */
-
-      const profileKey =
-        getProfileKey(
+        setCurrentUserId(
           ownerId
         );
 
 
-      const storedProfile =
-        await AsyncStorage.getItem(
-          profileKey
-        );
-
-
-      let profile = null;
-
-
-      if (storedProfile) {
-        try {
-          profile =
-            JSON.parse(
-              storedProfile
-            );
-        } catch (error) {
-          console.warn(
-            'Profile JSON invalid:',
-            error
+        const profileKey =
+          getProfileKey(
+            ownerId
           );
+
+
+        const storedProfile =
+          await AsyncStorage.getItem(
+            profileKey
+          );
+
+
+        let profile =
+          null;
+
+
+        if (storedProfile) {
+
+          try {
+
+            profile =
+              JSON.parse(
+                storedProfile
+              );
+
+          } catch (error) {
+
+            console.warn(
+              'Profile JSON invalid:',
+              error
+            );
+          }
         }
-      }
 
 
-      if (profile) {
+        if (profile) {
+
+          setShopName(
+            profile.shopName ||
+              'Your Store'
+          );
+
+          setAvatarUri(
+            profile.avatarUri ||
+              null
+          );
+
+          setOnboardingPhone(
+            profile.phone ||
+              ''
+          );
+
+          setOnboardingUpi(
+            profile.upiId ||
+              ''
+          );
+
+
+          const onboardingComplete =
+            profile.onboardingCompleted ===
+            true;
+
+
+          if (
+            !onboardingComplete &&
+            (
+              !profile.phone ||
+              !profile.upiId
+            )
+          ) {
+
+            setShowOnboardingModal(
+              true
+            );
+          }
+
+
+          return;
+        }
+
+
+        /*
+         * IMPORTANT:
+         * Never read old global profile keys.
+         */
+
         setShopName(
-          profile.shopName ||
-            'Your Store'
+          'Your Store'
         );
 
         setAvatarUri(
-          profile.avatarUri ||
-            null
+          null
         );
 
         setOnboardingPhone(
-          profile.phone ||
-            ''
+          ''
         );
 
         setOnboardingUpi(
-          profile.upiId ||
-            ''
+          ''
         );
 
 
         /*
-         * ===================================================
-         * ONBOARDING CHECK
-         * ===================================================
+         * SERVER FALLBACK
          */
 
-        const onboardingComplete =
-          profile.onboardingCompleted ===
-          true;
-
-
-        if (
-          !onboardingComplete &&
-          (
-            !profile.phone ||
-            !profile.upiId
-          )
-        ) {
-          setShowOnboardingModal(
-            true
+        const token =
+          await AsyncStorage.getItem(
+            'userToken'
           );
-        }
 
 
-        return;
-      }
+        if (token) {
 
-
-      /*
-       * =====================================================
-       * NO NEW PROFILE FOUND
-       *
-       * We intentionally DO NOT read the old global
-       * shopName/avatarUri/userPhone/shopUpi keys here.
-       *
-       * Otherwise another user's data can leak.
-       * =====================================================
-       */
-
-      setShopName(
-        'Your Store'
-      );
-
-      setAvatarUri(
-        null
-      );
-
-      setOnboardingPhone(
-        ''
-      );
-
-      setOnboardingUpi(
-        ''
-      );
-
-
-      /*
-       * =====================================================
-       * SERVER PROFILE FALLBACK
-       * =====================================================
-       */
-
-      const token =
-        await AsyncStorage.getItem(
-          'userToken'
-        );
-
-
-      if (token) {
-        TelemetryService.setAuthToken(
-          token
-        );
-
-
-        try {
-          const response =
-            await fetch(
-              `${BASE_URL}/api/v1/auth/profile`,
-              {
-                method:
-                  'GET',
-
-                headers: {
-                  'Content-Type':
-                    'application/json',
-
-                  Authorization:
-                    `Bearer ${token}`,
-                },
-              }
+          TelemetryService
+            .setAuthToken(
+              token
             );
 
 
-          if (
-            response.ok
-          ) {
-            const data =
-              await response.json();
+          try {
 
+            const response =
+              await fetch(
+                `${BASE_URL}/api/v1/auth/profile`,
+                {
+                  method:
+                    'GET',
 
-            const serverProfile = {
-              email:
-                data.email ||
-                '',
+                  headers: {
+                    'Content-Type':
+                      'application/json',
 
-              shopName:
-                data.shop_name ||
-                'Your Store',
-
-              phone:
-                data.phone ||
-                '',
-
-              address:
-                data.address ||
-                '',
-
-              avatarUri:
-                data.avatar_uri ||
-                data.avatarUrl ||
-                null,
-
-              upiId:
-                data.upi_id ||
-                '',
-
-              onboardingCompleted:
-                Boolean(
-                  data.phone &&
-                  data.upi_id
-                ),
-            };
-
-
-            await AsyncStorage.setItem(
-              profileKey,
-              JSON.stringify(
-                serverProfile
-              )
-            );
-
-
-            setShopName(
-              serverProfile.shopName
-            );
-
-            setAvatarUri(
-              serverProfile.avatarUri
-            );
-
-            setOnboardingPhone(
-              serverProfile.phone
-            );
-
-            setOnboardingUpi(
-              serverProfile.upiId
-            );
+                    Authorization:
+                      `Bearer ${token}`,
+                  },
+                }
+              );
 
 
             if (
-              !serverProfile.phone ||
-              !serverProfile.upiId
+              response.ok
             ) {
-              setShowOnboardingModal(
-                true
+
+              const data =
+                await response.json();
+
+
+              const serverProfile = {
+
+                email:
+                  data.email ||
+                  '',
+
+                shopName:
+                  data.shop_name ||
+                  'Your Store',
+
+                phone:
+                  data.phone ||
+                  '',
+
+                address:
+                  data.address ||
+                  '',
+
+                avatarUri:
+                  data.avatar_uri ||
+                  data.avatarUrl ||
+                  null,
+
+                upiId:
+                  data.upi_id ||
+                  '',
+
+                onboardingCompleted:
+                  Boolean(
+                    data.phone &&
+                    data.upi_id
+                  ),
+              };
+
+
+              await AsyncStorage.setItem(
+                profileKey,
+
+                JSON.stringify(
+                  serverProfile
+                )
               );
+
+
+              setShopName(
+                serverProfile.shopName
+              );
+
+              setAvatarUri(
+                serverProfile.avatarUri
+              );
+
+              setOnboardingPhone(
+                serverProfile.phone
+              );
+
+              setOnboardingUpi(
+                serverProfile.upiId
+              );
+
+
+              if (
+                !serverProfile.phone ||
+                !serverProfile.upiId
+              ) {
+
+                setShowOnboardingModal(
+                  true
+                );
+              }
             }
+
+          } catch (error) {
+
+            console.log(
+              'Profile server unavailable. Continuing offline.'
+            );
+
+            setShowOnboardingModal(
+              true
+            );
           }
-        } catch (error) {
-          /*
-           * Offline is valid.
-           *
-           * User can continue using
-           * local database features.
-           */
-          console.log(
-            'Profile server unavailable. Continuing offline.'
-          );
+
+        } else {
 
           setShowOnboardingModal(
             true
           );
         }
-      } else {
-        setShowOnboardingModal(
-          true
+
+      } catch (error) {
+
+        console.error(
+          'Failed to load profile:',
+          error
         );
       }
-
-    } catch (error) {
-      console.error(
-        'Failed to load profile data:',
-        error
-      );
-    }
-  };
+    };
 
 
   /*
@@ -643,11 +772,13 @@ const HomeScreen = () => {
 
   const autoSyncBackground =
     async () => {
+
       if (isSyncing) {
         return;
       }
 
       try {
+
         setIsSyncing(
           true
         );
@@ -657,7 +788,9 @@ const HomeScreen = () => {
         setIsSyncing(
           false
         );
+
       } catch (error) {
+
         setIsSyncing(
           false
         );
@@ -678,20 +811,16 @@ const HomeScreen = () => {
    */
 
   useEffect(() => {
+
     fetchMetrics();
 
     loadProfileData();
 
 
-    /*
-     * =======================================================
-     * NETWORK LISTENER
-     * =======================================================
-     */
-
     const unsubscribeNetInfo =
       NetInfo.addEventListener(
         state => {
+
           const currentlyOffline =
             !(
               state.isConnected &&
@@ -702,15 +831,13 @@ const HomeScreen = () => {
 
           setIsOffline(
             previousOffline => {
+
               if (
                 previousOffline ===
                   true &&
                 currentlyOffline ===
                   false
               ) {
-                console.log(
-                  '🌐 Network returned! Auto-syncing...'
-                );
 
                 autoSyncBackground();
               }
@@ -722,15 +849,10 @@ const HomeScreen = () => {
       );
 
 
-    /*
-     * =======================================================
-     * SPEECH PARTIAL
-     * =======================================================
-     */
-
     const partialSub =
       SpeechEngine.onPartialResult(
         text => {
+
           if (
             isModalOpen.current
           ) {
@@ -748,15 +870,10 @@ const HomeScreen = () => {
       );
 
 
-    /*
-     * =======================================================
-     * SPEECH FINAL
-     * =======================================================
-     */
-
     const finalSub =
       SpeechEngine.onFinalResult(
         async text => {
+
           if (
             isModalOpen.current
           ) {
@@ -782,10 +899,13 @@ const HomeScreen = () => {
 
 
           try {
+
             await processVoiceCommand(
               text
             );
+
           } finally {
+
             isProcessingCommand.current =
               false;
           }
@@ -793,15 +913,10 @@ const HomeScreen = () => {
       );
 
 
-    /*
-     * =======================================================
-     * SPEECH ERROR
-     * =======================================================
-     */
-
     const errorSub =
       SpeechEngine.onError(
         code => {
+
           if (
             isModalOpen.current
           ) {
@@ -823,6 +938,7 @@ const HomeScreen = () => {
           if (
             code === 6
           ) {
+
             errorMsg =
               "Speech timeout (didn't hear anything)";
           }
@@ -831,6 +947,7 @@ const HomeScreen = () => {
           if (
             code === 7
           ) {
+
             errorMsg =
               'No match (speak louder/clearer)';
           }
@@ -839,6 +956,7 @@ const HomeScreen = () => {
           if (
             code === 8
           ) {
+
             errorMsg =
               'Google Speech server busy';
           }
@@ -847,6 +965,7 @@ const HomeScreen = () => {
           if (
             code === 9
           ) {
+
             errorMsg =
               'Insufficient permissions';
           }
@@ -855,23 +974,28 @@ const HomeScreen = () => {
           setAiStatus(
             `Mic failed: ${errorMsg}`
           );
-
-
-          console.log(
-            'Android Speech Error Code:',
-            code
+          TelemetryService.logError(
+            'voice_speech',
+            errorMsg,
+            null,
+            'WARNING'
           );
+
+          TelemetryService.trackEvent(
+            'voice_speech_error',
+            'voice',
+            {
+              error_code: code,
+              error_message: errorMsg,
+            }
+          );
+
         }
       );
 
 
-    /*
-     * =======================================================
-     * CLEANUP
-     * =======================================================
-     */
-
     return () => {
+
       unsubscribeNetInfo();
 
       partialSub.remove();
@@ -880,10 +1004,10 @@ const HomeScreen = () => {
 
       errorSub.remove();
 
-      SpeechEngine.stop().catch(
-        () => {}
-      );
+      SpeechEngine.stop()
+        .catch(() => {});
     };
+
   }, []);
 
 
@@ -895,9 +1019,9 @@ const HomeScreen = () => {
 
   const processVoiceCommand =
     async text => {
+
       const startTime =
         Date.now();
-
 
       setAiStatus(
         'Thinking...'
@@ -909,15 +1033,10 @@ const HomeScreen = () => {
 
 
       try {
+
         const ownerId =
           await requireCurrentUserId();
 
-
-        /*
-         * =====================================================
-         * LOCAL INVENTORY
-         * =====================================================
-         */
 
         const inventoryItems =
           await database
@@ -956,12 +1075,6 @@ const HomeScreen = () => {
             );
 
 
-        /*
-         * =====================================================
-         * LOCAL CUSTOMERS
-         * =====================================================
-         */
-
         const ledgerEntries =
           await database
             .get(
@@ -998,12 +1111,6 @@ const HomeScreen = () => {
         ];
 
 
-        /*
-         * =====================================================
-         * SANITIZE VOICE TEXT
-         * =====================================================
-         */
-
         safeVoiceText =
           typeof text ===
           'string'
@@ -1023,6 +1130,7 @@ const HomeScreen = () => {
         if (
           !safeVoiceText
         ) {
+
           setAiStatus(
             "I didn't hear a command."
           );
@@ -1030,12 +1138,6 @@ const HomeScreen = () => {
           return;
         }
 
-
-        /*
-         * =====================================================
-         * OFFLINE-FIRST ROUTER
-         * =====================================================
-         */
 
         const aiData =
           await parseVoiceCommand({
@@ -1055,12 +1157,6 @@ const HomeScreen = () => {
           startTime;
 
 
-        /*
-         * =====================================================
-         * SECURITY VALIDATION
-         * =====================================================
-         */
-
         if (
           !aiData ||
           typeof aiData !==
@@ -1069,6 +1165,7 @@ const HomeScreen = () => {
             aiData
           )
         ) {
+
           throw new Error(
             'Invalid voice parser response'
           );
@@ -1114,23 +1211,19 @@ const HomeScreen = () => {
             rawIntent
           )
         ) {
+
           throw new Error(
             `Unsupported voice intent: ${rawIntent}`
           );
         }
 
 
-        /*
-         * =====================================================
-         * TEXT SANITIZER
-         * =====================================================
-         */
-
         const cleanRemoteText =
           (
             value,
             maxLength
           ) => {
+
             if (
               typeof value !==
               'string'
@@ -1151,17 +1244,12 @@ const HomeScreen = () => {
           };
 
 
-        /*
-         * =====================================================
-         * NUMBER SANITIZER
-         * =====================================================
-         */
-
         const safeNumber =
           (
             value,
             maximum
           ) => {
+
             if (
               value ===
                 null ||
@@ -1176,6 +1264,7 @@ const HomeScreen = () => {
                   'string'
               )
             ) {
+
               return null;
             }
 
@@ -1193,6 +1282,7 @@ const HomeScreen = () => {
               parsed <= 0 ||
               parsed > maximum
             ) {
+
               return null;
             }
 
@@ -1201,14 +1291,9 @@ const HomeScreen = () => {
           };
 
 
-        /*
-         * =====================================================
-         * DISCOUNT SANITIZER
-         * =====================================================
-         */
-
         const safeDiscount =
           value => {
+
             if (
               value ===
                 null ||
@@ -1217,6 +1302,7 @@ const HomeScreen = () => {
               value ===
                 ''
             ) {
+
               return null;
             }
 
@@ -1234,6 +1320,7 @@ const HomeScreen = () => {
               parsed < 0 ||
               parsed > 100
             ) {
+
               return null;
             }
 
@@ -1242,13 +1329,8 @@ const HomeScreen = () => {
           };
 
 
-        /*
-         * =====================================================
-         * SAFE ACTION DATA
-         * =====================================================
-         */
-
         const safeAIData = {
+
           intent:
             rawIntent,
 
@@ -1317,25 +1399,23 @@ const HomeScreen = () => {
         };
 
 
-        /*
-         * =====================================================
-         * UNKNOWN COMMAND
-         * =====================================================
-         */
-
         if (
           safeAIData.intent ===
           'unknown'
         ) {
+
           if (
             safeAIData.product
           ) {
+
             setAiStatus(
-              `I found "${safeAIData.product}", but I need an action. Try "add 2 ${safeAIData.product}" or "sell 1 ${safeAIData.product}".`
+              `I found "${safeAIData.product}", but I need an action.`
             );
+
           } else {
+
             setAiStatus(
-              'Command not recognized. Try "add 2 sugar", "sell 1 sugar", or "create Ravi account".'
+              'Try "add 2 sugar", "sell 1 sugar", or "create Ravi account".'
             );
           }
 
@@ -1356,34 +1436,35 @@ const HomeScreen = () => {
         }
 
 
-        /*
-         * =====================================================
-         * LOG VOICE SUCCESS
-         * =====================================================
-         */
-
         TelemetryService.logVoice(
           safeVoiceText,
           safeAIData.intent,
           safeAIData.intent,
-          'SUCCESS',
+          'PARSED',
           latencyMs,
           null,
           aiData.confidence ||
             0.9
         );
 
+        TelemetryService.trackEvent(
+          'voice_command_parsed',
+          'voice',
+          {
+            intent:
+              safeAIData.intent,
 
-        setAiStatus(
-          'Updating database...'
+            confidence:
+              aiData.confidence ||
+              0.9,
+          }
         );
 
 
-        /*
-         * =====================================================
-         * EXECUTE LOCAL ACTION
-         * =====================================================
-         */
+        setAiStatus(
+          'Updating your shop...'
+        );
+
 
         const resultMessage =
           await executeAIAction(
@@ -1391,26 +1472,23 @@ const HomeScreen = () => {
           );
 
 
-        /*
-         * =====================================================
-         * PAYMENT CONFIRMATION
-         * =====================================================
-         */
-
         if (
           resultMessage &&
           typeof resultMessage ===
             'object' &&
           resultMessage.needsConfirmation
         ) {
+
           setAiStatus(
             resultMessage.message
           );
 
 
           Alert.alert(
-            'Cash or Khata?',
+            'Payment Type',
+
             resultMessage.message,
+
             [
               {
                 text:
@@ -1418,40 +1496,33 @@ const HomeScreen = () => {
 
                 onPress:
                   async () => {
+
                     if (
                       isProcessingCommand.current
                     ) {
                       return;
                     }
 
-
                     isProcessingCommand.current =
                       true;
 
-
                     try {
+
                       const finalMsg =
                         await confirmPendingSale(
                           resultMessage.pendingSale,
                           'CASH'
                         );
 
-
                       setAiStatus(
                         finalMsg
                       );
-
 
                       await fetchMetrics();
 
                     } catch (
                       confirmationError
                     ) {
-                      console.error(
-                        'Cash confirmation error:',
-                        confirmationError
-                      );
-
 
                       setAiStatus(
                         confirmationError?.message ||
@@ -1459,6 +1530,7 @@ const HomeScreen = () => {
                       );
 
                     } finally {
+
                       isProcessingCommand.current =
                         false;
                     }
@@ -1471,40 +1543,33 @@ const HomeScreen = () => {
 
                 onPress:
                   async () => {
+
                     if (
                       isProcessingCommand.current
                     ) {
                       return;
                     }
 
-
                     isProcessingCommand.current =
                       true;
 
-
                     try {
+
                       const finalMsg =
                         await confirmPendingSale(
                           resultMessage.pendingSale,
                           'KHATA'
                         );
 
-
                       setAiStatus(
                         finalMsg
                       );
-
 
                       await fetchMetrics();
 
                     } catch (
                       confirmationError
                     ) {
-                      console.error(
-                        'Khata confirmation error:',
-                        confirmationError
-                      );
-
 
                       setAiStatus(
                         confirmationError?.message ||
@@ -1512,6 +1577,7 @@ const HomeScreen = () => {
                       );
 
                     } finally {
+
                       isProcessingCommand.current =
                         false;
                     }
@@ -1533,39 +1599,64 @@ const HomeScreen = () => {
         }
 
 
-        /*
-         * =====================================================
-         * NORMAL RESULT
-         * =====================================================
-         */
-
         if (
           typeof resultMessage ===
           'string'
         ) {
+
           setAiStatus(
             resultMessage
           );
+
         } else if (
           resultMessage &&
           typeof resultMessage.message ===
             'string'
         ) {
+
           setAiStatus(
             resultMessage.message
           );
+
         } else {
+
           setAiStatus(
-            'Done.'
+            'Done ✓'
           );
         }
 
 
+        /*
+        * Voice command was actually executed successfully.
+        */
+        TelemetryService.logVoice(
+          safeVoiceText,
+          safeAIData.intent,
+          safeAIData.intent,
+          'SUCCESS',
+          Date.now() - startTime,
+          null,
+          aiData.confidence ||
+            0.9
+        );
+
+        TelemetryService.trackEvent(
+          'voice_action_success',
+          'voice',
+          {
+            intent:
+              safeAIData.intent,
+
+            offline:
+              isOffline,
+          }
+        );
+
+
         await fetchMetrics();
 
-      } catch (
-        error
-      ) {
+      } catch (error) {
+
         const latencyMs =
           Date.now() -
           startTime;
@@ -1617,6 +1708,7 @@ const HomeScreen = () => {
 
   const safeMicPress =
     async () => {
+
       if (
         isModalOpen.current
       ) {
@@ -1625,63 +1717,98 @@ const HomeScreen = () => {
 
 
       try {
+
         if (
           isListening
         ) {
+
           await SpeechEngine.stop();
+
+          TelemetryService.trackEvent(
+            'voice_listening_stopped',
+            'voice',
+            {
+              reason:
+                'user',
+            }
+          );
 
           setIsListening(
             false
           );
 
           setAiStatus(
-            'Tap the mic to speak a command'
+            'Tap the mic and speak'
           );
 
         } else {
+
           setTranscribedText(
             ''
           );
 
           setAiStatus(
-            'Initializing mic...'
+            'Listening...'
           );
 
           setIsListening(
-            true
-          );
+              true
+            );
 
-          await SpeechEngine.start();
+            TelemetryService.trackEvent(
+              'voice_listening_started',
+              'voice',
+              {
+                offline:
+                  isOffline,
+              }
+            );
+
+            await SpeechEngine.start();
         }
 
       } catch (error) {
+
         setIsListening(
           false
         );
 
-        console.log(
-          'Voice start failed:',
-          error.message
-        );
+        TelemetryService.logError(
+            'voice_microphone',
+            error?.message ||
+              'Microphone permission denied.',
+            error?.stack
+          );
 
-        handleVoiceUnavailable(
-          error.message ||
-            'Microphone permission denied.'
-        );
+          TelemetryService.trackEvent(
+            'voice_microphone_unavailable',
+            'voice',
+            {
+              message:
+                error?.message ||
+                'Microphone permission denied.',
+            }
+          );
+
+          handleVoiceUnavailable(
+            error.message ||
+              'Microphone permission denied.'
+          );
       }
     };
 
 
   /*
    * =========================================================
-   * VOICE UNAVAILABLE
+   * VOICE ERROR
    * =========================================================
    */
 
   const handleVoiceUnavailable =
     reason => {
+
       setAiStatus(
-        'Voice unavailable — use manual entry below'
+        'Voice unavailable'
       );
 
 
@@ -1722,15 +1849,15 @@ const HomeScreen = () => {
 
   const handleManualSync =
     async () => {
+
       try {
+
         setIsSyncing(
           true
         );
 
-
         const result =
           await syncWithCloud();
-
 
         setIsSyncing(
           false
@@ -1739,22 +1866,22 @@ const HomeScreen = () => {
 
         Alert.alert(
           result?.success
-            ? 'Synced'
+            ? 'Synced ✓'
             : 'Sync paused',
 
           result?.message ||
             (
               result?.success
-                ? 'Backed up successfully.'
+                ? 'Your shop is backed up.'
                 : 'Could not reach server.'
             )
         );
 
       } catch (error) {
+
         setIsSyncing(
           false
         );
-
 
         Alert.alert(
           'Error',
@@ -1766,17 +1893,19 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * SAVE ONBOARDING - USER SPECIFIC
+   * SAVE ONBOARDING
    * =========================================================
    */
 
   const handleSaveOnboarding =
     async () => {
+
       if (
         !onboardingPhone ||
         onboardingPhone.length !==
           10
       ) {
+
         return Alert.alert(
           'Validation',
           'Please enter a valid 10-digit mobile number.'
@@ -1790,9 +1919,10 @@ const HomeScreen = () => {
           '@'
         )
       ) {
+
         return Alert.alert(
           'Validation',
-          'Please enter a valid UPI ID (e.g., number@paytm).'
+          'Please enter a valid UPI ID.'
         );
       }
 
@@ -1803,21 +1933,18 @@ const HomeScreen = () => {
 
 
       try {
+
         const ownerId =
           currentUserId ||
-          (await requireCurrentUserId());
+          (
+            await requireCurrentUserId()
+          );
 
 
         setCurrentUserId(
           ownerId
         );
 
-
-        /*
-         * =====================================================
-         * SAVE PROFILE UNDER CURRENT USER
-         * =====================================================
-         */
 
         const profileKey =
           getProfileKey(
@@ -1838,12 +1965,16 @@ const HomeScreen = () => {
         if (
           existingProfileRaw
         ) {
+
           try {
+
             existingProfile =
               JSON.parse(
                 existingProfileRaw
               );
+
           } catch {
+
             existingProfile =
               {};
           }
@@ -1851,6 +1982,7 @@ const HomeScreen = () => {
 
 
         const updatedProfile = {
+
           ...existingProfile,
 
           shopName:
@@ -1880,87 +2012,50 @@ const HomeScreen = () => {
         );
 
 
-        /*
-         * Update screen immediately.
-         */
-
-        setOnboardingPhone(
-          onboardingPhone
-        );
-
-        setOnboardingUpi(
-          onboardingUpi
-        );
-
-
-        /*
-         * =====================================================
-         * SERVER UPDATE
-         * =====================================================
-         */
-
         const token =
           await AsyncStorage.getItem(
             'userToken'
           );
 
 
-        if (
-          token
-        ) {
+        if (token) {
+
           try {
-            const response =
-              await fetch(
-                `${BASE_URL}/api/v1/auth/profile`,
-                {
-                  method:
-                    'PUT',
 
-                  headers: {
-                    'Content-Type':
-                      'application/json',
+            await fetch(
+              `${BASE_URL}/api/v1/auth/profile`,
+              {
+                method:
+                  'PUT',
 
-                    Authorization:
-                      `Bearer ${token}`,
-                  },
+                headers: {
+                  'Content-Type':
+                    'application/json',
 
-                  body:
-                    JSON.stringify({
-                      shop_name:
-                        shopName,
+                  Authorization:
+                    `Bearer ${token}`,
+                },
 
-                      phone:
-                        onboardingPhone,
+                body:
+                  JSON.stringify({
+                    shop_name:
+                      shopName,
 
-                      upi_id:
-                        onboardingUpi,
-                    }),
-                }
-              );
+                    phone:
+                      onboardingPhone,
 
-
-            if (
-              response.ok
-            ) {
-              console.log(
-                'Profile onboarding synced to server.'
-              );
-            } else {
-              console.log(
-                'Profile saved locally; server returned:',
-                response.status
-              );
-            }
-
-          } catch (
-            serverError
-          ) {
-            /*
-             * Offline is allowed.
-             */
-            console.log(
-              'Profile saved locally. Server unavailable.'
+                    upi_id:
+                      onboardingUpi,
+                  }),
+              }
             );
+
+          } catch {
+
+            /*
+             * Local save remains valid
+             * when offline.
+             */
           }
         }
 
@@ -1971,24 +2066,20 @@ const HomeScreen = () => {
 
 
         Alert.alert(
-          'Success 🎉',
-          'Your profile details have been saved.'
+          'Ready 🎉',
+          'Your shop details have been saved.'
         );
 
       } catch (error) {
-        console.error(
-          'Onboarding save error:',
-          error
-        );
-
 
         Alert.alert(
           'Error',
           error.message ||
-            'Could not save details locally.'
+            'Could not save details.'
         );
 
       } finally {
+
         setIsSavingOnboarding(
           false
         );
@@ -2004,9 +2095,9 @@ const HomeScreen = () => {
 
   const handlePOSClose =
     () => {
-      SpeechEngine.stop().catch(
-        () => {}
-      );
+
+      SpeechEngine.stop()
+        .catch(() => {});
 
       setShowPOS(
         false
@@ -2018,7 +2109,7 @@ const HomeScreen = () => {
 
   /*
    * =========================================================
-   * AVATAR INITIAL
+   * AVATAR
    * =========================================================
    */
 
@@ -2039,6 +2130,7 @@ const HomeScreen = () => {
    */
 
   return (
+
     <View
       style={[
         styles.container,
@@ -2047,26 +2139,30 @@ const HomeScreen = () => {
           paddingTop:
             Math.max(
               insets.top,
-              10
+              8
             ),
 
           paddingBottom:
             Math.max(
               insets.bottom,
-              16
+              12
             ),
         },
       ]}
     >
 
-      {/* OFFLINE BANNER */}
+      {/* =====================================================
+          OFFLINE BAR
+          ===================================================== */}
 
       {isOffline && (
+
         <View
           style={
             styles.offlineBanner
           }
         >
+
           <View
             style={
               styles.offlineDot
@@ -2078,13 +2174,16 @@ const HomeScreen = () => {
               styles.offlineText
             }
           >
-            Offline — saving to this device
+            Offline mode · Your data is safe on this device
           </Text>
+
         </View>
       )}
 
 
-      {/* TOP BAR */}
+      {/* =====================================================
+          TOP HEADER
+          ===================================================== */}
 
       <View
         style={[
@@ -2102,7 +2201,9 @@ const HomeScreen = () => {
             styles.avatarCircle
           }
         >
+
           {avatarUri ? (
+
             <Image
               source={{
                 uri:
@@ -2113,7 +2214,9 @@ const HomeScreen = () => {
                 styles.avatarImage
               }
             />
+
           ) : (
+
             <Text
               style={
                 styles.avatarText
@@ -2121,7 +2224,9 @@ const HomeScreen = () => {
             >
               {initial}
             </Text>
+
           )}
+
         </View>
 
 
@@ -2130,6 +2235,15 @@ const HomeScreen = () => {
             styles.storeInfo
           }
         >
+
+          <Text
+            style={
+              styles.greeting
+            }
+          >
+            NAMASTE 👋
+          </Text>
+
           <Text
             style={
               styles.storeName
@@ -2142,18 +2256,35 @@ const HomeScreen = () => {
             {shopName}
           </Text>
 
-
-          <Text
+          <View
             style={
-              styles.syncStatus
+              styles.statusRow
             }
           >
-            {isSyncing
-              ? 'Syncing…'
-              : isOffline
-              ? 'Not backed up'
-              : 'Backed up'}
-          </Text>
+
+            <View
+              style={[
+                styles.statusDot,
+
+                isOffline &&
+                  styles.statusDotOffline,
+              ]}
+            />
+
+            <Text
+              style={
+                styles.syncStatus
+              }
+            >
+              {isSyncing
+                ? 'Syncing shop...'
+                : isOffline
+                ? 'Offline · Ready'
+                : 'All data backed up'}
+            </Text>
+
+          </View>
+
         </View>
 
 
@@ -2167,35 +2298,44 @@ const HomeScreen = () => {
           }
 
           style={
-            styles.syncIconBtn
+            styles.syncButton
           }
 
           activeOpacity={
-            0.7
+            0.75
           }
         >
+
           {isSyncing ? (
+
             <ActivityIndicator
-              color="#0C9C4C"
+              color="#5E9227"
               size="small"
             />
+
           ) : (
+
             <Text
               style={
-                styles.syncIconText
+                styles.syncIcon
               }
             >
-              ☁
+              ↻
             </Text>
+
           )}
+
         </TouchableOpacity>
 
       </View>
 
 
-      {/* MAIN SCROLL */}
+      {/* =====================================================
+          MAIN SCROLL
+          ===================================================== */}
 
       <ScrollView
+
         contentContainerStyle={[
           styles.scrollContent,
 
@@ -2203,8 +2343,8 @@ const HomeScreen = () => {
             paddingBottom:
               Math.max(
                 insets.bottom +
-                  120,
-                140
+                  105,
+                125
               ),
           },
         ]}
@@ -2218,286 +2358,17 @@ const HomeScreen = () => {
         keyboardDismissMode="on-drag"
       >
 
-        {/* BALANCE CARD */}
+
+        {/* ===================================================
+            HERO / VOICE
+            =================================================== */}
 
         <View
           style={[
-            styles.balanceCard,
-
-            {
-              marginHorizontal:
-                screenPadding,
-            },
-          ]}
-        >
-
-          <View
-            style={
-              styles.balanceHalf
-            }
-          >
-            <Text
-              style={
-                styles.balanceLabel
-              }
-            >
-              TODAY'S SALES
-            </Text>
-
-
-            <Text
-              style={[
-                styles.balanceValue,
-
-                {
-                  color:
-                    '#0C9C4C',
-                },
-              ]}
-            >
-              ₹
-              {todaySales.toLocaleString(
-                'en-IN'
-              )}
-            </Text>
-
-
-            <Text
-              style={
-                styles.balanceSubLabel
-              }
-            >
-              Aaj ki Bikri
-            </Text>
-          </View>
-
-
-          <View
-            style={
-              styles.balanceDivider
-            }
-          />
-
-
-          <TouchableOpacity
-            style={
-              styles.balanceHalf
-            }
-
-            onPress={() =>
-              setShowKhata(
-                true
-              )
-            }
-
-            activeOpacity={
-              0.75
-            }
-          >
-            <Text
-              style={
-                styles.balanceLabel
-              }
-            >
-              YOU'LL GET
-            </Text>
-
-
-            <Text
-              style={[
-                styles.balanceValue,
-
-                {
-                  color:
-                    pendingKhata >
-                    0
-                      ? '#E0433B'
-                      : '#0C9C4C',
-                },
-              ]}
-            >
-              ₹
-              {pendingKhata.toLocaleString(
-                'en-IN'
-              )}
-            </Text>
-
-
-            <Text
-              style={
-                styles.balanceSubLabel
-              }
-            >
-              Baki Udhaar ›
-            </Text>
-          </TouchableOpacity>
-
-        </View>
-
-
-        {/* QUICK ACTIONS */}
-
-        <View
-          style={[
-            styles.actionGrid,
-
-            {
-              paddingHorizontal:
-                screenPadding -
-                4,
-            },
-          ]}
-        >
-
-          <TouchableOpacity
-            style={
-              styles.actionTile
-            }
-
-            onPress={() =>
-              setShowPOS(
-                true
-              )
-            }
-
-            activeOpacity={
-              0.8
-            }
-          >
-            <View
-              style={[
-                styles.actionIconWrap,
-
-                {
-                  backgroundColor:
-                    '#E7F7EE',
-                },
-              ]}
-            >
-              <Text
-                style={
-                  styles.actionIcon
-                }
-              >
-                🛒
-              </Text>
-            </View>
-
-
-            <Text
-              style={
-                styles.actionLabel
-              }
-            >
-              New Sale
-            </Text>
-          </TouchableOpacity>
-
-
-          <TouchableOpacity
-            style={
-              styles.actionTile
-            }
-
-            onPress={() =>
-              setShowKhata(
-                true
-              )
-            }
-
-            activeOpacity={
-              0.8
-            }
-          >
-            <View
-              style={[
-                styles.actionIconWrap,
-
-                {
-                  backgroundColor:
-                    '#FDECEA',
-                },
-              ]}
-            >
-              <Text
-                style={
-                  styles.actionIcon
-                }
-              >
-                📒
-              </Text>
-            </View>
-
-
-            <Text
-              style={
-                styles.actionLabel
-              }
-            >
-              Khata
-            </Text>
-          </TouchableOpacity>
-
-
-          <TouchableOpacity
-            style={
-              styles.actionTile
-            }
-
-            onPress={() => {
-              setManualEntryPrefill(
-                ''
-              );
-
-              setShowManualEntry(
-                true
-              );
-            }}
-
-            activeOpacity={
-              0.8
-            }
-          >
-            <View
-              style={[
-                styles.actionIconWrap,
-
-                {
-                  backgroundColor:
-                    '#EAF2FE',
-                },
-              ]}
-            >
-              <Text
-                style={
-                  styles.actionIcon
-                }
-              >
-                ✍️
-              </Text>
-            </View>
-
-
-            <Text
-              style={
-                styles.actionLabel
-              }
-            >
-              Add Entry
-            </Text>
-          </TouchableOpacity>
-
-        </View>
-
-
-        {/* AI VOICE CARD */}
-
-        <View
-          style={[
-            styles.aiCard,
+            styles.heroCard,
 
             isListening &&
-              styles.aiCardActive,
+              styles.heroCardListening,
 
             {
               marginHorizontal:
@@ -2508,17 +2379,78 @@ const HomeScreen = () => {
 
           <View
             style={
-              styles.aiHeaderRow
+              styles.heroTopRow
             }
           >
 
             <View
               style={
-                styles.micWrap
+                styles.heroText
+              }
+            >
+
+              <View
+                style={
+                  styles.heroEyebrowRow
+                }
+              >
+
+                <View
+                  style={
+                    styles.heroGreenDot
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.heroEyebrow
+                  }
+                >
+                  COUNTR VOICE
+                </Text>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.heroTitle
+                }
+              >
+                Boliyega.
+              </Text>
+
+              <Text
+                style={
+                  styles.heroTitleSecond
+                }
+              >
+                Countr karega.
+              </Text>
+
+
+              <Text
+                style={
+                  styles.heroDescription
+                }
+              >
+                Sale, khata, stock aur customer —
+                bas bolkar manage karein.
+              </Text>
+
+            </View>
+
+
+            {/* MIC */}
+
+            <View
+              style={
+                styles.micArea
               }
             >
 
               {isListening && (
+
                 <Animated.View
                   pointerEvents="none"
 
@@ -2538,6 +2470,7 @@ const HomeScreen = () => {
                     },
                   ]}
                 />
+
               )}
 
 
@@ -2546,7 +2479,7 @@ const HomeScreen = () => {
                   styles.micButton,
 
                   isListening &&
-                    styles.micButtonActive,
+                    styles.micButtonListening,
                 ]}
 
                 onPress={
@@ -2557,38 +2490,60 @@ const HomeScreen = () => {
                   0.85
                 }
               >
+
                 <Text
                   style={
                     styles.micIcon
                   }
                 >
                   {isListening
-                    ? '⏹'
-                    : '🎙'}
+                    ? '■'
+                    : '●'}
                 </Text>
+
               </TouchableOpacity>
+
+            </View>
+
+          </View>
+
+
+          {/* VOICE STATUS */}
+
+          <View
+            style={
+              styles.voiceStatusBox
+            }
+          >
+
+            <View
+              style={
+                styles.voiceStatusIcon
+              }
+            >
+
+              <Text
+                style={
+                  styles.voiceStatusIconText
+                }
+              >
+                {isListening
+                  ? '●'
+                  : '◉'}
+              </Text>
 
             </View>
 
 
             <View
               style={
-                styles.aiTextWrap
+                styles.voiceStatusTextWrap
               }
             >
 
               <Text
                 style={
-                  styles.aiTitle
-                }
-              >
-                Speak an entry
-              </Text>
-
-
-              <Text
-                style={
-                  styles.aiSubtitle
+                  styles.voiceStatus
                 }
 
                 numberOfLines={
@@ -2598,72 +2553,644 @@ const HomeScreen = () => {
                 {aiStatus}
               </Text>
 
+              {!!transcribedText && (
+
+                <Text
+                  style={
+                    styles.transcribed
+                  }
+
+                  numberOfLines={
+                    1
+                  }
+                >
+                  “{transcribedText}”
+                </Text>
+
+              )}
+
             </View>
 
           </View>
 
 
-          {!!transcribedText && (
-            <Text
-              style={
-                styles.speechPreview
-              }
-            >
-              "{transcribedText}"
-            </Text>
-          )}
+          {/* EXAMPLES */}
 
-
-          <TouchableOpacity
-            onPress={() => {
-              setManualEntryPrefill(
-                ''
-              );
-
-              setShowManualEntry(
-                true
-              );
-            }}
-
+          <View
             style={
-              styles.typeInsteadButton
-            }
-
-            activeOpacity={
-              0.7
+              styles.commandExamples
             }
           >
+
             <Text
               style={
-                styles.typeInsteadLink
+                styles.tryText
               }
             >
-              Type instead
+              TRY:
             </Text>
-          </TouchableOpacity>
+
+            <Text
+              style={
+                styles.exampleText
+              }
+            >
+              “Ravi ko ₹500 udhaar”
+            </Text>
+
+            <Text
+              style={
+                styles.exampleDot
+              }
+            >
+              ·
+            </Text>
+
+            <Text
+              style={
+                styles.exampleText
+              }
+            >
+              “2 Maggi add karo”
+            </Text>
+
+          </View>
 
         </View>
 
 
-        {/* LOW STOCK */}
+        {/* ===================================================
+            TODAY SUMMARY
+            =================================================== */}
 
         <View
           style={[
-            styles.lowStockWrapper,
+            styles.sectionWrap,
 
             {
-              paddingHorizontal:
+              marginHorizontal:
                 screenPadding,
             },
           ]}
         >
+
+          <View
+            style={
+              styles.sectionHeading
+            }
+          >
+
+            <View>
+
+              <Text
+                style={
+                  styles.sectionEyebrow
+                }
+              >
+                TODAY
+              </Text>
+
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Shop at a glance
+              </Text>
+
+            </View>
+
+          </View>
+
+
+          <View
+            style={
+              styles.summaryGrid
+            }
+          >
+
+            {/* SALES */}
+
+            <View
+              style={
+                styles.summaryCard
+              }
+            >
+
+              <View
+                style={
+                  styles.summaryIconGreen
+                }
+              >
+
+                <Text
+                  style={
+                    styles.summaryIconText
+                  }
+                >
+                  ₹
+                </Text>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.summaryLabel
+                }
+              >
+                TODAY'S SALES
+              </Text>
+
+
+              <Text
+                style={
+                  styles.summaryValue
+                }
+              >
+                ₹
+                {todaySales.toLocaleString(
+                  'en-IN'
+                )}
+              </Text>
+
+
+              <Text
+                style={
+                  styles.summaryHint
+                }
+              >
+                Aaj ki bikri
+              </Text>
+
+            </View>
+
+
+            {/* KHATA */}
+
+            <TouchableOpacity
+              style={
+                styles.summaryCard
+              }
+
+              onPress={() =>
+                setShowKhata(
+                  true
+                )
+              }
+
+              activeOpacity={
+                0.8
+              }
+            >
+
+              <View
+                style={
+                  styles.summaryIconRed
+                }
+              >
+
+                <Text
+                  style={
+                    styles.summaryIconText
+                  }
+                >
+                  ₹
+                </Text>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.summaryLabel
+                }
+              >
+                YOU'LL GET
+              </Text>
+
+
+              <Text
+                style={[
+                  styles.summaryValue,
+
+                  {
+                    color:
+                      pendingKhata >
+                      0
+                        ? '#C94D46'
+                        : '#5E9227',
+                  },
+                ]}
+              >
+                ₹
+                {pendingKhata.toLocaleString(
+                  'en-IN'
+                )}
+              </Text>
+
+
+              <Text
+                style={
+                  styles.summaryHint
+                }
+              >
+                Udhaar baki · Tap
+              </Text>
+
+            </TouchableOpacity>
+
+          </View>
+
+        </View>
+
+
+        {/* ===================================================
+            QUICK ACTIONS
+            =================================================== */}
+
+        <View
+          style={[
+            styles.sectionWrap,
+
+            {
+              marginHorizontal:
+                screenPadding,
+            },
+          ]}
+        >
+
+          <View
+            style={
+              styles.sectionHeading
+            }
+          >
+
+            <View>
+
+              <Text
+                style={
+                  styles.sectionEyebrow
+                }
+              >
+                QUICK ACTIONS
+              </Text>
+
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Do it in one tap
+              </Text>
+
+            </View>
+
+          </View>
+
+
+          <View
+            style={
+              styles.quickGrid
+            }
+          >
+
+            {/* SALE */}
+
+            <TouchableOpacity
+              style={
+                styles.quickCard
+              }
+
+              onPress={() =>
+                setShowPOS(
+                  true
+                )
+              }
+
+              activeOpacity={
+                0.8
+              }
+            >
+
+              <View
+                style={
+                  styles.quickIconGreen
+                }
+              >
+
+                <Text
+                  style={
+                    styles.quickIconText
+                  }
+                >
+                  🛒
+                </Text>
+
+              </View>
+
+
+              <View
+                style={
+                  styles.quickText
+                }
+              >
+
+                <Text
+                  style={
+                    styles.quickTitle
+                  }
+                >
+                  New Sale
+                </Text>
+
+                <Text
+                  style={
+                    styles.quickSub
+                  }
+                >
+                  Billing karein
+                </Text>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.quickArrow
+                }
+              >
+                →
+              </Text>
+
+            </TouchableOpacity>
+
+
+            {/* KHATA */}
+
+            <TouchableOpacity
+              style={
+                styles.quickCard
+              }
+
+              onPress={() =>
+                setShowKhata(
+                  true
+                )
+              }
+
+              activeOpacity={
+                0.8
+              }
+            >
+
+              <View
+                style={
+                  styles.quickIconOrange
+                }
+              >
+
+                <Text
+                  style={
+                    styles.quickIconText
+                  }
+                >
+                  📒
+                </Text>
+
+              </View>
+
+
+              <View
+                style={
+                  styles.quickText
+                }
+              >
+
+                <Text
+                  style={
+                    styles.quickTitle
+                  }
+                >
+                  Khata
+                </Text>
+
+                <Text
+                  style={
+                    styles.quickSub
+                  }
+                >
+                  Udhaar manage
+                </Text>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.quickArrow
+                }
+              >
+                →
+              </Text>
+
+            </TouchableOpacity>
+
+
+            {/* MANUAL */}
+
+            <TouchableOpacity
+              style={
+                styles.quickCard
+              }
+
+              onPress={() => {
+
+                setManualEntryPrefill(
+                  ''
+                );
+
+                setShowManualEntry(
+                  true
+                );
+
+              }}
+
+              activeOpacity={
+                0.8
+              }
+            >
+
+              <View
+                style={
+                  styles.quickIconBlue
+                }
+              >
+
+                <Text
+                  style={
+                    styles.quickIconText
+                  }
+                >
+                  ✍
+                </Text>
+
+              </View>
+
+
+              <View
+                style={
+                  styles.quickText
+                }
+              >
+
+                <Text
+                  style={
+                    styles.quickTitle
+                  }
+                >
+                  Manual Entry
+                </Text>
+
+                <Text
+                  style={
+                    styles.quickSub
+                  }
+                >
+                  Type karke add
+                </Text>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.quickArrow
+                }
+              >
+                →
+              </Text>
+
+            </TouchableOpacity>
+
+          </View>
+
+        </View>
+
+
+        {/* ===================================================
+            LOW STOCK
+            =================================================== */}
+
+        <View
+          style={[
+            styles.sectionWrap,
+
+            {
+              marginHorizontal:
+                screenPadding,
+            },
+          ]}
+        >
+
+          <View
+            style={
+              styles.sectionHeading
+            }>
+
+            <View>
+
+              <Text
+                style={
+                  styles.sectionEyebrow
+                }
+              >
+                INVENTORY
+              </Text>
+
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Stock needs attention
+              </Text>
+
+            </View>
+
+          </View>
+
+
           <LowStockWidget />
+
+        </View>
+
+
+        {/* ===================================================
+            VOICE HELP
+            =================================================== */}
+
+        <View
+          style={[
+            styles.helpCard,
+
+            {
+              marginHorizontal:
+                screenPadding,
+            },
+          ]}
+        >
+
+          <View
+            style={
+              styles.helpIcon
+            }
+          >
+
+            <Text
+              style={
+                styles.helpIconText
+              }
+            >
+              ✨
+            </Text>
+
+          </View>
+
+
+          <View
+            style={
+              styles.helpText
+            }
+          >
+
+            <Text
+              style={
+                styles.helpTitle
+              }
+            >
+              Shop ko bolkar chalao
+            </Text>
+
+            <Text
+              style={
+                styles.helpSub
+              }
+            >
+              Sale, stock, khata aur customer
+              — Countr ko normal language mein bolo.
+            </Text>
+
+          </View>
+
         </View>
 
       </ScrollView>
 
 
-      {/* FAB */}
+      {/* =====================================================
+          FLOATING NEW SALE
+          ===================================================== */}
 
       <TouchableOpacity
         style={[
@@ -2673,8 +3200,8 @@ const HomeScreen = () => {
             bottom:
               Math.max(
                 insets.bottom +
-                  24,
-                24
+                  18,
+                20
               ),
           },
         ]}
@@ -2689,17 +3216,29 @@ const HomeScreen = () => {
           0.85
         }
       >
+
         <Text
           style={
-            styles.fabIcon
+            styles.fabPlus
           }
         >
           +
         </Text>
+
+        <Text
+          style={
+            styles.fabText
+          }
+        >
+          Sale
+        </Text>
+
       </TouchableOpacity>
 
 
-      {/* POS */}
+      {/* =====================================================
+          POS
+          ===================================================== */}
 
       <Modal
         visible={
@@ -2712,15 +3251,19 @@ const HomeScreen = () => {
           handlePOSClose
         }
       >
+
         <POSScreen
           onClose={
             handlePOSClose
           }
         />
+
       </Modal>
 
 
-      {/* KHATA */}
+      {/* =====================================================
+          KHATA
+          ===================================================== */}
 
       <Modal
         visible={
@@ -2730,34 +3273,40 @@ const HomeScreen = () => {
         animationType="slide"
 
         onRequestClose={() => {
-          SpeechEngine.stop().catch(
-            () => {}
-          );
+
+          SpeechEngine.stop()
+            .catch(() => {});
 
           setShowKhata(
             false
           );
 
           fetchMetrics();
+
         }}
       >
+
         <KhataScreen
           onClose={() => {
-            SpeechEngine.stop().catch(
-              () => {}
-            );
+
+            SpeechEngine.stop()
+              .catch(() => {});
 
             setShowKhata(
               false
             );
 
             fetchMetrics();
+
           }}
         />
+
       </Modal>
 
 
-      {/* MANUAL ENTRY */}
+      {/* =====================================================
+          MANUAL ENTRY
+          ===================================================== */}
 
       <Modal
         visible={
@@ -2767,57 +3316,61 @@ const HomeScreen = () => {
         animationType="slide"
 
         onRequestClose={() => {
-          SpeechEngine.stop().catch(
-            () => {}
-          );
+
+          SpeechEngine.stop()
+            .catch(() => {});
 
           setShowManualEntry(
             false
           );
+
         }}
       >
+
         <ManualEntryScreen
           initialQuery={
             manualEntryPrefill
           }
 
           onClose={() => {
-            SpeechEngine.stop().catch(
-              () => {}
-            );
+
+            SpeechEngine.stop()
+              .catch(() => {});
 
             setShowManualEntry(
               false
             );
+
           }}
 
           onSaved={() => {
+
             setAiStatus(
-              'Entry saved'
+              'Entry saved ✓'
             );
 
             fetchMetrics();
+
           }}
         />
+
       </Modal>
 
 
-      {/* ONBOARDING */}
+      {/* =====================================================
+          ONBOARDING
+          ===================================================== */}
 
       <Modal
         visible={
           showOnboardingModal
         }
 
-        transparent={
-          true
-        }
+        transparent
 
         animationType="fade"
 
-        statusBarTranslucent={
-          true
-        }
+        statusBarTranslucent
 
         onRequestClose={() =>
           setShowOnboardingModal(
@@ -2869,14 +3422,14 @@ const HomeScreen = () => {
 
             <View
               style={[
-                styles.modalContainer,
+                styles.onboardingCard,
 
                 {
                   width:
                     Math.min(
                       windowWidth -
                         32,
-                      400
+                      410
                     ),
                 },
               ]}
@@ -2884,34 +3437,37 @@ const HomeScreen = () => {
 
               <View
                 style={
-                  styles.modalHeaderIcon
+                  styles.onboardingIcon
                 }
               >
+
                 <Text
                   style={
-                    styles.modalHeaderEmoji
+                    styles.onboardingIconText
                   }
                 >
-                  📱
+                  🏪
                 </Text>
+
               </View>
 
 
               <Text
                 style={
-                  styles.modalTitle
+                  styles.onboardingTitle
                 }
               >
-                Setup Shop Details
+                Let's set up your shop
               </Text>
 
 
               <Text
                 style={
-                  styles.modalSubtitle
+                  styles.onboardingSub
                 }
               >
-                Please enter your mobile number and UPI ID so customers can easily pay and contact your store.
+                Bas ek baar details add karein.
+                Countr baaki shop ka kaam easy bana dega.
               </Text>
 
 
@@ -2920,7 +3476,7 @@ const HomeScreen = () => {
                   styles.inputLabel
                 }
               >
-                Mobile Number (10 Digits)
+                MOBILE NUMBER
               </Text>
 
 
@@ -2929,9 +3485,9 @@ const HomeScreen = () => {
                   styles.modalInput
                 }
 
-                placeholder="e.g. 9876543210"
+                placeholder="9876543210"
 
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor="#9AA39D"
 
                 keyboardType="number-pad"
 
@@ -2956,7 +3512,7 @@ const HomeScreen = () => {
                   styles.inputLabel
                 }
               >
-                Shop UPI ID (For Khata QR/Payments)
+                SHOP UPI ID
               </Text>
 
 
@@ -2965,9 +3521,9 @@ const HomeScreen = () => {
                   styles.modalInput
                 }
 
-                placeholder="e.g. 9876543210@paytm"
+                placeholder="9876543210@paytm"
 
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor="#9AA39D"
 
                 autoCapitalize="none"
 
@@ -3008,17 +3564,21 @@ const HomeScreen = () => {
               >
 
                 {isSavingOnboarding ? (
+
                   <ActivityIndicator
-                    color="#fff"
+                    color="#FFFFFF"
                   />
+
                 ) : (
+
                   <Text
                     style={
                       styles.modalSaveBtnText
                     }
                   >
-                    Save & Get Started
+                    Save & Get Started →
                   </Text>
+
                 )}
 
               </TouchableOpacity>
@@ -3036,649 +3596,1225 @@ const HomeScreen = () => {
 };
 
 
-/*
- * =========================================================
- * STYLES
- * =========================================================
- */
+/* ============================================================
+   STYLES
+   ============================================================ */
 
 const styles =
   StyleSheet.create({
 
     container: {
       flex: 1,
+
       backgroundColor:
-        '#F5F7F6',
+        '#F5F7F5',
     },
 
+
+    /* ========================================================
+       OFFLINE
+       ======================================================== */
+
     offlineBanner: {
+      minHeight: 32,
+
       backgroundColor:
-        '#1B1F23',
-      paddingVertical:
-        8,
-      paddingHorizontal:
-        12,
+        '#1E2721',
+
       flexDirection:
         'row',
+
       alignItems:
         'center',
+
       justifyContent:
         'center',
+
+      paddingHorizontal: 12,
     },
 
     offlineDot: {
-      width:
-        6,
-      height:
-        6,
-      borderRadius:
-        3,
+      width: 6,
+
+      height: 6,
+
+      borderRadius: 6,
+
       backgroundColor:
-        '#E0433B',
-      marginRight:
-        8,
+        '#F0B34A',
+
+      marginRight: 7,
     },
 
     offlineText: {
       color:
         '#FFFFFF',
+
+      fontSize: 9.5,
+
       fontWeight:
-        '600',
-      fontSize:
-        12.5,
-      letterSpacing:
-        0.2,
-      textAlign:
-        'center',
+        '700',
     },
 
+
+    /* ========================================================
+       HEADER
+       ======================================================== */
+
     topBar: {
-      flexDirection:
-        'row',
-      alignItems:
-        'center',
-      paddingVertical:
-        12,
+      minHeight: 70,
+
       backgroundColor:
         '#FFFFFF',
-      borderBottomWidth:
-        1,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      borderBottomWidth: 1,
+
       borderBottomColor:
-        '#EAECEC',
+        '#E8ECE8',
+
+      paddingVertical: 10,
     },
 
     avatarCircle: {
-      width:
-        42,
-      height:
-        42,
-      borderRadius:
-        21,
+      width: 44,
+
+      height: 44,
+
+      borderRadius: 15,
+
       backgroundColor:
-        '#0C9C4C',
+        '#B8FF3D',
+
       alignItems:
         'center',
+
       justifyContent:
         'center',
+
       overflow:
         'hidden',
-      flexShrink:
-        0,
+
+      flexShrink: 0,
     },
 
     avatarImage: {
-      width:
-        42,
-      height:
-        42,
-      borderRadius:
-        21,
+      width: 44,
+
+      height: 44,
+
+      borderRadius: 15,
     },
 
     avatarText: {
       color:
-        '#FFFFFF',
-      fontSize:
-        18,
+        '#173018',
+
+      fontSize: 18,
+
       fontWeight:
-        '800',
+        '900',
     },
 
     storeInfo: {
       flex: 1,
-      marginLeft:
-        12,
-      minWidth:
-        0,
-      marginRight:
-        8,
+
+      minWidth: 0,
+
+      marginLeft: 11,
+
+      marginRight: 8,
+    },
+
+    greeting: {
+      color:
+        '#73943C',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '900',
+
+      letterSpacing: 1.4,
+
+      marginBottom: 1,
     },
 
     storeName: {
       color:
-        '#1B1F23',
-      fontSize:
-        17,
+        '#142019',
+
+      fontSize: 16,
+
       fontWeight:
-        '800',
+        '900',
+    },
+
+    statusRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      marginTop: 2,
+    },
+
+    statusDot: {
+      width: 5,
+
+      height: 5,
+
+      borderRadius: 5,
+
+      backgroundColor:
+        '#63A72E',
+
+      marginRight: 5,
+    },
+
+    statusDotOffline: {
+      backgroundColor:
+        '#D99935',
     },
 
     syncStatus: {
       color:
-        '#6B7280',
-      fontSize:
-        12,
-      marginTop:
-        1,
-    },
+        '#89928C',
 
-    syncIconBtn: {
-      width:
-        36,
-      height:
-        36,
-      borderRadius:
-        18,
-      alignItems:
-        'center',
-      justifyContent:
-        'center',
-      backgroundColor:
-        '#F5F7F6',
-      flexShrink:
-        0,
-    },
+      fontSize: 8.5,
 
-    syncIconText: {
-      fontSize:
-        17,
-      color:
-        '#0C9C4C',
-    },
-
-    scrollContent: {
-      paddingTop:
-        0,
-    },
-
-    balanceCard: {
-      flexDirection:
-        'row',
-      backgroundColor:
-        '#FFFFFF',
-      marginTop:
-        16,
-      borderRadius:
-        16,
-      borderWidth:
-        1,
-      borderColor:
-        '#EAECEC',
-      shadowColor:
-        '#000000',
-      shadowOpacity:
-        0.04,
-      shadowRadius:
-        8,
-      shadowOffset: {
-        width:
-          0,
-        height:
-          2,
-      },
-      elevation:
-        1,
-      overflow:
-        'hidden',
-    },
-
-    balanceHalf: {
-      flex: 1,
-      paddingVertical:
-        20,
-      paddingHorizontal:
-        16,
-      minWidth:
-        0,
-    },
-
-    balanceDivider: {
-      width:
-        1,
-      backgroundColor:
-        '#EAECEC',
-    },
-
-    balanceLabel: {
-      color:
-        '#6B7280',
-      fontSize:
-        11,
-      fontWeight:
-        '700',
-      letterSpacing:
-        0.5,
-      marginBottom:
-        6,
-    },
-
-    balanceValue: {
-      fontSize:
-        23,
-      fontWeight:
-        '800',
-      flexShrink:
-        1,
-    },
-
-    balanceSubLabel: {
-      color:
-        '#9CA3AF',
-      fontSize:
-        12,
-      marginTop:
-        4,
-    },
-
-    actionGrid: {
-      flexDirection:
-        'row',
-      justifyContent:
-        'space-between',
-      marginTop:
-        18,
-      marginBottom:
-        6,
-      gap:
-        4,
-    },
-
-    actionTile: {
-      flex: 1,
-      alignItems:
-        'center',
-      minWidth:
-        0,
-    },
-
-    actionIconWrap: {
-      width:
-        48,
-      height:
-        48,
-      borderRadius:
-        24,
-      alignItems:
-        'center',
-      justifyContent:
-        'center',
-      marginBottom:
-        6,
-    },
-
-    actionIcon: {
-      fontSize:
-        22,
-    },
-
-    actionLabel: {
-      color:
-        '#1B1F23',
-      fontSize:
-        11,
       fontWeight:
         '600',
-      textAlign:
-        'center',
     },
 
-    aiCard: {
+    syncButton: {
+      width: 40,
+
+      height: 40,
+
+      borderRadius: 13,
+
       backgroundColor:
-        '#FFFFFF',
-      marginTop:
-        18,
-      padding:
-        16,
-      borderRadius:
-        16,
-      borderWidth:
-        1,
-      borderColor:
-        '#EAECEC',
-    },
+        '#F2F6F0',
 
-    aiCardActive: {
-      borderColor:
-        '#0C9C4C',
-    },
-
-    aiHeaderRow: {
-      flexDirection:
-        'row',
       alignItems:
         'center',
-    },
 
-    aiTextWrap: {
-      flex: 1,
-      marginLeft:
-        14,
-      minWidth:
-        0,
-    },
-
-    aiTitle: {
-      color:
-        '#1B1F23',
-      fontSize:
-        15,
-      fontWeight:
-        '800',
-    },
-
-    aiSubtitle: {
-      color:
-        '#6B7280',
-      fontSize:
-        12.5,
-      marginTop:
-        2,
-    },
-
-    speechPreview: {
-      color:
-        '#1B1F23',
-      fontSize:
-        13.5,
-      fontStyle:
-        'italic',
-      marginTop:
-        12,
-      backgroundColor:
-        '#F5F7F6',
-      padding:
-        10,
-      borderRadius:
-        10,
-    },
-
-    micWrap: {
-      width:
-        56,
-      height:
-        56,
-      alignItems:
-        'center',
       justifyContent:
         'center',
-      flexShrink:
-        0,
+
+      flexShrink: 0,
+    },
+
+    syncIcon: {
+      color:
+        '#5D9029',
+
+      fontSize: 21,
+
+      fontWeight:
+        '700',
+    },
+
+
+    /* ========================================================
+       SCROLL
+       ======================================================== */
+
+    scrollContent: {
+      paddingTop: 15,
+    },
+
+
+    /* ========================================================
+       HERO
+       ======================================================== */
+
+    heroCard: {
+      backgroundColor:
+        '#FFFFFF',
+
+      borderRadius: 24,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#DFE7DE',
+
+      padding: 18,
+
+      overflow:
+        'hidden',
+
+      shadowColor:
+        '#17251B',
+
+      shadowOffset: {
+        width: 0,
+
+        height: 5,
+      },
+
+      shadowOpacity:
+        0.045,
+
+      shadowRadius: 14,
+
+      elevation: 2,
+    },
+
+    heroCardListening: {
+      borderColor:
+        '#9BCB54',
+
+      backgroundColor:
+        '#FCFFF9',
+    },
+
+    heroTopRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      minHeight: 142,
+    },
+
+    heroText: {
+      flex: 1,
+
+      minWidth: 0,
+
+      paddingRight: 10,
+    },
+
+    heroEyebrowRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      marginBottom: 9,
+    },
+
+    heroGreenDot: {
+      width: 6,
+
+      height: 6,
+
+      borderRadius: 6,
+
+      backgroundColor:
+        '#8DBE3F',
+
+      marginRight: 6,
+    },
+
+    heroEyebrow: {
+      color:
+        '#71983B',
+
+      fontSize: 8,
+
+      fontWeight:
+        '900',
+
+      letterSpacing: 1.5,
+    },
+
+    heroTitle: {
+      color: '#142019',
+      fontSize: 29,
+      lineHeight: 31,
+      fontWeight: '900',
+      letterSpacing: -1,
+    },
+
+    heroTitleSecond: {
+      color: '#6C9137',
+      fontSize: 25,
+      lineHeight: 28,
+      fontWeight: '800',
+      letterSpacing: -0.8,
+    },
+
+    heroDescription: {
+      color:
+        '#78827B',
+
+      fontSize: 10.5,
+
+      lineHeight: 16,
+
+      marginTop: 8,
+
+      maxWidth: 245,
+    },
+
+    micArea: {
+      width: 91,
+
+      height: 91,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      flexShrink: 0,
     },
 
     pulseRing: {
       position:
         'absolute',
-      width:
-        50,
-      height:
-        50,
-      borderRadius:
-        25,
+
+      width: 78,
+
+      height: 78,
+
+      borderRadius: 39,
+
       backgroundColor:
-        '#E0433B',
+        '#B8FF3D',
     },
 
     micButton: {
+      width: 69,
+
+      height: 69,
+
+      borderRadius: 23,
+
       backgroundColor:
-        '#0C9C4C',
-      width:
-        50,
-      height:
-        50,
-      borderRadius:
-        25,
-      justifyContent:
-        'center',
+        '#B8FF3D',
+
       alignItems:
         'center',
+
+      justifyContent:
+        'center',
+
+      shadowColor:
+        '#6E982C',
+
+      shadowOffset: {
+        width: 0,
+
+        height: 4,
+      },
+
+      shadowOpacity:
+        0.16,
+
+      shadowRadius: 9,
+
+      elevation: 3,
     },
 
-    micButtonActive: {
+    micButtonListening: {
       backgroundColor:
-        '#E0433B',
+        '#E9685E',
     },
 
     micIcon: {
-      fontSize:
-        21,
-    },
-
-    typeInsteadButton: {
-      marginTop:
-        10,
-      alignSelf:
-        'flex-start',
-      paddingVertical:
-        4,
-      paddingRight:
-        8,
-    },
-
-    typeInsteadLink: {
       color:
-        '#0C9C4C',
-      fontSize:
-        13,
+        '#173018',
+
+      fontSize: 22,
+
+      fontWeight:
+        '900',
+    },
+
+    voiceStatusBox: {
+      backgroundColor:
+        '#F5F8F3',
+
+      borderRadius: 15,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#E6ECE3',
+
+      minHeight: 54,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      paddingHorizontal: 11,
+
+      paddingVertical: 8,
+
+      marginTop: 5,
+    },
+
+    voiceStatusIcon: {
+      width: 31,
+
+      height: 31,
+
+      borderRadius: 10,
+
+      backgroundColor:
+        '#E6F2DC',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 9,
+    },
+
+    voiceStatusIconText: {
+      color:
+        '#69952F',
+
+      fontSize: 12,
+
+      fontWeight:
+        '900',
+    },
+
+    voiceStatusTextWrap: {
+      flex: 1,
+
+      minWidth: 0,
+    },
+
+    voiceStatus: {
+      color:
+        '#39463E',
+
+      fontSize: 10.5,
+
+      fontWeight:
+        '700',
+
+      lineHeight: 15,
+    },
+
+    transcribed: {
+      color:
+        '#88918B',
+
+      fontSize: 9,
+
+      fontStyle:
+        'italic',
+
+      marginTop: 2,
+    },
+
+    commandExamples: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      flexWrap:
+        'wrap',
+
+      marginTop: 10,
+    },
+
+    tryText: {
+      color:
+        '#9AA39D',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '900',
+
+      letterSpacing: 1,
+
+      marginRight: 6,
+    },
+
+    exampleText: {
+      color:
+        '#63756A',
+
+      fontSize: 8.5,
+
       fontWeight:
         '700',
     },
 
-    lowStockWrapper: {
-      marginTop:
-        4,
+    exampleDot: {
+      color:
+        '#AEB7B0',
+
+      fontSize: 9,
+
+      marginHorizontal: 5,
     },
+
+
+    /* ========================================================
+       SECTIONS
+       ======================================================== */
+
+    sectionWrap: {
+      marginTop: 22,
+    },
+
+    sectionHeading: {
+      flexDirection:
+        'row',
+
+      justifyContent:
+        'space-between',
+
+      alignItems:
+        'flex-end',
+
+      marginBottom: 10,
+    },
+
+    sectionEyebrow: {
+      color:
+        '#73983D',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '900',
+
+      letterSpacing: 1.5,
+
+      marginBottom: 3,
+    },
+
+    sectionTitle: {
+      color:
+        '#17231B',
+
+      fontSize: 17,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        -0.3,
+    },
+
+
+    /* ========================================================
+       SUMMARY
+       ======================================================== */
+
+    summaryGrid: {
+      flexDirection:
+        'row',
+
+      gap: 10,
+    },
+
+    summaryCard: {
+      flex: 1,
+
+      minHeight: 136,
+
+      backgroundColor:
+        '#FFFFFF',
+
+      borderRadius: 19,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#E0E6E0',
+
+      padding: 13,
+
+      shadowColor:
+        '#17251B',
+
+      shadowOffset: {
+        width: 0,
+
+        height: 3,
+      },
+
+      shadowOpacity:
+        0.03,
+
+      shadowRadius: 9,
+
+      elevation: 1,
+    },
+
+    summaryIconGreen: {
+      width: 34,
+
+      height: 34,
+
+      borderRadius: 11,
+
+      backgroundColor:
+        '#E8F5DE',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginBottom: 11,
+    },
+
+    summaryIconRed: {
+      width: 34,
+
+      height: 34,
+
+      borderRadius: 11,
+
+      backgroundColor:
+        '#FFF0ED',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginBottom: 11,
+    },
+
+    summaryIconText: {
+      color:
+        '#60912C',
+
+      fontSize: 14,
+
+      fontWeight:
+        '900',
+    },
+
+    summaryLabel: {
+      color:
+        '#8B948E',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '900',
+
+      letterSpacing: 1,
+
+      marginBottom: 3,
+    },
+
+    summaryValue: {
+      color:
+        '#17231B',
+
+      fontSize: 20,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        -0.5,
+    },
+
+    summaryHint: {
+      color:
+        '#9AA39D',
+
+      fontSize: 8.5,
+
+      marginTop: 5,
+
+      lineHeight: 12,
+    },
+
+
+    /* ========================================================
+       QUICK ACTIONS
+       ======================================================== */
+
+    quickGrid: {
+      gap: 8,
+    },
+
+    quickCard: {
+      minHeight: 66,
+
+      backgroundColor:
+        '#FFFFFF',
+
+      borderRadius: 17,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#E0E6E0',
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      paddingHorizontal: 11,
+
+      shadowColor:
+        '#17251B',
+
+      shadowOffset: {
+        width: 0,
+
+        height: 2,
+      },
+
+      shadowOpacity:
+        0.025,
+
+      shadowRadius: 7,
+
+      elevation: 1,
+    },
+
+    quickIconGreen: {
+      width: 43,
+
+      height: 43,
+
+      borderRadius: 13,
+
+      backgroundColor:
+        '#E9F5E1',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 11,
+    },
+
+    quickIconOrange: {
+      width: 43,
+
+      height: 43,
+
+      borderRadius: 13,
+
+      backgroundColor:
+        '#FFF0DD',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 11,
+    },
+
+    quickIconBlue: {
+      width: 43,
+
+      height: 43,
+
+      borderRadius: 13,
+
+      backgroundColor:
+        '#EAF1FC',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 11,
+    },
+
+    quickIconText: {
+      fontSize: 18,
+    },
+
+    quickText: {
+      flex: 1,
+
+      minWidth: 0,
+    },
+
+    quickTitle: {
+      color:
+        '#17231B',
+
+      fontSize: 12.5,
+
+      fontWeight:
+        '900',
+    },
+
+    quickSub: {
+      color:
+        '#8A948E',
+
+      fontSize: 8.5,
+
+      marginTop: 3,
+    },
+
+    quickArrow: {
+      color:
+        '#8A958E',
+
+      fontSize: 21,
+
+      fontWeight:
+        '300',
+
+      paddingLeft: 7,
+    },
+
+
+    /* ========================================================
+       HELP CARD
+       ======================================================== */
+
+    helpCard: {
+      backgroundColor:
+        '#EEF6E8',
+
+      borderRadius: 20,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#DDEAD5',
+
+      padding: 14,
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      marginTop: 22,
+    },
+
+    helpIcon: {
+      width: 43,
+
+      height: 43,
+
+      borderRadius: 14,
+
+      backgroundColor:
+        '#FFFFFF',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 11,
+    },
+
+    helpIconText: {
+      fontSize: 18,
+    },
+
+    helpText: {
+      flex: 1,
+
+      minWidth: 0,
+    },
+
+    helpTitle: {
+      color:
+        '#314329',
+
+      fontSize: 12,
+
+      fontWeight:
+        '900',
+    },
+
+    helpSub: {
+      color:
+        '#70806D',
+
+      fontSize: 8.5,
+
+      lineHeight: 13,
+
+      marginTop: 3,
+    },
+
+
+    /* ========================================================
+       FAB
+       ======================================================== */
 
     fab: {
       position:
         'absolute',
-      right:
-        20,
-      width:
-        58,
-      height:
-        58,
-      borderRadius:
-        29,
+
+      right: 18,
+
+      minWidth: 77,
+
+      height: 52,
+
+      borderRadius: 18,
+
       backgroundColor:
-        '#0C9C4C',
+        '#B8FF3D',
+
+      flexDirection:
+        'row',
+
       alignItems:
         'center',
+
       justifyContent:
         'center',
+
+      paddingHorizontal: 15,
+
       shadowColor:
-        '#0C9C4C',
-      shadowOpacity:
-        0.4,
-      shadowRadius:
-        10,
+        '#638A2B',
+
       shadowOffset: {
-        width:
-          0,
-        height:
-          5,
+        width: 0,
+
+        height: 5,
       },
-      elevation:
-        5,
+
+      shadowOpacity:
+        0.2,
+
+      shadowRadius: 10,
+
+      elevation: 4,
     },
 
-    fabIcon: {
+    fabPlus: {
       color:
-        '#FFFFFF',
-      fontSize:
-        30,
+        '#173018',
+
+      fontSize: 22,
+
       fontWeight:
-        '400',
-      marginTop:
-        -2,
+        '500',
+
+      marginRight: 5,
     },
+
+    fabText: {
+      color:
+        '#173018',
+
+      fontSize: 11,
+
+      fontWeight:
+        '900',
+    },
+
+
+    /* ========================================================
+       ONBOARDING
+       ======================================================== */
 
     modalKeyboardContainer: {
       flex: 1,
+
       backgroundColor:
-        'rgba(0,0,0,0.5)',
+        'rgba(19,29,22,0.48)',
     },
 
     modalOverlay: {
-      flexGrow:
-        1,
+      flexGrow: 1,
+
       justifyContent:
         'center',
+
       alignItems:
         'center',
-      paddingHorizontal:
-        16,
+
+      paddingHorizontal: 16,
     },
 
-    modalContainer: {
+    onboardingCard: {
       backgroundColor:
         '#FFFFFF',
-      maxWidth:
-        400,
-      borderRadius:
-        20,
-      padding:
-        24,
-      alignItems:
-        'center',
+
+      borderRadius: 25,
+
+      padding: 22,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#DFE6DE',
+
       shadowColor:
-        '#000',
+        '#000000',
+
       shadowOpacity:
-        0.1,
-      shadowRadius:
-        10,
+        0.15,
+
+      shadowRadius: 25,
+
       shadowOffset: {
-        width:
-          0,
-        height:
-          4,
+        width: 0,
+
+        height: 12,
       },
-      elevation:
-        5,
+
+      elevation: 8,
     },
 
-    modalHeaderIcon: {
-      width:
-        64,
-      height:
-        64,
-      borderRadius:
-        32,
+    onboardingIcon: {
+      width: 58,
+
+      height: 58,
+
+      borderRadius: 18,
+
       backgroundColor:
-        '#E7F7EE',
+        '#EAF5E1',
+
+      alignItems:
+        'center',
+
       justifyContent:
         'center',
-      alignItems:
-        'center',
-      marginBottom:
-        16,
+
+      marginBottom: 14,
     },
 
-    modalHeaderEmoji: {
-      fontSize:
-        30,
+    onboardingIconText: {
+      fontSize: 25,
     },
 
-    modalTitle: {
-      fontSize:
-        20,
+    onboardingTitle: {
+      color:
+        '#142019',
+
+      fontSize: 21,
+
       fontWeight:
-        '800',
-      color:
-        '#1B1F23',
-      marginBottom:
-        8,
-      textAlign:
-        'center',
+        '900',
+
+      letterSpacing:
+        -0.4,
     },
 
-    modalSubtitle: {
-      fontSize:
-        13.5,
+    onboardingSub: {
       color:
-        '#6B7280',
-      textAlign:
-        'center',
-      marginBottom:
-        20,
-      lineHeight:
-        18,
+        '#7B867F',
+
+      fontSize: 10,
+
+      lineHeight: 15,
+
+      marginTop: 5,
+
+      marginBottom: 18,
     },
 
     inputLabel: {
-      alignSelf:
-        'flex-start',
-      fontSize:
-        12.5,
-      fontWeight:
-        '600',
       color:
-        '#6B7280',
-      marginBottom:
-        6,
+        '#7D8981',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '900',
+
+      letterSpacing: 1.1,
+
+      marginBottom: 5,
     },
 
     modalInput: {
       width:
         '100%',
-      borderWidth:
-        1,
+
+      minHeight: 49,
+
+      borderWidth: 1,
+
       borderColor:
-        '#EAECEC',
-      borderRadius:
-        10,
-      padding:
-        14,
-      fontSize:
-        15,
+        '#DDE4DD',
+
+      borderRadius: 13,
+
+      paddingHorizontal: 13,
+
+      fontSize: 12,
+
+      fontWeight:
+        '600',
+
       backgroundColor:
-        '#F9FAFB',
+        '#F7F9F6',
+
       color:
-        '#1B1F23',
-      marginBottom:
-        16,
-      minHeight:
-        50,
+        '#17231B',
+
+      marginBottom: 13,
     },
 
     modalSaveBtn: {
       width:
         '100%',
+
+      minHeight: 52,
+
+      borderRadius: 15,
+
       backgroundColor:
-        '#0C9C4C',
-      paddingVertical:
-        15,
-      minHeight:
-        52,
-      borderRadius:
-        12,
+        '#B8FF3D',
+
       alignItems:
         'center',
+
       justifyContent:
         'center',
-      marginTop:
-        6,
+
+      marginTop: 4,
     },
 
     modalSaveBtnText: {
       color:
-        '#FFFFFF',
-      fontSize:
-        16,
+        '#173018',
+
+      fontSize: 12.5,
+
       fontWeight:
-        '700',
-      textAlign:
-        'center',
+        '900',
     },
+
   });
 
 

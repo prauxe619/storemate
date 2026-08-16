@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, {
+  useState,
+} from 'react';
+
 import {
   View,
   Text,
@@ -14,7 +17,11 @@ import {
 } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setActiveUser } from '../core/auth/localUser';
+
+import {
+  setActiveUser,
+} from '../core/auth/localUser';
+
 import {
   GoogleSignin,
   statusCodes,
@@ -26,575 +33,816 @@ import {
 } from '../services/BackupService';
 
 import TelemetryService from '../services/TelemetryService';
-import { BASE_URL } from '../config/api';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import {
+  BASE_URL,
+} from '../config/api';
+
+import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+
+
+/* =============================================================
+ * COUNTR LOGIN SCREEN
+ * ============================================================= */
 
 const LoginScreen = ({
   onLoginSuccess,
 }) => {
+
   const insets =
     useSafeAreaInsets();
+
 
   const {
     width: windowWidth,
   } = useWindowDimensions();
 
+
   /*
    * Responsive horizontal spacing.
-   *
-   * Small phones:
-   * slightly smaller side margins.
-   *
-   * Large phones/tablets:
-   * form itself is capped below, so it
-   * doesn't become excessively wide.
    */
+
   const horizontalPadding =
     windowWidth < 360
       ? 18
       : windowWidth < 600
-      ? 28
+      ? 24
       : 40;
 
+
   /*
-   * authMode options:
+   * Authentication modes:
    *
-   * 'login'
-   * 'register'
-   * 'forgot'
-   * 'verify_otp'
+   * login
+   * register
+   * forgot
+   * verify_otp
    */
-  const [authMode, setAuthMode] =
-    useState('login');
 
-  const [email, setEmail] =
-    useState('');
+  const [
+    authMode,
+    setAuthMode,
+  ] = useState(
+    'login'
+  );
 
-  const [password, setPassword] =
-    useState('');
 
-  const [shopName, setShopName] =
-    useState('');
+  const [
+    email,
+    setEmail,
+  ] = useState('');
 
-  const [otp, setOtp] =
-    useState('');
 
-  const [newPassword, setNewPassword] =
-    useState('');
+  const [
+    password,
+    setPassword,
+  ] = useState('');
 
-  const [isLoading, setIsLoading] =
-    useState(false);
 
-  useEffect(() => {
-  }, []);
+  const [
+    shopName,
+    setShopName,
+  ] = useState('');
+
+
+  const [
+    otp,
+    setOtp,
+  ] = useState('');
+
+
+  const [
+    newPassword,
+    setNewPassword,
+  ] = useState('');
+
+
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(false);
+
+
+  /* ===========================================================
+   * HELPERS
+   * =========================================================== */
+
+  const getUserId =
+    data => {
+
+      return (
+        data?.user_id ||
+        data?.user?.id ||
+        data?.email ||
+        email
+      );
+    };
+
+
+  const saveSession =
+    async data => {
+
+      await AsyncStorage.setItem(
+        'userToken',
+        data.access_token
+      );
+
+
+      await AsyncStorage.setItem(
+        'shopName',
+        data.shop_name ||
+          shopName ||
+          ''
+      );
+
+
+      await setActiveUser({
+
+        userId:
+          getUserId(
+            data
+          ),
+
+        email:
+          data.email ||
+          email,
+
+      });
+
+
+      TelemetryService.setAuthToken(
+        data.access_token
+      );
+    };
+
+
+  /* ===========================================================
+   * EMAIL LOGIN / REGISTER / PASSWORD RESET
+   * =========================================================== */
 
   const handleSubmit =
     async () => {
+
       /*
-       * =====================================
+       * =======================================================
        * FORGOT PASSWORD
-       * =====================================
+       * =======================================================
        */
 
       if (
-        authMode === 'forgot'
+        authMode ===
+        'forgot'
       ) {
-        if (!email) {
+
+        if (
+          !email.trim()
+        ) {
+
           return Alert.alert(
-            'Error',
+            'Email required',
             'Please enter your registered email address.'
           );
         }
 
-        setIsLoading(true);
+
+        setIsLoading(
+          true
+        );
+
 
         try {
+
           const response =
             await fetch(
               `${BASE_URL}/api/v1/auth/forgot-password`,
               {
-                method: 'POST',
+
+                method:
+                  'POST',
 
                 headers: {
                   'Content-Type':
                     'application/json',
                 },
 
-                body: JSON.stringify({
-                  email,
-                }),
+                body:
+                  JSON.stringify({
+                    email:
+                      email.trim(),
+                  }),
+
               }
             );
+
 
           const data =
             await response.json();
 
-          if (!response.ok) {
+
+          if (
+            !response.ok
+          ) {
+
             throw new Error(
               data.error ||
                 'Failed to send OTP'
             );
           }
 
+
           Alert.alert(
-            'OTP Sent 📩',
+            'OTP sent 📩',
             'Check your email inbox for the 6-digit reset code.'
           );
+
 
           setAuthMode(
             'verify_otp'
           );
-        } catch (error) {
+
+        } catch (
+          error
+        ) {
+
           Alert.alert(
-            'Error',
+            'Unable to send OTP',
             error.message
           );
+
         } finally {
-          setIsLoading(false);
+
+          setIsLoading(
+            false
+          );
         }
+
 
         return;
       }
 
+
       /*
-       * =====================================
+       * =======================================================
        * VERIFY OTP / RESET PASSWORD
-       * =====================================
+       * =======================================================
        */
 
       if (
         authMode ===
         'verify_otp'
       ) {
+
         if (
-          !otp ||
+          !otp.trim() ||
           !newPassword
         ) {
+
           return Alert.alert(
-            'Error',
-            'Please enter both the 6-digit OTP and your new password.'
+            'Missing information',
+            'Please enter the 6-digit OTP and your new password.'
           );
         }
 
-        setIsLoading(true);
+
+        if (
+          otp.trim().length !==
+          6
+        ) {
+
+          return Alert.alert(
+            'Invalid OTP',
+            'Please enter the complete 6-digit OTP.'
+          );
+        }
+
+
+        setIsLoading(
+          true
+        );
+
 
         try {
+
           /*
-           * A. Reset password
+           * A. RESET PASSWORD
            */
 
           const resetResponse =
             await fetch(
               `${BASE_URL}/api/v1/auth/reset-password`,
               {
-                method: 'POST',
+
+                method:
+                  'POST',
 
                 headers: {
                   'Content-Type':
                     'application/json',
                 },
 
-                body: JSON.stringify({
-                  email,
-                  otp,
-                  new_password:
-                    newPassword,
-                }),
+                body:
+                  JSON.stringify({
+
+                    email:
+                      email.trim(),
+
+                    otp:
+                      otp.trim(),
+
+                    new_password:
+                      newPassword,
+
+                  }),
+
               }
             );
+
 
           const resetData =
             await resetResponse.json();
 
+
           if (
             !resetResponse.ok
           ) {
+
             throw new Error(
               resetData.error ||
                 'Password reset failed'
             );
           }
 
+
           /*
-           * B. Automatically login
+           * B. AUTOMATIC LOGIN
            */
 
           const loginResponse =
             await fetch(
               `${BASE_URL}/api/v1/auth/login`,
               {
-                method: 'POST',
+
+                method:
+                  'POST',
 
                 headers: {
                   'Content-Type':
                     'application/json',
                 },
 
-                body: JSON.stringify({
-                  email,
-                  password:
-                    newPassword,
-                }),
+                body:
+                  JSON.stringify({
+
+                    email:
+                      email.trim(),
+
+                    password:
+                      newPassword,
+
+                  }),
+
               }
             );
+
 
           const loginData =
             await loginResponse.json();
 
+
           if (
             !loginResponse.ok
           ) {
+
             throw new Error(
-              'Password updated, but auto-login failed. Please log in manually.'
+              'Password updated, but automatic login failed. Please log in manually.'
             );
           }
 
+
           /*
-           * C. Save session
+           * C. SAVE SESSION
            */
 
-          await AsyncStorage.setItem(
-              'userToken',
-              loginData.access_token
-            );
+          await saveSession(
+            loginData
+          );
 
-            await AsyncStorage.setItem(
-              'shopName',
-              loginData.shop_name || ''
-            );
 
-            await setActiveUser({
-              userId:
-                loginData.user_id ||
-                loginData.user?.id ||
-                loginData.email ||
-                email,
-
+          TelemetryService.trackEvent(
+            'password_reset_login',
+            'auth',
+            {
               email:
                 loginData.email ||
                 email,
-            });
+            }
+          );
 
-            TelemetryService.setAuthToken(
-              loginData.access_token
-            );
 
-            TelemetryService.trackEvent(
-              'password_reset_login',
-              'auth',
-              {
-                email,
-              }
-            );
+          onLoginSuccess();
 
-            onLoginSuccess();
-        } catch (error) {
+        } catch (
+          error
+        ) {
+
           Alert.alert(
-            'Error',
+            'Password reset failed',
             error.message
           );
+
         } finally {
-          setIsLoading(false);
+
+          setIsLoading(
+            false
+          );
         }
+
 
         return;
       }
 
+
       /*
-       * =====================================
-       * STANDARD LOGIN / REGISTER
-       * =====================================
+       * =======================================================
+       * NORMAL LOGIN / REGISTER
+       * =======================================================
        */
 
       if (
-        !email ||
+        !email.trim() ||
         !password
       ) {
+
         return Alert.alert(
-          'Error',
-          'Please fill in all fields'
+          'Missing information',
+          'Please enter your email and password.'
         );
       }
+
 
       if (
         authMode ===
           'register' &&
         !shopName.trim()
       ) {
+
         return Alert.alert(
-          'Error',
-          'Shop name is required'
+          'Shop name required',
+          'Please enter your shop name.'
         );
       }
 
-      setIsLoading(true);
+
+      setIsLoading(
+        true
+      );
+
 
       const endpoint =
-        authMode === 'login'
+        authMode ===
+        'login'
+
           ? '/api/v1/auth/login'
+
           : '/api/v1/auth/register';
 
+
       try {
+
         const response =
           await fetch(
             `${BASE_URL}${endpoint}`,
             {
-              method: 'POST',
+
+              method:
+                'POST',
 
               headers: {
                 'Content-Type':
                   'application/json',
               },
 
-              body: JSON.stringify({
-                email,
-                password,
-                shop_name:
-                  shopName,
-              }),
+              body:
+                JSON.stringify({
+
+                  email:
+                    email.trim(),
+
+                  password:
+                    password,
+
+                  shop_name:
+                    shopName.trim(),
+
+                }),
+
             }
           );
+
 
         const data =
           await response.json();
 
-        if (!response.ok) {
+
+        if (
+          !response.ok
+        ) {
+
           throw new Error(
             data.error ||
               'Something went wrong'
           );
         }
 
+
+        /*
+         * =====================================================
+         * LOGIN
+         * =====================================================
+         */
+
         if (
-            authMode === 'login'
-          ) {
+          authMode ===
+          'login'
+        ) {
 
-            /*
-            * ============================================
-            * NORMAL STOREMATE LOGIN
-            * ============================================
-            *
-            * This login is completely independent
-            * from Google Drive.
-            *
-            * NEVER call:
-            *
-            * checkForExistingBackup()
-            * checkAndPromptRestore()
-            * GoogleSignin.signIn()
-            *
-            * here.
-            */
+          await saveSession(
+            data
+          );
 
-            await AsyncStorage.setItem(
-              'userToken',
-              data.access_token
-            );
 
-            await AsyncStorage.setItem(
-              'shopName',
-              data.shop_name || ''
-            );
-
-            await setActiveUser({
-              userId:
-                data.user_id ||
-                data.user?.id ||
-                data.email ||
-                email,
-
+          TelemetryService.trackEvent(
+            'user_login',
+            'auth',
+            {
               email:
                 data.email ||
                 email,
-            });
-
-            TelemetryService.setAuthToken(
-              data.access_token
-            );
-
-            TelemetryService.trackEvent(
-              'user_login',
-              'auth',
-              {
-                email:
-                  data.email ||
-                  email,
-              }
-            );
-
-            onLoginSuccess();
-          } else {
-          Alert.alert(
-            'Success',
-            'Shop registered! You can now log in.'
+            }
           );
+
+
+          onLoginSuccess();
+
+
+        } else {
+
+          /*
+           * ===================================================
+           * REGISTER
+           * ===================================================
+           */
+
+          Alert.alert(
+            'Shop created 🎉',
+            'Your Countr shop has been registered. You can now log in.'
+          );
+
 
           setAuthMode(
             'login'
           );
 
-          setPassword('');
+
+          setPassword(
+            ''
+          );
         }
-      } catch (error) {
+
+      } catch (
+        error
+      ) {
+
         Alert.alert(
-          'Authentication Failed',
+          'Authentication failed',
           error.message
         );
+
       } finally {
-        setIsLoading(false);
+
+        setIsLoading(
+          false
+        );
       }
     };
 
-  /*
-   * =====================================
+
+  /* ===========================================================
    * GOOGLE AUTHENTICATION
-   * =====================================
-   */
+   * =========================================================== */
 
   const handleGoogleAuth =
     async () => {
+
       try {
-        setIsLoading(true);
+
+        setIsLoading(
+          true
+        );
+
 
         await GoogleSignin.hasPlayServices();
+
 
         const userInfo =
           await GoogleSignin.signIn();
 
+
         /*
-         * Token extraction compatible
-         * with different versions of
-         * react-native-google-signin.
+         * Compatible with different
+         * Google Sign-In versions.
          */
 
         let idToken =
-          userInfo.idToken;
+          userInfo?.idToken;
+
 
         if (
           !idToken &&
-          userInfo.data &&
-          userInfo.data.idToken
+          userInfo?.data?.idToken
         ) {
+
           idToken =
             userInfo.data.idToken;
         }
 
-        if (!idToken) {
+
+        if (
+          !idToken
+        ) {
+
           const tokens =
             await GoogleSignin.getTokens();
 
+
           idToken =
-            tokens.idToken;
+            tokens?.idToken;
         }
 
-        if (!idToken) {
+
+        if (
+          !idToken
+        ) {
+
           throw new Error(
-            'Could not retrieve Google Security Token. Please try again.'
+            'Could not retrieve Google security token. Please try again.'
           );
         }
+
 
         const response =
           await fetch(
             `${BASE_URL}/api/v1/auth/google`,
             {
-              method: 'POST',
+
+              method:
+                'POST',
 
               headers: {
                 'Content-Type':
                   'application/json',
               },
 
-              body: JSON.stringify({
-                token: idToken,
-                shop_name:
-                  shopName,
-              }),
+              body:
+                JSON.stringify({
+
+                  token:
+                    idToken,
+
+                  shop_name:
+                    shopName.trim(),
+
+                }),
+
             }
           );
+
 
         const data =
           await response.json();
 
-        if (!response.ok) {
+
+        if (
+          !response.ok
+        ) {
+
           throw new Error(
             data.error ||
-              'Google Auth Failed'
+              'Google authentication failed'
           );
         }
 
-        await AsyncStorage.setItem('userToken', data.access_token);
-        await AsyncStorage.setItem('shopName', data.shop_name);
-        await setActiveUser({ userId: data.user_id || data.user?.id || data.email, email: data.email });
 
-        TelemetryService.setAuthToken(
-          data.access_token
+        /*
+         * Save normal Countr session.
+         */
+
+        await saveSession(
+          data
         );
+
 
         TelemetryService.trackEvent(
           'google_login',
           'auth',
           {
-            email: data.email,
+            email:
+              data.email,
           }
         );
 
+
+        /*
+         * Google Drive restore is
+         * intentionally ONLY called
+         * after Google authentication.
+         */
+
         await checkAndPromptRestore();
-      } catch (error) {
+
+      } catch (
+        error
+      ) {
+
         if (
-          error.code !==
+          error?.code !==
             statusCodes.SIGN_IN_CANCELLED &&
-          error.message !==
+          error?.message !==
             'Google Sign-In was cancelled.'
         ) {
+
           Alert.alert(
-            'Google Login Error',
+            'Google login error',
             error.message
           );
         }
+
       } finally {
-        setIsLoading(false);
+
+        setIsLoading(
+          false
+        );
       }
     };
 
-  /*
-   * =====================================
+
+  /* ===========================================================
    * GOOGLE DRIVE RESTORE
-   * =====================================
-   */
+   * =========================================================== */
 
   const checkAndPromptRestore =
     async () => {
+
       try {
+
         const backupResult =
           await checkForExistingBackup();
 
+
         if (
-          backupResult.found &&
-          backupResult.fileId
+          backupResult?.found &&
+          backupResult?.fileId
         ) {
+
           const backupDate =
             new Date(
               backupResult.modifiedTime
             ).toLocaleDateString(
               'en-IN',
               {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
+
+                day:
+                  'numeric',
+
+                month:
+                  'short',
+
+                year:
+                  'numeric',
+
+                hour:
+                  '2-digit',
+
+                minute:
+                  '2-digit',
+
               }
             );
 
-          Alert.alert(
-            'Backup Found ☁️',
 
-            `We found a Google Drive backup for your store from ${backupDate}.\n\nWould you like to restore your records?`,
+          Alert.alert(
+
+            'Backup found ☁️',
+
+            `We found a Google Drive backup for your shop from ${backupDate}.\n\nWould you like to restore your records?`,
 
             [
+
               {
                 text:
-                  'Skip & Start Fresh',
+                  'Start Fresh',
 
                 style:
                   'cancel',
@@ -604,42 +852,56 @@ const LoginScreen = ({
                     onLoginSuccess(),
               },
 
+
               {
                 text:
                   'Restore Data',
 
                 onPress:
                   async () => {
+
                     setIsLoading(
                       true
                     );
 
+
                     try {
+
                       await restoreFromDrive(
                         backupResult.fileId
                       );
 
+
                       Alert.alert(
-                        'Restored! 🎉',
-                        'Your shop records have been restored.'
+                        'Restored 🎉',
+                        'Your shop records have been restored successfully.'
                       );
+
                     } catch (
-                      err
+                      error
                     ) {
+
                       Alert.alert(
-                        'Restore Warning',
-                        'Could not complete full restore: ' +
-                          err.message
+
+                        'Restore warning',
+
+                        'Could not complete the full restore: ' +
+                          error.message
+
                       );
+
                     } finally {
+
                       setIsLoading(
                         false
                       );
+
 
                       onLoginSuccess();
                     }
                   },
               },
+
             ],
 
             {
@@ -647,68 +909,83 @@ const LoginScreen = ({
                 false,
             }
           );
+
         } else {
+
           onLoginSuccess();
         }
-      } catch (err) {
+
+      } catch (
+        error
+      ) {
+
         console.log(
           'Drive backup check skipped:',
-          err.message
+          error?.message
         );
+
 
         onLoginSuccess();
       }
     };
 
-  /*
-   * =====================================
+
+  /* ===========================================================
+   * MODE HELPERS
+   * =========================================================== */
+
+  const isLogin =
+    authMode ===
+    'login';
+
+  const isRegister =
+    authMode ===
+    'register';
+
+  const isForgot =
+    authMode ===
+    'forgot';
+
+  const isVerify =
+    authMode ===
+    'verify_otp';
+
+
+  /* ===========================================================
    * SCREEN
-   * =====================================
-   */
+   * =========================================================== */
 
   return (
+
     <View
       style={[
         styles.container,
 
-        /*
-         * Dynamic system bar handling.
-         *
-         * top:
-         * status bar / notch
-         *
-         * bottom:
-         * Android navigation bar /
-         * gesture area
-         */
         {
           paddingTop:
             Math.max(
               insets.top,
-              16
+              12
             ),
 
           paddingBottom:
             Math.max(
               insets.bottom,
-              16
+              12
             ),
         },
       ]}
     >
+
       <KeyboardAvoidingView
+
         style={
           styles.keyboardContainer
         }
 
-        /*
-         * Android needs height adjustment
-         * when the keyboard opens.
-         *
-         * iOS uses padding.
-         */
         behavior={
-          Platform.OS === 'ios'
+          Platform.OS ===
+          'ios'
             ? 'padding'
             : 'height'
         }
@@ -717,21 +994,18 @@ const LoginScreen = ({
           0
         }
       >
+
         <ScrollView
+
           contentContainerStyle={[
             styles.scrollContent,
 
-            /*
-             * Ensures the final controls
-             * can always scroll above the
-             * Android navigation area.
-             */
             {
               paddingBottom:
                 Math.max(
                   insets.bottom +
-                    32,
-                  48
+                    30,
+                  45
                 ),
             },
           ]}
@@ -749,8 +1023,11 @@ const LoginScreen = ({
             false
           }
 
-          bounces={true}
+          bounces={
+            true
+          }
         >
+
           <View
             style={[
               styles.content,
@@ -759,283 +1036,643 @@ const LoginScreen = ({
                 paddingHorizontal:
                   horizontalPadding,
 
-                /*
-                 * Prevent the form becoming
-                 * excessively wide on tablets
-                 * and large Android devices.
-                 */
-                maxWidth: 600,
+                maxWidth:
+                  600,
 
-                width: '100%',
+                width:
+                  '100%',
 
                 alignSelf:
                   'center',
               },
             ]}
           >
-            {/* LOGO */}
+
+            {/* =================================================
+                TOP BRAND
+                ================================================= */}
 
             <View
               style={
-                styles.logoCircle
+                styles.brandArea
               }
             >
-              <Text
+
+              <View
                 style={
-                  styles.logo
+                  styles.brandMark
                 }
               >
-                📦
+
+                <View
+                  style={
+                    styles.brandMarkInner
+                  }
+                >
+
+                  <Text
+                    style={
+                      styles.brandMarkText
+                    }
+                  >
+                    C
+                  </Text>
+
+                </View>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.brandName
+                }
+              >
+                countr
               </Text>
+
+
+              <Text
+                style={
+                  styles.brandTagline
+                }
+              >
+                Your shop. Your voice. Your control.
+              </Text>
+
             </View>
 
-            {/* HEADER */}
 
-            <Text
+            {/* =================================================
+                WELCOME CARD
+                ================================================= */}
+
+            <View
               style={
-                styles.header
+                styles.welcomeCard
               }
             >
-              Storemate
-            </Text>
 
-            {/* SUBHEADER */}
+              <View
+                style={
+                  styles.welcomeTopRow
+                }
+              >
 
-            <Text
-              style={
-                styles.subHeader
-              }
-            >
-              {authMode ===
-                'login' &&
-                'Welcome back to your shop'}
+                <View
+                  style={
+                    styles.welcomeIcon
+                  }
+                >
 
-              {authMode ===
-                'register' &&
-                'Create your digital khata'}
+                  <Text
+                    style={
+                      styles.welcomeIconText
+                    }
+                  >
+                    {isLogin
+                      ? '→'
+                      : isRegister
+                      ? '+'
+                      : isForgot
+                      ? '?'
+                      : '✓'}
+                  </Text>
 
-              {authMode ===
-                'forgot' &&
-                'Reset your password'}
+                </View>
 
-              {authMode ===
-                'verify_otp' &&
-                'Enter your 6-digit OTP'}
-            </Text>
+
+                <View
+                  style={
+                    styles.secureBadge
+                  }
+                >
+
+                  <View
+                    style={
+                      styles.secureDot
+                    }
+                  />
+
+                  <Text
+                    style={
+                      styles.secureText
+                    }
+                  >
+                    SECURE
+                  </Text>
+
+                </View>
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.title
+                }
+              >
+
+                {isLogin &&
+                  'Welcome back.'}
+
+                {isRegister &&
+                  'Start your shop.'}
+
+                {isForgot &&
+                  'Reset your password.'}
+
+                {isVerify &&
+                  'Verify your account.'}
+
+              </Text>
+
+
+              <Text
+                style={
+                  styles.subtitle
+                }
+              >
+
+                {isLogin &&
+                  'Manage sales, Khata and inventory from one simple place.'}
+
+                {isRegister &&
+                  'Create your Countr account and bring your shop online.'}
+
+                {isForgot &&
+                  'We’ll send a secure OTP to your registered email.'}
+
+                {isVerify &&
+                  'Enter the OTP we sent and create a new password.'}
+
+              </Text>
+
+            </View>
+
+
+            {/* =================================================
+                FORM
+                ================================================= */}
 
             <View
               style={
                 styles.form
               }
             >
+
               {/* SHOP NAME */}
 
-              {authMode ===
-                'register' && (
-                <TextInput
+              {isRegister && (
+
+                <View
                   style={
-                    styles.input
+                    styles.fieldGroup
                   }
+                >
 
-                  placeholder="Shop Name (Optional for Google)"
+                  <Text
+                    style={
+                      styles.fieldLabel
+                    }
+                  >
+                    SHOP NAME
+                  </Text>
 
-                  placeholderTextColor="#9CA3AF"
 
-                  value={
-                    shopName
-                  }
+                  <View
+                    style={
+                      styles.inputShell
+                    }
+                  >
 
-                  onChangeText={
-                    setShopName
-                  }
+                    <Text
+                      style={
+                        styles.inputIcon
+                      }
+                    >
+                      ⌂
+                    </Text>
 
-                  returnKeyType="next"
 
-                  autoCapitalize="words"
+                    <TextInput
 
-                  autoCorrect={false}
-                />
+                      style={
+                        styles.input
+                      }
+
+                      placeholder="e.g. Sharma General Store"
+
+                      placeholderTextColor={
+                        '#A2AAA5'
+                      }
+
+                      value={
+                        shopName
+                      }
+
+                      onChangeText={
+                        setShopName
+                      }
+
+                      returnKeyType="next"
+
+                      autoCapitalize="words"
+
+                      autoCorrect={
+                        false
+                      }
+
+                    />
+
+                  </View>
+
+                </View>
+
               )}
+
 
               {/* EMAIL */}
 
-              {authMode !==
-                'verify_otp' && (
-                <TextInput
+              {!isVerify && (
+
+                <View
                   style={
-                    styles.input
+                    styles.fieldGroup
                   }
+                >
 
-                  placeholder="Email Address"
+                  <Text
+                    style={
+                      styles.fieldLabel
+                    }
+                  >
+                    EMAIL ADDRESS
+                  </Text>
 
-                  placeholderTextColor="#9CA3AF"
 
-                  keyboardType="email-address"
+                  <View
+                    style={
+                      styles.inputShell
+                    }
+                  >
 
-                  autoCapitalize="none"
+                    <Text
+                      style={
+                        styles.inputIcon
+                      }
+                    >
+                      @
+                    </Text>
 
-                  autoCorrect={false}
 
-                  autoComplete="email"
+                    <TextInput
 
-                  textContentType="emailAddress"
+                      style={
+                        styles.input
+                      }
 
-                  value={
-                    email
-                  }
+                      placeholder="you@example.com"
 
-                  onChangeText={
-                    setEmail
-                  }
+                      placeholderTextColor={
+                        '#A2AAA5'
+                      }
 
-                  returnKeyType="next"
-                />
+                      keyboardType="email-address"
+
+                      autoCapitalize="none"
+
+                      autoCorrect={
+                        false
+                      }
+
+                      autoComplete="email"
+
+                      textContentType="emailAddress"
+
+                      value={
+                        email
+                      }
+
+                      onChangeText={
+                        setEmail
+                      }
+
+                      returnKeyType="next"
+
+                    />
+
+                  </View>
+
+                </View>
+
               )}
+
 
               {/* PASSWORD */}
 
-              {(
-                authMode ===
-                  'login' ||
-                authMode ===
-                  'register'
-              ) && (
-                <View>
-                  <TextInput
+              {(isLogin ||
+                isRegister) && (
+
+                <View
+                  style={
+                    styles.fieldGroup
+                  }
+                >
+
+                  <View
                     style={
-                      styles.input
-                    }
-
-                    placeholder="Password"
-
-                    placeholderTextColor="#9CA3AF"
-
-                    secureTextEntry
-
-                    autoCapitalize="none"
-
-                    autoCorrect={false}
-
-                    value={
-                      password
-                    }
-
-                    onChangeText={
-                      setPassword
-                    }
-
-                    returnKeyType="done"
-
-                    onSubmitEditing={
-                      handleSubmit
-                    }
-                  />
-
-                  {authMode ===
-                    'login' && (
-                    <TouchableOpacity
-                      onPress={() =>
-                        setAuthMode(
-                          'forgot'
-                        )
-                      }
-
-                      style={
-                        styles.forgotBtn
-                      }
-
-                      activeOpacity={
-                        0.7
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.forgotText
-                        }
-                      >
-                        Forgot Password?
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {/* OTP + NEW PASSWORD */}
-
-              {authMode ===
-                'verify_otp' && (
-                <View>
-                  <Text
-                    style={
-                      styles.helperText
+                      styles.labelRow
                     }
                   >
-                    OTP sent to:{' '}
-                    {email}
-                  </Text>
 
-                  <TextInput
+                    <Text
+                      style={
+                        styles.fieldLabel
+                      }
+                    >
+                      PASSWORD
+                    </Text>
+
+
+                    {isLogin && (
+
+                      <TouchableOpacity
+
+                        onPress={() =>
+                          setAuthMode(
+                            'forgot'
+                          )
+                        }
+
+                        activeOpacity={
+                          0.7
+                        }
+                      >
+
+                        <Text
+                          style={
+                            styles.forgotText
+                          }
+                        >
+                          Forgot password?
+                        </Text>
+
+                      </TouchableOpacity>
+
+                    )}
+
+                  </View>
+
+
+                  <View
                     style={
-                      styles.input
+                      styles.inputShell
                     }
+                  >
 
-                    placeholder="Enter 6-digit OTP"
+                    <Text
+                      style={
+                        styles.inputIcon
+                      }
+                    >
+                      •
+                    </Text>
 
-                    placeholderTextColor="#9CA3AF"
 
-                    keyboardType="numeric"
+                    <TextInput
 
-                    maxLength={6}
+                      style={
+                        styles.input
+                      }
 
-                    value={otp}
+                      placeholder="Enter your password"
 
-                    onChangeText={
-                      setOtp
-                    }
+                      placeholderTextColor={
+                        '#A2AAA5'
+                      }
 
-                    returnKeyType="next"
+                      secureTextEntry
 
-                    autoFocus
-                  />
+                      autoCapitalize="none"
 
-                  <TextInput
-                    style={
-                      styles.input
-                    }
+                      autoCorrect={
+                        false
+                      }
 
-                    placeholder="Enter New Password"
+                      value={
+                        password
+                      }
 
-                    placeholderTextColor="#9CA3AF"
+                      onChangeText={
+                        setPassword
+                      }
 
-                    secureTextEntry
+                      returnKeyType="done"
 
-                    autoCapitalize="none"
+                      onSubmitEditing={
+                        handleSubmit
+                      }
 
-                    autoCorrect={false}
+                    />
 
-                    value={
-                      newPassword
-                    }
+                  </View>
 
-                    onChangeText={
-                      setNewPassword
-                    }
-
-                    returnKeyType="done"
-
-                    onSubmitEditing={
-                      handleSubmit
-                    }
-                  />
                 </View>
+
               )}
 
-              {/* SUBMIT */}
+
+              {/* =================================================
+                  OTP
+                  ================================================= */}
+
+              {isVerify && (
+
+                <View>
+
+                  <View
+                    style={
+                      styles.otpInfo
+                    }
+                  >
+
+                    <Text
+                      style={
+                        styles.otpInfoTitle
+                      }
+                    >
+                      OTP sent to
+                    </Text>
+
+
+                    <Text
+                      style={
+                        styles.otpEmail
+                      }
+                    >
+                      {email}
+                    </Text>
+
+                  </View>
+
+
+                  <View
+                    style={
+                      styles.fieldGroup
+                    }
+                  >
+
+                    <Text
+                      style={
+                        styles.fieldLabel
+                      }
+                    >
+                      6-DIGIT OTP
+                    </Text>
+
+
+                    <View
+                      style={
+                        styles.inputShell
+                      }
+                    >
+
+                      <Text
+                        style={
+                          styles.inputIcon
+                        }
+                      >
+                        #
+                      </Text>
+
+
+                      <TextInput
+
+                        style={[
+                          styles.input,
+
+                          styles.otpInput,
+                        ]}
+
+                        placeholder="000000"
+
+                        placeholderTextColor={
+                          '#A2AAA5'
+                        }
+
+                        keyboardType="numeric"
+
+                        maxLength={
+                          6
+                        }
+
+                        value={
+                          otp
+                        }
+
+                        onChangeText={
+                          setOtp
+                        }
+
+                        returnKeyType="next"
+
+                        autoFocus
+
+                      />
+
+                    </View>
+
+                  </View>
+
+
+                  <View
+                    style={
+                      styles.fieldGroup
+                    }
+                  >
+
+                    <Text
+                      style={
+                        styles.fieldLabel
+                      }
+                    >
+                      NEW PASSWORD
+                    </Text>
+
+
+                    <View
+                      style={
+                        styles.inputShell
+                      }
+                    >
+
+                      <Text
+                        style={
+                          styles.inputIcon
+                        }
+                      >
+                        •
+                      </Text>
+
+
+                      <TextInput
+
+                        style={
+                          styles.input
+                        }
+
+                        placeholder="Create a new password"
+
+                        placeholderTextColor={
+                          '#A2AAA5'
+                        }
+
+                        secureTextEntry
+
+                        autoCapitalize="none"
+
+                        autoCorrect={
+                          false
+                        }
+
+                        value={
+                          newPassword
+                        }
+
+                        onChangeText={
+                          setNewPassword
+                        }
+
+                        returnKeyType="done"
+
+                        onSubmitEditing={
+                          handleSubmit
+                        }
+
+                      />
+
+                    </View>
+
+                  </View>
+
+                </View>
+
+              )}
+
+
+              {/* =================================================
+                  SUBMIT
+                  ================================================= */}
 
               <TouchableOpacity
-                style={
-                  styles.submitBtn
-                }
+
+                style={[
+                  styles.submitButton,
+
+                  isLoading &&
+                    styles.submitButtonLoading,
+                ]}
 
                 onPress={
                   handleSubmit
@@ -1046,213 +1683,375 @@ const LoginScreen = ({
                 }
 
                 activeOpacity={
-                  0.88
+                  0.86
                 }
               >
+
                 {isLoading ? (
+
                   <ActivityIndicator
-                    color="#fff"
+                    color="#FFFFFF"
                   />
+
                 ) : (
-                  <Text
-                    style={
-                      styles.submitBtnText
-                    }
-                  >
-                    {authMode ===
-                      'login' &&
-                      'Login'}
 
-                    {authMode ===
-                      'register' &&
-                      'Register Shop'}
-
-                    {authMode ===
-                      'forgot' &&
-                      'Send Reset OTP'}
-
-                    {authMode ===
-                      'verify_otp' &&
-                      'Update Password'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              {/* GOOGLE LOGIN */}
-
-              {authMode !==
-                'forgot' &&
-                authMode !==
-                  'verify_otp' && (
                   <>
-                    <View
+
+                    <Text
                       style={
-                        styles.dividerRow
+                        styles.submitText
                       }
                     >
-                      <View
-                        style={
-                          styles.dividerLine
-                        }
-                      />
+
+                      {isLogin &&
+                        'Login to Countr'}
+
+                      {isRegister &&
+                        'Create My Shop'}
+
+                      {isForgot &&
+                        'Send Reset OTP'}
+
+                      {isVerify &&
+                        'Update Password'}
+
+                    </Text>
+
+
+                    <Text
+                      style={
+                        styles.submitArrow
+                      }
+                    >
+                      →
+                    </Text>
+
+                  </>
+
+                )}
+
+              </TouchableOpacity>
+
+
+              {/* =================================================
+                  GOOGLE
+                  ================================================= */}
+
+              {!isForgot &&
+                !isVerify && (
+
+                <>
+
+                  <View
+                    style={
+                      styles.dividerRow
+                    }
+                  >
+
+                    <View
+                      style={
+                        styles.dividerLine
+                      }
+                    />
+
+
+                    <Text
+                      style={
+                        styles.dividerText
+                      }
+                    >
+                      OR
+                    </Text>
+
+
+                    <View
+                      style={
+                        styles.dividerLine
+                      }
+
+                    />
+
+                  </View>
+
+
+                  <TouchableOpacity
+
+                    style={
+                      styles.googleButton
+                    }
+
+                    onPress={
+                      handleGoogleAuth
+                    }
+
+                    disabled={
+                      isLoading
+                    }
+
+                    activeOpacity={
+                      0.85
+                    }
+                  >
+
+                    <View
+                      style={
+                        styles.googleIcon
+                      }
+                    >
 
                       <Text
                         style={
-                          styles.dividerText
+                          styles.googleG
                         }
                       >
-                        OR
+                        G
                       </Text>
 
-                      <View
-                        style={
-                          styles.dividerLine
-                        }
-                      />
                     </View>
 
-                    <TouchableOpacity
+
+                    <Text
                       style={
-                        styles.googleBtn
-                      }
-
-                      onPress={
-                        handleGoogleAuth
-                      }
-
-                      disabled={
-                        isLoading
-                      }
-
-                      activeOpacity={
-                        0.85
+                        styles.googleText
                       }
                     >
-                      {isLoading ? (
-                        <ActivityIndicator
-                          color="#1B1F23"
-                        />
-                      ) : (
-                        <Text
-                          style={
-                            styles.googleBtnText
-                          }
-                        >
-                          Continue with Google
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </>
-                )}
+                      Continue with Google
+                    </Text>
 
-              {/* BOTTOM TOGGLE */}
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => {
-                  if (
-                    authMode ===
-                      'verify_otp' ||
-                    authMode ===
-                      'forgot'
-                  ) {
-                    setAuthMode(
-                      'login'
-                    );
-                  } else {
-                    setAuthMode(
-                      authMode ===
-                        'login'
-                        ? 'register'
-                        : 'login'
-                    );
-                  }
-                }}
+                </>
 
+              )}
+
+
+              {/* =================================================
+                  MODE SWITCH
+                  ================================================= */}
+
+              <View
                 style={
-                  styles.toggleBtn
-                }
-
-                activeOpacity={
-                  0.7
+                  styles.bottomSwitch
                 }
               >
+
                 <Text
                   style={
-                    styles.toggleText
+                    styles.bottomText
                   }
                 >
-                  {authMode ===
-                    'login' &&
-                    "Don't have an account? "}
 
-                  {authMode ===
-                    'register' &&
-                    'Already have a shop? '}
+                  {isLogin &&
+                    "Don't have a Countr account? "}
 
-                  {(authMode ===
-                    'forgot' ||
-                    authMode ===
-                      'verify_otp') &&
-                    'Remembered your password? '}
+                  {isRegister &&
+                    'Already have an account? '}
+
+                  {(isForgot ||
+                    isVerify) &&
+                    'Remember your password? '}
+
+                </Text>
+
+
+                <TouchableOpacity
+
+                  onPress={() => {
+
+                    if (
+                      isForgot ||
+                      isVerify
+                    ) {
+
+                      setAuthMode(
+                        'login'
+                      );
+
+                    } else {
+
+                      setAuthMode(
+                        isLogin
+                          ? 'register'
+                          : 'login'
+                      );
+
+                    }
+
+                  }}
+
+                  activeOpacity={
+                    0.7
+                  }
+                >
 
                   <Text
                     style={
-                      styles.toggleTextBold
+                      styles.bottomLink
                     }
                   >
-                    {authMode ===
-                    'login'
-                      ? 'Register'
+
+                    {isLogin
+                      ? 'Create account'
+
                       : 'Login'}
+
                   </Text>
-                </Text>
-              </TouchableOpacity>
+
+                </TouchableOpacity>
+
+              </View>
+
             </View>
+
+
+            {/* =================================================
+                TRUST FOOTER
+                ================================================= */}
+
+            <View
+              style={
+                styles.trustFooter
+              }
+            >
+
+              <View
+                style={
+                  styles.trustItem
+                }
+              >
+
+                <Text
+                  style={
+                    styles.trustIcon
+                  }
+                >
+                  ✓
+                </Text>
+
+                <Text
+                  style={
+                    styles.trustText
+                  }
+                >
+                  Secure login
+                </Text>
+
+              </View>
+
+
+              <View
+                style={
+                  styles.trustSeparator
+                }
+              />
+
+
+              <View
+                style={
+                  styles.trustItem
+                }
+              >
+
+                <Text
+                  style={
+                    styles.trustIcon
+                  }
+                >
+                  ☁
+                </Text>
+
+                <Text
+                  style={
+                    styles.trustText
+                  }
+                >
+                  Your shop data
+                </Text>
+
+              </View>
+
+            </View>
+
+
+            <Text
+              style={
+                styles.companyText
+              }
+            >
+              COUNTR TECHNOLOGY PVT. LTD.
+            </Text>
+
           </View>
+
         </ScrollView>
+
       </KeyboardAvoidingView>
+
     </View>
   );
 };
 
+
+/* =============================================================
+ * STYLES
+ * ============================================================= */
+
 const styles =
   StyleSheet.create({
+
+    /* ========================================================
+       BASE
+       ======================================================== */
+
     container: {
       flex: 1,
+
       backgroundColor:
-        '#F5F7F6',
+        '#F5F7F5',
     },
+
 
     keyboardContainer: {
       flex: 1,
     },
 
+
     scrollContent: {
       flexGrow: 1,
 
-      /*
-       * Center on normal/large screens,
-       * while still allowing the entire
-       * form to scroll on short phones.
-       */
       justifyContent:
         'center',
     },
+
 
     content: {
+      paddingTop: 24,
+
+      paddingBottom: 20,
+    },
+
+
+    /* ========================================================
+       BRAND
+       ======================================================== */
+
+    brandArea: {
       alignItems:
         'center',
 
-      paddingVertical: 32,
+      marginBottom: 22,
     },
 
-    logoCircle: {
-      width: 88,
-      height: 88,
-      borderRadius: 44,
+
+    brandMark: {
+      width: 62,
+
+      height: 62,
+
+      borderRadius: 21,
 
       backgroundColor:
-        '#E7F7EE',
+        '#DFFFAD',
 
       alignItems:
         'center',
@@ -1260,133 +2059,496 @@ const styles =
       justifyContent:
         'center',
 
-      marginBottom: 16,
+      marginBottom: 10,
+
+      transform: [
+        {
+          rotate:
+            '-4deg',
+        },
+      ],
     },
 
-    logo: {
-      fontSize: 40,
+
+    brandMarkInner: {
+      width: 46,
+
+      height: 46,
+
+      borderRadius: 16,
+
+      backgroundColor:
+        '#172019',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      transform: [
+        {
+          rotate:
+            '4deg',
+        },
+      ],
     },
 
-    header: {
-      color: '#1B1F23',
+
+    brandMarkText: {
+      color:
+        '#DFFFAD',
+
+      fontSize: 25,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        -1,
+    },
+
+
+    brandName: {
+      color:
+        '#172019',
+
       fontSize: 28,
-      fontWeight: '800',
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        -1.3,
+    },
+
+
+    brandTagline: {
+      color:
+        '#7C867F',
+
+      fontSize: 10,
+
+      fontWeight:
+        '600',
+
+      marginTop: 3,
 
       textAlign:
         'center',
     },
 
-    subHeader: {
-      color: '#6B7280',
-      fontSize: 15,
 
-      marginTop: 6,
-      marginBottom: 36,
+    /* ========================================================
+       WELCOME
+       ======================================================== */
 
-      textAlign:
+    welcomeCard: {
+      backgroundColor:
+        '#FFFFFF',
+
+      borderRadius: 22,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#E1E7E1',
+
+      padding: 17,
+
+      marginBottom: 18,
+    },
+
+
+    welcomeTopRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
         'center',
 
-      lineHeight: 21,
+      justifyContent:
+        'space-between',
 
-      maxWidth: 420,
+      marginBottom: 12,
     },
+
+
+    welcomeIcon: {
+      width: 38,
+
+      height: 38,
+
+      borderRadius: 12,
+
+      backgroundColor:
+        '#ECF7E4',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+    },
+
+
+    welcomeIconText: {
+      color:
+        '#6C9637',
+
+      fontSize: 19,
+
+      fontWeight:
+        '900',
+    },
+
+
+    secureBadge: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      backgroundColor:
+        '#F5F8F4',
+
+      borderRadius: 8,
+
+      paddingHorizontal: 8,
+
+      paddingVertical: 5,
+    },
+
+
+    secureDot: {
+      width: 5,
+
+      height: 5,
+
+      borderRadius: 5,
+
+      backgroundColor:
+        '#6C9637',
+
+      marginRight: 5,
+    },
+
+
+    secureText: {
+      color:
+        '#71806F',
+
+      fontSize: 7,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        0.8,
+    },
+
+
+    title: {
+      color:
+        '#172019',
+
+      fontSize: 24,
+
+      lineHeight: 29,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        -0.8,
+    },
+
+
+    subtitle: {
+      color:
+        '#7A847D',
+
+      fontSize: 10,
+
+      lineHeight: 15,
+
+      fontWeight:
+        '500',
+
+      marginTop: 5,
+
+      maxWidth: 470,
+    },
+
+
+    /* ========================================================
+       FORM
+       ======================================================== */
 
     form: {
-      width: '100%',
+      width:
+        '100%',
     },
 
-    input: {
-      width: '100%',
+
+    fieldGroup: {
+      marginBottom: 13,
+    },
+
+
+    labelRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'space-between',
+
+      marginBottom: 6,
+    },
+
+
+    fieldLabel: {
+      color:
+        '#59645D',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '900',
+
+      letterSpacing:
+        1.1,
+
+      marginBottom: 6,
+    },
+
+
+    labelRow: {
+      marginBottom: 0,
+    },
+
+
+    forgotText: {
+      color:
+        '#6C9637',
+
+      fontSize: 8.5,
+
+      fontWeight:
+        '800',
+
+      marginBottom: 6,
+    },
+
+
+    inputShell: {
+      minHeight: 52,
 
       backgroundColor:
         '#FFFFFF',
 
-      color: '#1B1F23',
-
-      paddingHorizontal: 16,
-      paddingVertical: 15,
-
-      borderRadius: 12,
+      borderRadius: 14,
 
       borderWidth: 1,
+
       borderColor:
-        '#EAECEC',
+        '#DDE4DE',
 
-      marginBottom: 14,
+      flexDirection:
+        'row',
 
-      fontSize: 15,
+      alignItems:
+        'center',
 
-      minHeight: 52,
+      paddingHorizontal:
+        11,
     },
 
-    forgotBtn: {
-      alignSelf:
-        'flex-end',
 
-      marginBottom: 14,
-
-      marginTop: -6,
-
-      paddingVertical: 4,
-      paddingHorizontal: 2,
+    inputShellFocused: {
+      borderColor:
+        '#6C9637',
     },
 
-    forgotText: {
-      color: '#0C9C4C',
-      fontWeight: '600',
-      fontSize: 13.5,
-    },
 
-    helperText: {
-      color: '#6B7280',
-      fontSize: 13,
+    inputIcon: {
+      width: 27,
 
-      marginBottom: 10,
+      height: 27,
+
+      borderRadius: 9,
+
+      backgroundColor:
+        '#F1F5EF',
+
+      color:
+        '#6C9637',
+
+      fontSize: 11,
+
+      fontWeight:
+        '900',
 
       textAlign:
         'center',
+
+      textAlignVertical:
+        'center',
+
+      marginRight: 8,
     },
 
-    submitBtn: {
-      width: '100%',
+
+    input: {
+      flex: 1,
+
+      minHeight: 50,
+
+      color:
+        '#172019',
+
+      fontSize: 11,
+
+      fontWeight:
+        '600',
+
+      paddingVertical: 8,
+
+      paddingHorizontal: 0,
+    },
+
+
+    otpInput: {
+      fontSize: 17,
+
+      letterSpacing:
+        5,
+
+      fontWeight:
+        '800',
+    },
+
+
+    /* ========================================================
+       OTP
+       ======================================================== */
+
+    otpInfo: {
+      backgroundColor:
+        '#ECF7E4',
+
+      borderRadius: 13,
+
+      padding: 11,
+
+      marginBottom: 14,
+    },
+
+
+    otpInfoTitle: {
+      color:
+        '#78916B',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '700',
+    },
+
+
+    otpEmail: {
+      color:
+        '#385126',
+
+      fontSize: 10,
+
+      fontWeight:
+        '900',
+
+      marginTop: 2,
+    },
+
+
+    /* ========================================================
+       SUBMIT
+       ======================================================== */
+
+    submitButton: {
+      minHeight: 56,
+
+      borderRadius: 16,
 
       backgroundColor:
-        '#0C9C4C',
+        '#6C9637',
 
-      paddingVertical: 17,
-
-      minHeight: 54,
-
-      borderRadius: 12,
+      flexDirection:
+        'row',
 
       alignItems:
         'center',
 
       justifyContent:
-        'center',
+        'space-between',
 
-      marginTop: 6,
+      paddingHorizontal:
+        17,
+
+      marginTop: 3,
 
       shadowColor:
-        '#0C9C4C',
-
-      shadowOpacity: 0.28,
-
-      shadowRadius: 10,
+        '#527A28',
 
       shadowOffset: {
         width: 0,
+
         height: 5,
       },
+
+      shadowOpacity:
+        0.18,
+
+      shadowRadius:
+        10,
 
       elevation: 3,
     },
 
-    submitBtnText: {
-      color: '#fff',
-      fontSize: 17,
-      fontWeight: '700',
+
+    submitButtonLoading: {
+      justifyContent:
+        'center',
     },
+
+
+    submitText: {
+      color:
+        '#FFFFFF',
+
+      fontSize: 11.5,
+
+      fontWeight:
+        '900',
+    },
+
+
+    submitArrow: {
+      color:
+        '#FFFFFF',
+
+      fontSize: 22,
+
+      fontWeight:
+        '300',
+    },
+
+
+    /* ========================================================
+       DIVIDER
+       ======================================================== */
 
     dividerRow: {
       flexDirection:
@@ -1395,63 +2557,73 @@ const styles =
       alignItems:
         'center',
 
-      marginVertical: 24,
+      marginVertical: 17,
     },
+
 
     dividerLine: {
       flex: 1,
+
       height: 1,
 
       backgroundColor:
-        '#EAECEC',
+        '#E2E7E3',
     },
+
 
     dividerText: {
-      marginHorizontal: 14,
+      color:
+        '#A0A8A2',
 
-      color: '#9CA3AF',
+      fontSize: 7.5,
 
-      fontWeight: '600',
+      fontWeight:
+        '900',
 
-      fontSize: 13,
+      marginHorizontal: 11,
+
+      letterSpacing:
+        1,
     },
 
-    googleBtn: {
-      width: '100%',
+
+    /* ========================================================
+       GOOGLE
+       ======================================================== */
+
+    googleButton: {
+      minHeight: 53,
+
+      borderRadius: 15,
 
       backgroundColor:
         '#FFFFFF',
 
-      paddingVertical: 16,
-
-      minHeight: 52,
-
-      borderRadius: 12,
-
-      alignItems:
-        'center',
-
-      justifyContent:
-        'center',
-
       borderWidth: 1,
 
       borderColor:
-        '#EAECEC',
+        '#DDE4DE',
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
     },
 
-    googleBtnText: {
-      color: '#1B1F23',
 
-      fontSize: 16,
+    googleIcon: {
+      width: 28,
 
-      fontWeight: '700',
-    },
+      height: 28,
 
-    toggleBtn: {
-      marginTop: 22,
+      borderRadius: 9,
 
-      padding: 10,
+      backgroundColor:
+        '#F5F7F5',
 
       alignItems:
         'center',
@@ -1459,21 +2631,184 @@ const styles =
       justifyContent:
         'center',
 
-      minHeight: 44,
+      marginRight: 8,
     },
 
-    toggleText: {
-      color: '#6B7280',
-      fontSize: 14.5,
+
+    googleG: {
+      color:
+        '#4285F4',
+
+      fontSize: 13,
+
+      fontWeight:
+        '900',
+    },
+
+
+    googleText: {
+      color:
+        '#28322C',
+
+      fontSize: 10,
+
+      fontWeight:
+        '800',
+    },
+
+
+    /* ========================================================
+       BOTTOM SWITCH
+       ======================================================== */
+
+    bottomSwitch: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      flexWrap:
+        'wrap',
+
+      marginTop: 18,
+    },
+
+
+    bottomText: {
+      color:
+        '#87918A',
+
+      fontSize: 8.5,
+
+      fontWeight:
+        '600',
 
       textAlign:
         'center',
     },
 
-    toggleTextBold: {
-      color: '#0C9C4C',
-      fontWeight: '700',
+
+    bottomLink: {
+      color:
+        '#6C9637',
+
+      fontSize: 8.5,
+
+      fontWeight:
+        '900',
+
+      marginLeft: 3,
     },
+
+
+    /* ========================================================
+       TRUST FOOTER
+       ======================================================== */
+
+    trustFooter: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginTop: 21,
+
+      paddingTop: 14,
+
+      borderTopWidth: 1,
+
+      borderTopColor:
+        '#E5E9E5',
+    },
+
+
+    trustItem: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+    },
+
+
+    trustIcon: {
+      width: 19,
+
+      height: 19,
+
+      borderRadius: 6,
+
+      backgroundColor:
+        '#EAF4E3',
+
+      color:
+        '#6C9637',
+
+      fontSize: 9,
+
+      fontWeight:
+        '900',
+
+      textAlign:
+        'center',
+
+      textAlignVertical:
+        'center',
+
+      marginRight: 5,
+    },
+
+
+    trustText: {
+      color:
+        '#87918A',
+
+      fontSize: 7.5,
+
+      fontWeight:
+        '700',
+    },
+
+
+    trustSeparator: {
+      width: 1,
+
+      height: 14,
+
+      backgroundColor:
+        '#DDE3DE',
+
+      marginHorizontal: 13,
+    },
+
+
+    companyText: {
+      color:
+        '#B0B7B1',
+
+      fontSize: 6.5,
+
+      fontWeight:
+        '800',
+
+      letterSpacing:
+        1.1,
+
+      textAlign:
+        'center',
+
+      marginTop: 11,
+    },
+
   });
+
 
 export default LoginScreen;

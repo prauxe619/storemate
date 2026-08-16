@@ -17,7 +17,7 @@
  */
 
 import NetInfo from '@react-native-community/netinfo';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../../config/api';
 
 import {
@@ -267,6 +267,35 @@ export async function parseVoiceCommand({
 
   try {
 
+    /*
+     * ========================================================
+     * AUTH TOKEN
+     * ========================================================
+     *
+     * /api/v1/ai/parse-intent requires a valid JWT on the
+     * backend. Using getItem (single-key) here, NOT multiGet,
+     * consistent with the AsyncStorage fix applied elsewhere
+     * in this app.
+     *
+     * The header is attached conditionally: if no token is
+     * found (e.g. a rare storage read failure), the request
+     * still goes out. The backend will then correctly return
+     * 401, which the existing "BACKEND FAILURE -> LOCAL" check
+     * below already handles by falling back to the local
+     * result. Voice commands degrade gracefully either way.
+     */
+
+    let token = null;
+
+    try {
+      token = await AsyncStorage.getItem('userToken');
+    } catch (tokenError) {
+      console.log(
+        'VoiceCommandRouter: failed to read auth token',
+        tokenError?.message
+      );
+    }
+
     const response =
       await fetch(
         `${BASE_URL}/api/v1/ai/parse-intent`,
@@ -277,6 +306,9 @@ export async function parseVoiceCommand({
           headers: {
             'Content-Type':
               'application/json',
+            ...(token
+              ? { Authorization: `Bearer ${token}` }
+              : {}),
           },
 
           body:
@@ -309,6 +341,10 @@ export async function parseVoiceCommand({
      * ========================================================
      * BACKEND FAILURE -> LOCAL
      * ========================================================
+     *
+     * Also covers a 401 from a missing/expired token — voice
+     * commands never hard-fail, they just fall back to the
+     * local parser.
      */
 
     if (

@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="description" content="Countr helps shopkeepers manage Khata, sales, inventory and customers with voice or manual controls.">
+  <title>Countr — Your Shop. Just Say It.</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          },
+          animation: {
+            'float-slow': 'float 7s ease-in-out infinite',
+            'float': 'float 5s ease-in-out infinite',
+            'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+            'wave': 'wave 1.2s ease-in-out infinite',
+            'marquee': 'marquee 22s linear infinite'
+          },
+          keyframes: {
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-14px)' }
+            },
+            pulseSoft: {
+              '0%, 100%': { opacity: '.55', transform: 'scale(.98)' },
+              '50%': { opacity: '1', transform: 'scale(1.02)' }
+            },
+            wave: {
+              '0%, 100%': { transform: 'scaleY(.35)' },
+              '50%': { transform: 'scaleY(1)' }
+            },
+            marquee: {
+              from: { transform: 'translateX(0)' },
+              to: { transform: 'translateX(-50%)' }
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    * { scroll-behavior: smooth; }
+    body { overflow-x: hidden; }
+    ::selection { background: #b8ff3d; color: #080808; }
+
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+      background-size: 55px 55px;
+      mask-image: linear-gradient(to bottom, black 0%, black 60%, transparent 100%);
+    }
+
+    .glow {
+      box-shadow:
+        0 0 0 1px rgba(184,255,61,.08),
+        0 25px 90px rgba(184,255,61,.12);
+    }
+
+    .phone-shadow {
+      box-shadow:
+        0 45px 100px rgba(0,0,0,.55),
+        0 0 70px rgba(184,255,61,.08);
+    }
+
+    .glass {
+      background: rgba(255,255,255,.055);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255,255,255,.10);
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity .8s ease, transform .8s ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .voice-bar {
+      width: 4px;
+      border-radius: 999px;
+      background: #b8ff3d;
+      transform-origin: center;
+    }
+
+    .command-card {
+      transition: opacity .45s ease, transform .45s ease;
+    }
+
+    .command-card.hidden-card {
+      opacity: 0;
+      transform: translateY(8px);
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .phone {
+      width: min(320px, 82vw);
+      aspect-ratio: 9 / 18.5;
+      border-radius: 42px;
+      border: 7px solid #1b1b1b;
+      background: #f4f5f0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .phone::before {
+      content: "";
+      position: absolute;
+      z-index: 30;
+      top: 9px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90px;
+      height: 23px;
+      border-radius: 20px;
+      background: #050505;
+    }
+
+    .phone-screen {
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 80% 5%, rgba(184,255,61,.23), transparent 27%),
+        #f5f6f1;
+    }
+
+    .dark-phone {
+      background: #10110f;
+      color: white;
+    }
+
+    .dark-phone .phone-screen {
+      background:
+        radial-gradient(circle at 75% 0%, rgba(184,255,61,.12), transparent 28%),
+        #10110f;
+    }
+
+    .dot {
+      animation: blink 1.7s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: .25; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+
+<body class="bg-[#080908] text-white font-sans">
+
+  <!-- NAV -->
+  <header class="fixed top-0 left-0 right-0 z-50 px-4 md:px-8 pt-4">
+    <div class="max-w-7xl mx-auto glass rounded-2xl px-5 md:px-7 py-3.5 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black text-lg">C</div>
+        <span class="text-xl font-black tracking-tight">countr</span>
+      </a>
+
+      <nav class="hidden md:flex items-center gap-8 text-sm text-white/65">
+        <a href="/how-it-works" class="hover:text-white transition">How it works</a>
+        <a href="/features" class="hover:text-white transition">Features</a>
+        <a href="/security" class="hover:text-white transition">Security</a>
+        <a href="/for-shopkeepers" class="hover:text-white transition">For shops</a>
+      </nav>
+
+      <a href="/get-started"
+         class="bg-white text-black rounded-xl px-4 md:px-5 py-2.5 text-sm font-bold hover:bg-[#b8ff3d] transition">
+        Get started
+      </a>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <main>
+    <section class="relative min-h-screen pt-32 pb-20 px-5 overflow-hidden">
+      <div class="absolute inset-0 grid-bg pointer-events-none"></div>
+      <div class="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[700px] bg-[#b8ff3d]/10 blur-[140px] rounded-full"></div>
+
+      <div class="max-w-7xl mx-auto grid lg:grid-cols-2 gap-14 items-center relative z-10">
+
+        <div class="max-w-3xl">
+          <div class="inline-flex items-center gap-2 glass rounded-full px-4 py-2 text-xs font-semibold text-white/75 mb-7">
+            <span class="w-2 h-2 rounded-full bg-[#b8ff3d] dot"></span>
+            Voice-first shop management
+          </div>
+
+          <h1 class="text-[clamp(3.6rem,8vw,7.6rem)] leading-[.88] font-black tracking-[-.075em]">
+            Your shop.<br>
+            <span class="text-[#b8ff3d]">Just say it.</span>
+          </h1>
+
+          <p class="mt-7 text-lg md:text-xl text-white/55 max-w-xl leading-relaxed">
+            Run your Khata, sales, inventory and customers with your voice — or use Countr manually whenever you want.
+          </p>
+
+          <div class="mt-9 flex flex-col sm:flex-row gap-3">
+            <a href="/get-started"
+               class="group bg-[#b8ff3d] text-black rounded-2xl px-6 py-4 font-black text-base flex items-center justify-center gap-3 hover:scale-[1.02] transition">
+              Start managing your shop
+              <span class="group-hover:translate-x-1 transition">→</span>
+            </a>
+            <a href="/how-it-works"
+               class="glass rounded-2xl px-6 py-4 font-bold text-white flex items-center justify-center gap-3 hover:bg-white/10 transition">
+              See how it works
+              <span>↓</span>
+            </a>
+          </div>
+
+          <div class="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs text-white/35">
+            <span>✓ Voice + manual</span>
+            <span>✓ Offline-first</span>
+            <span>✓ Khata</span>
+            <span>✓ Inventory</span>
+            <span>✓ Sales</span>
+          </div>
+        </div>
+
+        <!-- LIVE VOICE DEMO -->
+        <div class="relative flex justify-center lg:justify-end">
+          <div class="absolute -inset-16 bg-[#b8ff3d]/8 blur-3xl rounded-full"></div>
+
+          <div class="relative w-full max-w-[520px]">
+            <div class="glass rounded-[32px] p-4 md:p-5 glow">
+              <div class="rounded-[25px] bg-[#11120f] overflow-hidden">
+
+                <div class="px-5 py-4 flex items-center justify-between border-b border-white/8">
+                  <div>
+                    <p class="text-[11px] uppercase tracking-[.2em] text-white/35">Countr assistant</p>
+                    <p class="font-bold mt-1">Good afternoon 👋</p>
+                  </div>
+                  <div class="w-10 h-10 rounded-full bg-[#b8ff3d] text-black flex items-center justify-center font-black">C</div>
+                </div>
+
+                <div class="p-5 md:p-7 min-h-[410px]">
+                  <p class="text-xs uppercase tracking-[.18em] text-white/30 mb-4">Try saying</p>
+
+                  <div class="relative min-h-[145px]">
+                    <div class="command-card" id="cmd0">
+                      <div class="text-2xl md:text-3xl font-bold leading-tight">
+                        “Add ₹500 credit to Rahul.”
+                      </div>
+                      <div class="mt-6 glass rounded-2xl p-4 flex items-center gap-4">
+                        <div class="w-11 h-11 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black">₹</div>
+                        <div>
+                          <p class="font-bold">Rahul's Khata updated</p>
+                          <p class="text-sm text-white/40">Credit added · ₹500</p>
+                        </div>
+                        <span class="ml-auto text-[#b8ff3d] font-bold">✓</span>
+                      </div>
+                    </div>
+
+                    <div class="command-card hidden-card" id="cmd1">
+                      <div class="text-2xl md:text-3xl font-bold leading-tight">
+                        “Sell 2 milk packets and 1 chips.”
+                      </div>
+                      <div class="mt-6 glass rounded-2xl p-4 flex items-center gap-4">
+                        <div class="w-11 h-11 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black">+</div>
+                        <div>
+                          <p class="font-bold">Sale recorded</p>
+                          <p class="text-sm text-white/40">3 items · Inventory updated</p>
+                        </div>
+                        <span class="ml-auto text-[#b8ff3d] font-bold">✓</span>
+                      </div>
+                    </div>
+
+                    <div class="command-card hidden-card" id="cmd2">
+                      <div class="text-2xl md:text-3xl font-bold leading-tight">
+                        “Show today's sales.”
+                      </div>
+                      <div class="mt-6 glass rounded-2xl p-4 flex items-center gap-4">
+                        <div class="w-11 h-11 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black">↗</div>
+                        <div>
+                          <p class="font-bold">Today's sales</p>
+                          <p class="text-sm text-white/40">₹18,420 · 47 transactions</p>
+                        </div>
+                        <span class="ml-auto text-[#b8ff3d] font-bold">↑ 12%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-10 flex items-end justify-center gap-1.5 h-14" id="waveform"></div>
+
+                  <div class="mt-5 flex items-center justify-center gap-3 text-sm text-white/40">
+                    <span class="w-2 h-2 rounded-full bg-[#b8ff3d]"></span>
+                    Listening for your command...
+                  </div>
+                </div>
+
+                <div class="px-5 pb-5">
+                  <div class="rounded-2xl bg-[#b8ff3d] text-black p-4 flex items-center gap-4">
+                    <div class="w-11 h-11 rounded-full bg-black text-white flex items-center justify-center text-lg">🎙</div>
+                    <div>
+                      <p class="font-black">Speak naturally</p>
+                      <p class="text-xs font-medium opacity-60">Countr understands your shop.</p>
+                    </div>
+                    <div class="ml-auto text-xs font-black">VOICE ON</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="absolute -right-3 md:-right-8 top-10 glass rounded-2xl px-4 py-3 animate-float-slow hidden sm:block">
+              <p class="text-[10px] uppercase tracking-wider text-white/35">Khata</p>
+              <p class="font-black text-[#b8ff3d]">₹24,580</p>
+            </div>
+
+            <div class="absolute -left-4 md:-left-10 bottom-14 glass rounded-2xl px-4 py-3 animate-float hidden sm:block">
+              <p class="text-[10px] uppercase tracking-wider text-white/35">Inventory</p>
+              <p class="font-black">1,284 items</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MARQUEE -->
+    <div class="border-y border-white/8 overflow-hidden py-5 bg-white/[.015]">
+      <div class="flex w-max animate-marquee">
+        <div class="flex items-center gap-10 px-5 text-sm font-bold text-white/30">
+          <span>KHATA</span><span>•</span><span>SALES</span><span>•</span><span>INVENTORY</span><span>•</span><span>CUSTOMERS</span><span>•</span><span>REPORTS</span><span>•</span><span>VOICE</span><span>•</span>
+          <span>KHATA</span><span>•</span><span>SALES</span><span>•</span><span>INVENTORY</span><span>•</span><span>CUSTOMERS</span><span>•</span><span>REPORTS</span><span>•</span><span>VOICE</span><span>•</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOW IT WORKS -->
+    <section id="how" class="py-28 px-5">
+      <div class="max-w-7xl mx-auto">
+        <div class="reveal max-w-2xl">
+          <p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">The new way to run a shop</p>
+          <h2 class="mt-4 text-4xl md:text-6xl font-black tracking-[-.05em]">
+            Less tapping.<br>More doing.
+          </h2>
+          <p class="mt-5 text-white/45 text-lg">
+            Tell Countr what happened. Countr takes care of the record.
+          </p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-5 mt-16">
+          <div class="reveal glass rounded-3xl p-7 md:p-9">
+            <div class="text-5xl font-black text-white/15">01</div>
+            <div class="mt-12 w-14 h-14 rounded-2xl bg-[#b8ff3d] text-black flex items-center justify-center text-2xl">🎙</div>
+            <h3 class="mt-6 text-2xl font-black">Say it</h3>
+            <p class="mt-3 text-white/45 leading-relaxed">Speak naturally. No complicated commands or forms.</p>
+          </div>
+
+          <div class="reveal glass rounded-3xl p-7 md:p-9" style="transition-delay:.12s">
+            <div class="text-5xl font-black text-white/15">02</div>
+            <div class="mt-12 w-14 h-14 rounded-2xl bg-white text-black flex items-center justify-center text-2xl">✦</div>
+            <h3 class="mt-6 text-2xl font-black">Countr understands</h3>
+            <p class="mt-3 text-white/45 leading-relaxed">Your voice becomes the right shop action — Khata, sale, stock or customer.</p>
+          </div>
+
+          <div class="reveal glass rounded-3xl p-7 md:p-9" style="transition-delay:.24s">
+            <div class="text-5xl font-black text-white/15">03</div>
+            <div class="mt-12 w-14 h-14 rounded-2xl bg-[#b8ff3d] text-black flex items-center justify-center text-2xl">✓</div>
+            <h3 class="mt-6 text-2xl font-black">It's done</h3>
+            <p class="mt-3 text-white/45 leading-relaxed">The record updates instantly, so you can get back to your customers.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features" class="py-28 px-5 bg-[#0d0f0c] border-y border-white/6">
+      <div class="max-w-7xl mx-auto">
+        <div class="reveal text-center max-w-3xl mx-auto">
+          <p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">Everything in one place</p>
+          <h2 class="mt-4 text-4xl md:text-6xl font-black tracking-[-.05em]">Your whole shop.<br>One app.</h2>
+        </div>
+
+        <div class="grid lg:grid-cols-12 gap-5 mt-16">
+          <div class="reveal lg:col-span-7 glass rounded-3xl p-7 md:p-10 min-h-[390px] overflow-hidden relative">
+            <div class="relative z-10">
+              <span class="text-xs font-black uppercase tracking-[.18em] text-white/35">01 / Khata</span>
+              <h3 class="mt-4 text-3xl md:text-4xl font-black">Your customers,<br>always accounted for.</h3>
+              <p class="mt-4 text-white/45 max-w-md">Create Khata, add credit, record payments and check balances with your voice or manually.</p>
+            </div>
+
+            <div class="absolute right-[-20px] bottom-[-70px] w-[280px] rotate-[-8deg]">
+              <div class="phone dark-phone phone-shadow">
+                <div class="phone-screen p-5 pt-14">
+                  <p class="text-xs text-white/35">CUSTOMER</p>
+                  <p class="text-xl font-black mt-1">Rahul Sharma</p>
+                  <div class="mt-5 glass rounded-2xl p-4">
+                    <p class="text-xs text-white/35">BALANCE</p>
+                    <p class="text-3xl font-black text-[#b8ff3d] mt-1">₹4,850</p>
+                  </div>
+                  <div class="mt-3 space-y-2">
+                    <div class="glass rounded-xl p-3 text-xs flex justify-between"><span>Credit</span><b>₹500</b></div>
+                    <div class="glass rounded-xl p-3 text-xs flex justify-between"><span>Payment</span><b>₹1,000</b></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="reveal lg:col-span-5 glass rounded-3xl p-7 md:p-10 min-h-[390px] overflow-hidden relative" style="transition-delay:.1s">
+            <span class="text-xs font-black uppercase tracking-[.18em] text-white/35">02 / Inventory</span>
+            <h3 class="mt-4 text-3xl font-black">Know what's<br>on your shelf.</h3>
+            <p class="mt-4 text-white/45">Track stock as sales happen. Add products manually or with your existing workflow.</p>
+
+            <div class="absolute bottom-7 left-7 right-7 space-y-2">
+              <div class="glass rounded-2xl p-4 flex items-center gap-4">
+                <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">🥛</div>
+                <div class="flex-1"><b class="text-sm">Milk 1L</b><p class="text-xs text-white/35">42 in stock</p></div>
+                <span class="text-[#b8ff3d] text-xs font-black">IN STOCK</span>
+              </div>
+              <div class="glass rounded-2xl p-4 flex items-center gap-4">
+                <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">🍟</div>
+                <div class="flex-1"><b class="text-sm">Chips</b><p class="text-xs text-white/35">8 in stock</p></div>
+                <span class="text-yellow-300 text-xs font-black">LOW</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="reveal lg:col-span-5 glass rounded-3xl p-7 md:p-10 min-h-[330px]" style="transition-delay:.18s">
+            <span class="text-xs font-black uppercase tracking-[.18em] text-white/35">03 / Sales</span>
+            <h3 class="mt-4 text-3xl font-black">Every sale,<br>automatically recorded.</h3>
+            <p class="mt-4 text-white/45">Record transactions quickly and keep inventory and reports in sync.</p>
+            <div class="mt-8 flex items-end gap-2 h-20">
+              <span class="w-full h-[35%] bg-white/10 rounded-t-lg"></span>
+              <span class="w-full h-[55%] bg-white/10 rounded-t-lg"></span>
+              <span class="w-full h-[42%] bg-white/10 rounded-t-lg"></span>
+              <span class="w-full h-[72%] bg-[#b8ff3d]/50 rounded-t-lg"></span>
+              <span class="w-full h-[60%] bg-white/10 rounded-t-lg"></span>
+              <span class="w-full h-[90%] bg-[#b8ff3d] rounded-t-lg"></span>
+              <span class="w-full h-[75%] bg-white/10 rounded-t-lg"></span>
+            </div>
+          </div>
+
+          <div class="reveal lg:col-span-7 glass rounded-3xl p-7 md:p-10 min-h-[330px] relative overflow-hidden" style="transition-delay:.24s">
+            <span class="text-xs font-black uppercase tracking-[.18em] text-white/35">04 / Voice</span>
+            <h3 class="mt-4 text-3xl md:text-4xl font-black">Talk like you<br>talk to your staff.</h3>
+            <p class="mt-4 text-white/45 max-w-md">No need to learn software language. Speak naturally and keep your shop moving.</p>
+
+            <div class="absolute right-8 bottom-8 flex items-center gap-1 h-20">
+              <span class="voice-bar h-8 animate-wave"></span>
+              <span class="voice-bar h-14 animate-wave" style="animation-delay:.08s"></span>
+              <span class="voice-bar h-10 animate-wave" style="animation-delay:.16s"></span>
+              <span class="voice-bar h-20 animate-wave" style="animation-delay:.24s"></span>
+              <span class="voice-bar h-12 animate-wave" style="animation-delay:.32s"></span>
+              <span class="voice-bar h-16 animate-wave" style="animation-delay:.40s"></span>
+              <span class="voice-bar h-7 animate-wave" style="animation-delay:.48s"></span>
+              <span class="voice-bar h-12 animate-wave" style="animation-delay:.56s"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OFFLINE -->
+    <section id="offline" class="py-28 px-5 relative overflow-hidden">
+      <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#b8ff3d]/8 blur-[130px] rounded-full"></div>
+
+      <div class="max-w-7xl mx-auto relative z-10 grid lg:grid-cols-2 gap-16 items-center">
+        <div class="reveal">
+          <p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">Built for real shops</p>
+          <h2 class="mt-4 text-4xl md:text-6xl font-black tracking-[-.05em]">Your internet shouldn't<br>run your business.</h2>
+          <p class="mt-6 text-lg text-white/45 max-w-xl leading-relaxed">
+            Countr is designed with an offline-first approach, so your essential shop workflow can keep moving even when connectivity doesn't.
+          </p>
+
+          <div class="mt-8 flex gap-3">
+            <div class="glass rounded-2xl px-5 py-4">
+              <p class="text-2xl font-black">OFF</p>
+              <p class="text-xs text-white/35 mt-1">Internet</p>
+            </div>
+            <div class="glass rounded-2xl px-5 py-4">
+              <p class="text-2xl font-black text-[#b8ff3d]">ON</p>
+              <p class="text-xs text-white/35 mt-1">Your shop</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="reveal flex justify-center" style="transition-delay:.15s">
+          <div class="relative">
+            <div class="phone dark-phone phone-shadow animate-float-slow">
+              <div class="phone-screen p-5 pt-14">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-xs text-white/35">TODAY</p>
+                    <p class="text-xl font-black mt-1">Your shop</p>
+                  </div>
+                  <span class="px-2.5 py-1 rounded-full bg-[#b8ff3d]/10 text-[#b8ff3d] text-[10px] font-black">OFFLINE</span>
+                </div>
+
+                <div class="mt-7 glass rounded-2xl p-4">
+                  <p class="text-xs text-white/35">TODAY'S SALES</p>
+                  <p class="text-4xl font-black mt-1">₹18,420</p>
+                  <div class="mt-4 h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div class="h-full w-[76%] bg-[#b8ff3d] rounded-full"></div>
+                  </div>
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                  <div class="glass rounded-2xl p-4">
+                    <p class="text-xs text-white/35">KHATA</p>
+                    <p class="text-xl font-black mt-1">24</p>
+                  </div>
+                  <div class="glass rounded-2xl p-4">
+                    <p class="text-xs text-white/35">ITEMS</p>
+                    <p class="text-xl font-black mt-1">1,284</p>
+                  </div>
+                </div>
+
+                <div class="mt-3 glass rounded-2xl p-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center">✓</div>
+                    <div>
+                      <p class="text-sm font-bold">Changes saved locally</p>
+                      <p class="text-[10px] text-white/35">Ready to sync when connected</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="absolute -right-16 top-24 glass rounded-2xl p-4 hidden sm:block">
+              <div class="flex items-center gap-3">
+                <span class="w-2 h-2 rounded-full bg-[#b8ff3d]"></span>
+                <span class="text-xs font-bold">Local data protected</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BUSINESS TYPES -->
+    <section id="business" class="py-28 px-5 bg-[#0d0f0c] border-y border-white/6">
+      <div class="max-w-7xl mx-auto">
+        <div class="reveal">
+          <p class="text-[#b8ff3d] text-sm font-black uppercase tracking-[.2em]">Made for shopkeepers</p>
+          <h2 class="mt-4 text-4xl md:text-6xl font-black tracking-[-.05em]">Whatever you sell,<br>keep it simple.</h2>
+        </div>
+
+        <div class="mt-14 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="reveal glass rounded-3xl p-6 min-h-[170px] flex flex-col justify-between">
+            <span class="text-4xl">🛒</span><b>Grocery</b>
+          </div>
+          <div class="reveal glass rounded-3xl p-6 min-h-[170px] flex flex-col justify-between" style="transition-delay:.08s">
+            <span class="text-4xl">👕</span><b>Fashion</b>
+          </div>
+          <div class="reveal glass rounded-3xl p-6 min-h-[170px] flex flex-col justify-between" style="transition-delay:.16s">
+            <span class="text-4xl">📱</span><b>Electronics</b>
+          </div>
+          <div class="reveal glass rounded-3xl p-6 min-h-[170px] flex flex-col justify-between" style="transition-delay:.24s">
+            <span class="text-4xl">🏪</span><b>General stores</b>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section id="get-started" class="py-32 px-5 relative overflow-hidden">
+      <div class="absolute inset-0 bg-[#b8ff3d]"></div>
+      <div class="absolute top-[-180px] left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-white/40 blur-[100px] rounded-full"></div>
+
+      <div class="max-w-5xl mx-auto relative text-center text-black">
+        <p class="text-sm font-black uppercase tracking-[.25em] opacity-50">Meet Countr</p>
+        <h2 class="mt-5 text-[clamp(3rem,7vw,6.5rem)] leading-[.9] tracking-[-.07em] font-black">
+          Run your shop.<br>Not your software.
+        </h2>
+        <p class="mt-7 max-w-xl mx-auto text-black/60 text-lg">
+          One place for Khata, sales, inventory and more — with voice when you want it and manual control whenever you need it.
+        </p>
+
+        <a href="/get-started"
+           class="inline-flex mt-9 bg-black text-white rounded-2xl px-7 py-4 font-black hover:scale-[1.03] transition">
+          Get Countr
+          <span class="ml-3">→</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-[#080908] px-5 py-12 border-t border-white/8">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex flex-col md:flex-row justify-between gap-8">
+        <div>
+          <a href="/" class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-[#b8ff3d] text-black flex items-center justify-center font-black text-lg">C</div>
+            <span class="text-xl font-black">countr</span>
+          </a>
+          <p class="mt-4 text-sm text-white/35 max-w-xs">
+            Voice-first shop management for the businesses that keep everyday life moving.
+          </p>
+        </div>
+
+        <div class="flex gap-10 text-sm">
+          <div class="flex flex-col gap-3">
+            <span class="text-white/25 text-xs uppercase tracking-wider">Company</span>
+            <a href="/features" class="text-white/55 hover:text-white">Features</a>
+            <a href="/how-it-works" class="text-white/55 hover:text-white">How it works</a>
+            <a href="/for-shopkeepers" class="text-white/55 hover:text-white">For shopkeepers</a>
+            <a href="/security" class="text-white/55 hover:text-white">Security</a>
+            <a href="/about" class="text-white/55 hover:text-white">About</a>
+            <a href="/contact" class="text-white/55 hover:text-white">Contact</a>
+          </div>
+          <div class="flex flex-col gap-3">
+            <span class="text-white/25 text-xs uppercase tracking-wider">Legal</span>
+            <a href="/privacy" class="text-white/55 hover:text-white">Privacy</a>
+            <a href="/terms" class="text-white/55 hover:text-white">Terms</a>
+            <a href="/contact" class="text-white/55 hover:text-white">Contact</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-12 pt-6 border-t border-white/8 flex flex-col md:flex-row justify-between gap-3 text-xs text-white/25">
+        <span>© 2026 Countr Technology Pvt. Ltd. All rights reserved.</span>
+        <span>Built for modern shops · <a href="/get-started" class="hover:text-white">Get started</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Animated waveform
+    const waveform = document.getElementById('waveform');
+    const heights = [18, 32, 48, 26, 58, 40, 72, 34, 62, 45, 24, 54, 76, 42, 28, 58, 35, 68, 30, 48, 20];
+    heights.forEach((h, i) => {
+      const bar = document.createElement('span');
+      bar.className = 'voice-bar';
+      bar.style.height = h + '%';
+      bar.style.animation = `wave ${0.75 + (i % 5) * 0.12}s ease-in-out infinite`;
+      bar.style.animationDelay = `${i * 0.045}s`;
+      waveform.appendChild(bar);
+    });
+
+    // Rotating command demo
+    const commands = [
+      document.getElementById('cmd0'),
+      document.getElementById('cmd1'),
+      document.getElementById('cmd2')
+    ];
+
+    let commandIndex = 0;
+    setInterval(() => {
+      commands[commandIndex].classList.add('hidden-card');
+      commandIndex = (commandIndex + 1) % commands.length;
+      commands[commandIndex].classList.remove('hidden-card');
+    }, 3600);
+
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // Slight pointer movement for hero glass
+    const demo = document.querySelector('.glow');
+    if (demo && window.matchMedia('(pointer:fine)').matches) {
+      demo.addEventListener('mousemove', (e) => {
+        const r = demo.getBoundingClientRect();
+        const x = ((e.clientX - r.left) / r.width - .5) * 5;
+        const y = ((e.clientY - r.top) / r.height - .5) * 5;
+        demo.style.transform = `perspective(1000px) rotateX(${-y}deg) rotateY(${x}deg)`;
+      });
+      demo.addEventListener('mouseleave', () => {
+        demo.style.transform = '';
+      });
+    }
+  </script>
+</body>
+</html>

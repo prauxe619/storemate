@@ -24,7 +24,12 @@ import { Q } from '@nozbe/watermelondb';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TelemetryService from '../services/TelemetryService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { requireCurrentUserId } from '../core/auth/localUser'; // 🚀 Added user isolation helper
+import { requireCurrentUserId } from '../core/auth/localUser';
+
+
+/* ============================================================
+   COUNTR KHATA SCREEN
+   ============================================================ */
 
 const KhataScreen = ({
   onClose,
@@ -37,29 +42,23 @@ const KhataScreen = ({
     height: windowHeight,
   } = useWindowDimensions();
 
-  /*
-   * Responsive horizontal spacing.
-   *
-   * Very small phones need less side padding.
-   * Large phones/tablets can use more spacing.
-   */
+
+  /* ==========================================================
+     RESPONSIVE
+     ========================================================== */
+
   const horizontalPadding =
     windowWidth < 360
       ? 14
       : windowWidth < 600
-      ? 20
+      ? 18
       : 28;
 
-  /*
-   * Modal width.
-   *
-   * Prevents huge modal dialogs on tablets
-   * and large Android devices.
-   */
-  const modalWidth = Math.min(
-    windowWidth - 32,
-    520
-  );
+  const modalWidth =
+    Math.min(
+      windowWidth - 32,
+      520
+    );
 
   const historyModalWidth =
     Math.min(
@@ -67,15 +66,16 @@ const KhataScreen = ({
       600
     );
 
-  /*
-   * History modal height adapts to
-   * different screen sizes.
-   */
   const historyModalMaxHeight =
     Math.min(
       windowHeight * 0.82,
       700
     );
+
+
+  /* ==========================================================
+     STATE
+     ========================================================== */
 
   const [
     customers,
@@ -126,30 +126,39 @@ const KhataScreen = ({
     shopConfig,
     setShopConfig,
   ] = useState({
-    name: 'Our Store',
+    name: 'Kirana Store',
     upiId: '',
   });
 
-  /*
-   * =====================================
-   * LOAD KHATA
-   * =====================================
-   */
+
+  /* ==========================================================
+     LOAD
+     ========================================================== */
+
+  useEffect(() => {
+    fetchKhata();
+    loadShopConfig();
+  }, []);
+
+
+  /* ==========================================================
+     FETCH KHATA
+     ========================================================== */
 
   const fetchKhata =
     async () => {
       try {
-        /*
-         * Balance calculation MUST see every
-         * ledger entry for the current user.
-         */
-        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user
+        const ownerId =
+          await requireCurrentUserId();
 
         const entries =
           await database
             .get('ledger_entries')
             .query(
-              Q.where('owner_id', ownerId), // 🚀 Filter by owner_id
+              Q.where(
+                'owner_id',
+                ownerId
+              ),
               Q.sortBy(
                 'created_at',
                 Q.desc
@@ -157,20 +166,17 @@ const KhataScreen = ({
             )
             .fetch();
 
-        /*
-         * This limit only affects what is
-         * displayed in each customer's
-         * history modal.
-         */
         const HISTORY_DISPLAY_LIMIT =
           100;
 
-        const customerData = {};
+        const customerData =
+          {};
 
         entries.forEach(
           entry => {
             const originalName =
-              entry.customerId;
+              entry.customerId ||
+              'Unknown Customer';
 
             const normalizedKey =
               originalName
@@ -185,14 +191,25 @@ const KhataScreen = ({
               customerData[
                 normalizedKey
               ] = {
-                name: originalName,
-                balance: 0,
-                phone: null,
+                name:
+                  originalName,
+
+                balance:
+                  0,
+
+                phone:
+                  null,
+
                 entryId:
                   entry.id,
-                history: [],
+
+                history:
+                  [],
               };
             }
+
+
+            /* CREDIT */
 
             if (
               entry.entryType ===
@@ -201,8 +218,14 @@ const KhataScreen = ({
               customerData[
                 normalizedKey
               ].balance +=
-                entry.amount;
+                Number(
+                  entry.amount ||
+                    0
+                );
             }
+
+
+            /* PAYMENT */
 
             if (
               entry.entryType ===
@@ -211,8 +234,14 @@ const KhataScreen = ({
               customerData[
                 normalizedKey
               ].balance -=
-                entry.amount;
+                Number(
+                  entry.amount ||
+                    0
+                );
             }
+
+
+            /* PHONE */
 
             if (
               entry.customerPhone
@@ -223,6 +252,9 @@ const KhataScreen = ({
                 entry.customerPhone;
             }
 
+
+            /* HISTORY */
+
             if (
               customerData[
                 normalizedKey
@@ -232,11 +264,18 @@ const KhataScreen = ({
               customerData[
                 normalizedKey
               ].history.push({
-                id: entry.id,
+                id:
+                  entry.id,
+
                 amount:
-                  entry.amount,
+                  Number(
+                    entry.amount ||
+                      0
+                  ),
+
                 type:
                   entry.entryType,
+
                 date:
                   entry.createdAt ||
                   Date.now(),
@@ -245,37 +284,41 @@ const KhataScreen = ({
           }
         );
 
+
         Object.values(
           customerData
-        ).forEach(customer => {
-          customer.history.sort(
-            (a, b) =>
-              b.date - a.date
-          );
-        });
+        ).forEach(
+          customer => {
+            customer.history.sort(
+              (a, b) =>
+                b.date -
+                a.date
+            );
+          }
+        );
 
-        /*
-         * Keep zero-balance customers visible.
-         * Highest debt appears first.
-         */
+
         const sortedCustomers =
           Object.values(
             customerData
-          ).sort((a, b) => {
-            if (
-              b.balance !==
-              a.balance
-            ) {
-              return (
-                b.balance -
+          ).sort(
+            (a, b) => {
+              if (
+                b.balance !==
                 a.balance
+              ) {
+                return (
+                  b.balance -
+                  a.balance
+                );
+              }
+
+              return a.name.localeCompare(
+                b.name
               );
             }
+          );
 
-            return a.name.localeCompare(
-              b.name
-            );
-          });
 
         setCustomers(
           sortedCustomers
@@ -288,33 +331,30 @@ const KhataScreen = ({
       }
     };
 
-  useEffect(() => {
-    fetchKhata();
-    loadShopConfig();
-  }, []);
 
-  /*
-   * =====================================
-   * PULL TO REFRESH
-   * =====================================
-   */
+  /* ==========================================================
+     REFRESH
+     ========================================================== */
 
   const onRefresh =
     async () => {
-      setRefreshing(true);
+      setRefreshing(
+        true
+      );
 
       try {
         await fetchKhata();
       } finally {
-        setRefreshing(false);
+        setRefreshing(
+          false
+        );
       }
     };
 
-  /*
-   * =====================================
-   * SHOP CONFIG
-   * =====================================
-   */
+
+  /* ==========================================================
+     SHOP CONFIG
+     ========================================================== */
 
   const loadShopConfig =
     async () => {
@@ -333,8 +373,10 @@ const KhataScreen = ({
           name:
             name ||
             'Kirana Store',
+
           upiId:
-            upi || '',
+            upi ||
+            '',
         });
       } catch (error) {
         console.error(
@@ -344,90 +386,96 @@ const KhataScreen = ({
       }
     };
 
-  /*
-   * =====================================
-   * WHATSAPP REMINDER
-   * =====================================
-   */
 
-  const sendWhatsAppReminder = (
-    customerName,
-    balance,
-    phone
-  ) => {
-    let message =
-      `Namaste ${customerName} 🙏\n\n` +
-      `This is a gentle reminder that your pending Khata (Udhaar) balance at our store is *₹${balance}*.\n\n`;
+  /* ==========================================================
+     WHATSAPP REMINDER
+     ========================================================== */
 
-    if (shopConfig.upiId) {
-      const upiLink =
-        `upi://pay?pa=${shopConfig.upiId}` +
-        `&pn=${encodeURIComponent(
-          shopConfig.name
-        )}` +
-        `&am=${balance}` +
-        `&cu=INR`;
+  const sendWhatsAppReminder =
+    (
+      customerName,
+      balance,
+      phone
+    ) => {
+      let message =
+        `Namaste ${customerName} 🙏\n\n` +
+        `This is a gentle reminder that your pending Khata balance at ${shopConfig.name} is *₹${balance}*.\n\n`;
+
+
+      if (
+        shopConfig.upiId
+      ) {
+        const upiLink =
+          `upi://pay?pa=${shopConfig.upiId}` +
+          `&pn=${encodeURIComponent(
+            shopConfig.name
+          )}` +
+          `&am=${balance}` +
+          `&cu=INR`;
+
+        message +=
+          `*Pay instantly via UPI:* 👇\n` +
+          `${upiLink}\n\n` +
+          `Or manually pay to UPI ID: ${shopConfig.upiId}\n\n`;
+      } else {
+        message +=
+          `Please visit the store to clear your dues.\n\n`;
+      }
+
 
       message +=
-        `*Pay instantly via UPI:* 👇\n` +
-        `${upiLink}\n\n` +
-        `Or manually pay to UPI ID: ${shopConfig.upiId}\n\n`;
-    } else {
-      message +=
-        `Please visit the store to clear your dues.\n\n`;
-    }
+        `Thank you from ${shopConfig.name}!`;
 
-    message +=
-      `Thank you from ${shopConfig.name}!\n\n`;
 
-    message +=
-      `---\n` +
-      `Sent via StoreMate — The Free AI Operating System for Shops. ` +
-      `Click here to digitize your store: https://storemate.in/app`;
+      let formattedPhone =
+        String(
+          phone || ''
+        ).replace(
+          /\D/g,
+          ''
+        );
 
-    let formattedPhone =
-      phone.replace(
-        /\D/g,
-        ''
+
+      if (
+        formattedPhone.length ===
+        10
+      ) {
+        formattedPhone =
+          `91${formattedPhone}`;
+      }
+
+
+      const url =
+        `https://wa.me/${formattedPhone}` +
+        `?text=${encodeURIComponent(
+          message
+        )}`;
+
+
+      TelemetryService.trackEvent(
+        'whatsapp_reminder_sent',
+        'khata',
+        {
+          balance_amount:
+            balance,
+        }
       );
 
-    if (
-      formattedPhone.length ===
-      10
-    ) {
-      formattedPhone =
-        `91${formattedPhone}`;
-    }
 
-    const url =
-      `https://wa.me/${formattedPhone}` +
-      `?text=${encodeURIComponent(
-        message
-      )}`;
-
-    TelemetryService.trackEvent(
-      'whatsapp_reminder_sent',
-      'khata',
-      {
-        balance_amount:
-          balance,
-      }
-    );
-
-    Linking.openURL(url).catch(
-      () =>
+      Linking.openURL(
+        url
+      ).catch(() =>
         Alert.alert(
-          'Error',
-          'Could not open WhatsApp.'
+          'WhatsApp unavailable',
+          'Could not open WhatsApp on this device.'
         )
-    );
-  };
+      );
+    };
 
-  /*
-   * =====================================
-   * REMIND CUSTOMER
-   * =====================================
-   */
+
+  /* ==========================================================
+     REMIND CUSTOMER
+     ========================================================== */
 
   const handleRemindTap =
     customer => {
@@ -437,9 +485,10 @@ const KhataScreen = ({
       ) {
         return Alert.alert(
           'No Dues',
-          `${customer.name} has no pending dues to remind them about!`
+          `${customer.name} has no pending dues to remind them about.`
         );
       }
+
 
       if (
         customer.phone
@@ -464,11 +513,10 @@ const KhataScreen = ({
       }
     };
 
-  /*
-   * =====================================
-   * SAVE PHONE + SEND
-   * =====================================
-   */
+
+  /* ==========================================================
+     SAVE PHONE + SEND
+     ========================================================== */
 
   const savePhoneAndSend =
     async () => {
@@ -478,24 +526,31 @@ const KhataScreen = ({
           ''
         );
 
+
       if (
         cleanPhone.length <
         10
       ) {
         return Alert.alert(
-          'Invalid',
-          'Please enter a valid 10-digit number.'
+          'Invalid number',
+          'Please enter a valid 10-digit mobile number.'
         );
       }
 
+
       try {
-        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user
+        const ownerId =
+          await requireCurrentUserId();
+
 
         const existing =
           await database
             .get('ledger_entries')
             .query(
-              Q.where('owner_id', ownerId), // 🚀 Filter by owner_id
+              Q.where(
+                'owner_id',
+                ownerId
+              ),
               Q.where(
                 'customer_phone',
                 cleanPhone
@@ -503,32 +558,44 @@ const KhataScreen = ({
             )
             .fetch();
 
+
         const otherCustomer =
           existing.find(
             entry =>
-              entry.customerId
+              String(
+                entry.customerId ||
+                  ''
+              )
                 .trim()
                 .toLowerCase() !==
-              activeRemindCustomer.name
+              String(
+                activeRemindCustomer?.name ||
+                  ''
+              )
                 .trim()
                 .toLowerCase()
           );
+
 
         if (
           otherCustomer
         ) {
           return Alert.alert(
-            'Number in Use',
+            'Number already used',
             `This number already belongs to ${otherCustomer.customerId}.`
           );
         }
 
+
         const entryToUpdate =
           await database
-            .get('ledger_entries')
+            .get(
+              'ledger_entries'
+            )
             .find(
               activeRemindCustomer.entryId
             );
+
 
         await database.write(
           async () => {
@@ -544,9 +611,11 @@ const KhataScreen = ({
           }
         );
 
+
         setPhoneModalVisible(
           false
         );
+
 
         sendWhatsAppReminder(
           activeRemindCustomer.name,
@@ -554,20 +623,21 @@ const KhataScreen = ({
           cleanPhone
         );
 
+
         await fetchKhata();
       } catch (error) {
         Alert.alert(
           'Error saving number',
-          error.message
+          error?.message ||
+            'Unable to save the number.'
         );
       }
     };
 
-  /*
-   * =====================================
-   * PAYMENT
-   * =====================================
-   */
+
+  /* ==========================================================
+     PAYMENT
+     ========================================================== */
 
   const handlePayment =
     async () => {
@@ -576,18 +646,29 @@ const KhataScreen = ({
           paymentAmount
         );
 
+
       if (
         isNaN(amount) ||
         amount <= 0
       ) {
         return Alert.alert(
-          'Invalid Amount',
-          'Enter a valid number.'
+          'Invalid amount',
+          'Enter a valid payment amount.'
         );
       }
 
+
+      if (
+        !selectedCustomer
+      ) {
+        return;
+      }
+
+
       try {
-        const ownerId = await requireCurrentUserId(); // 🚀 Isolated by user
+        const ownerId =
+          await requireCurrentUserId();
+
 
         await database.write(
           async () => {
@@ -595,28 +676,32 @@ const KhataScreen = ({
               .get(
                 'ledger_entries'
               )
-              .create(entry => {
-                entry.ownerId = ownerId; // 🚀 Assign owner_id
+              .create(
+                entry => {
+                  entry.ownerId =
+                    ownerId;
 
-                entry.customerId =
-                  selectedCustomer.name;
+                  entry.customerId =
+                    selectedCustomer.name;
 
-                entry.amount =
-                  amount;
+                  entry.amount =
+                    amount;
 
-                entry.entryType =
-                  'PAYMENT';
+                  entry.entryType =
+                    'PAYMENT';
 
-                entry.isSynced =
-                  false;
+                  entry.isSynced =
+                    false;
 
-                entry.createdAt =
-                  Date.now();
+                  entry.createdAt =
+                    Date.now();
 
-                entry.customerPhone =
-                  selectedCustomer.phone ||
-                  '';
-              });
+                  entry.customerPhone =
+                    selectedCustomer.phone ||
+                    '';
+                }
+              );
+
 
             TelemetryService.trackEvent(
               'khata_payment_received',
@@ -629,10 +714,14 @@ const KhataScreen = ({
           }
         );
 
+
         Alert.alert(
-          '✅ Payment Logged',
-          `₹${amount} cleared for ${selectedCustomer.name}.`
+          'Payment Received',
+          `₹${amount.toFixed(
+            2
+          )} received from ${selectedCustomer.name}.`
         );
+
 
         setPaymentAmount(
           ''
@@ -642,20 +731,21 @@ const KhataScreen = ({
           null
         );
 
+
         await fetchKhata();
       } catch (error) {
         Alert.alert(
           'Database Error',
-          error.message
+          error?.message ||
+            'Could not record payment.'
         );
       }
     };
 
-  /*
-   * =====================================
-   * HISTORY
-   * =====================================
-   */
+
+  /* ==========================================================
+     HISTORY
+     ========================================================== */
 
   const openHistory =
     customer => {
@@ -668,11 +758,6 @@ const KhataScreen = ({
       );
     };
 
-  /*
-   * =====================================
-   * CLOSE HISTORY
-   * =====================================
-   */
 
   const closeHistory =
     () => {
@@ -680,188 +765,88 @@ const KhataScreen = ({
         false
       );
 
-      /*
-       * Clear the object after the
-       * modal closes rather than
-       * immediately.
-       */
-      setTimeout(() => {
-        setActiveCustomerHistory(
-          null
-        );
-      }, 250);
+      setTimeout(
+        () => {
+          setActiveCustomerHistory(
+            null
+          );
+        },
+        250
+      );
     };
 
-  /*
-   * =====================================
-   * SCREEN
-   * =====================================
-   */
 
-  return (
-    <View
-      style={[
-        styles.container,
-        {
-          paddingTop:
-            Math.max(
-              insets.top,
-              16
-            ),
+  /* ==========================================================
+     CUSTOMER CARD
+     ========================================================== */
 
-          paddingBottom:
-            Math.max(
-              insets.bottom,
-              16
-            ),
+  const renderCustomer =
+    ({
+      item,
+    }) => {
+      const isDue =
+        item.balance >
+        0;
 
-          paddingHorizontal:
-            horizontalPadding,
-        },
-      ]}
-    >
-      {/* ================================
-          HEADER
-          ================================= */}
+      const isAdvance =
+        item.balance <
+        0;
 
-      <View
-        style={
-          styles.headerRow
-        }
-      >
+      const isSettled =
+        item.balance ===
+        0;
+
+
+      return (
         <View
           style={
-            styles.headerTextWrap
+            styles.customerCard
           }
         >
-          <Text
-            style={
-              styles.header
-            }
-            numberOfLines={1}
-          >
-            Khata Register
-          </Text>
 
-          <Text
-            style={
-              styles.headerHinglish
-            }
-          >
-            Udhaar Book
-          </Text>
-        </View>
+          {/* CUSTOMER INFO */}
 
-        <TouchableOpacity
-          onPress={onClose}
-          style={
-            styles.closeBtn
-          }
-          activeOpacity={0.8}
-        >
-          <Text
+          <TouchableOpacity
             style={
-              styles.closeBtnText
+              styles.customerInfo
+            }
+            onPress={() =>
+              openHistory(
+                item
+              )
+            }
+            activeOpacity={
+              0.75
             }
           >
-            Back
-          </Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* ================================
-          CUSTOMER LIST
-          ================================= */}
-
-      {customers.length ===
-      0 ? (
-        <View
-          style={
-            styles.emptyState
-          }
-        >
-          <Text
-            style={
-              styles.emptyEmoji
-            }
-          >
-            🎉
-          </Text>
-
-          <Text
-            style={
-              styles.emptyText
-            }
-          >
-            No customers in your Khata yet.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={customers}
-          keyExtractor={item =>
-            item.name
-          }
-          showsVerticalScrollIndicator={
-            false
-          }
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[
-            styles.listContent,
-            {
-              /*
-               * The final customer card
-               * must remain above the
-               * Android navigation area.
-               */
-              paddingBottom:
-                Math.max(
-                  insets.bottom +
-                    24,
-                  40
-                ),
-            },
-          ]}
-          removeClippedSubviews={
-            true
-          }
-          initialNumToRender={
-            15
-          }
-          maxToRenderPerBatch={
-            10
-          }
-          windowSize={5}
-          refreshControl={
-            <RefreshControl
-              refreshing={
-                refreshing
-              }
-              onRefresh={
-                onRefresh
-              }
-              tintColor="#0C9C4C"
-            />
-          }
-          renderItem={({
-            item,
-          }) => (
             <View
               style={
-                styles.card
+                styles.customerTopRow
               }
             >
-              <TouchableOpacity
+              <View
                 style={
-                  styles.cardInfo
+                  styles.customerAvatar
                 }
-                onPress={() =>
-                  openHistory(
-                    item
+              >
+                <Text
+                  style={
+                    styles.customerAvatarText
+                  }
+                >
+                  {String(
+                    item.name ||
+                      'C'
                   )
-                }
-                activeOpacity={
-                  0.7
+                    .charAt(0)
+                    .toUpperCase()}
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.customerNameWrap
                 }
               >
                 <Text
@@ -875,109 +860,459 @@ const KhataScreen = ({
                   {item.name}
                 </Text>
 
-                {item.balance ===
-                0 ? (
+                {item.phone ? (
                   <Text
-                    style={[
-                      styles.customerBalance,
-                      {
-                        color:
-                          '#6B7280',
-                      },
-                    ]}
+                    style={
+                      styles.customerPhone
+                    }
                   >
-                    Settled (₹0.00)
+                    {item.phone}
                   </Text>
                 ) : (
                   <Text
-                    style={[
-                      styles.customerBalance,
-                      item.balance <
-                        0 && {
-                        color:
-                          '#0C9C4C',
-                      },
-                    ]}
+                    style={
+                      styles.noPhone
+                    }
                   >
-                    {item.balance <
-                    0
-                      ? `Advance: ₹${Math.abs(
-                          item.balance
-                        ).toFixed(
-                          2
-                        )}`
-                      : `Owes: ₹${item.balance.toFixed(
-                          2
-                        )}`}
+                    No phone added
                   </Text>
                 )}
-
-                <Text
-                  style={
-                    styles.viewHistoryHint
-                  }
-                >
-                  Tap to view history ›
-                </Text>
-              </TouchableOpacity>
-
-              <View
-                style={
-                  styles.actionRow
-                }
-              >
-                <TouchableOpacity
-                  style={
-                    styles.remindBtn
-                  }
-                  onPress={() =>
-                    handleRemindTap(
-                      item
-                    )
-                  }
-                  activeOpacity={
-                    0.8
-                  }
-                >
-                  <Text
-                    style={
-                      styles.remindBtnText
-                    }
-                  >
-                    🔔 Remind
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={
-                    styles.settleBtn
-                  }
-                  onPress={() =>
-                    setSelectedCustomer(
-                      item
-                    )
-                  }
-                  activeOpacity={
-                    0.85
-                  }
-                >
-                  <Text
-                    style={
-                      styles.settleBtnText
-                    }
-                  >
-                    Receive ₹
-                  </Text>
-                </TouchableOpacity>
               </View>
             </View>
-          )}
+
+
+            <View
+              style={
+                styles.balanceBlock
+              }
+            >
+              <Text
+                style={
+                  styles.balanceLabel
+                }
+              >
+                {isDue
+                  ? 'PENDING DUE'
+                  : isAdvance
+                  ? 'ADVANCE'
+                  : 'ACCOUNT SETTLED'}
+              </Text>
+
+              <Text
+                style={[
+                  styles.customerBalance,
+                  isDue &&
+                    styles.balanceDue,
+
+                  isAdvance &&
+                    styles.balanceAdvance,
+
+                  isSettled &&
+                    styles.balanceSettled,
+                ]}
+              >
+                ₹
+                {Math.abs(
+                  item.balance
+                ).toFixed(
+                  2
+                )}
+              </Text>
+            </View>
+
+
+            <View
+                  style={styles.customerInfo}
+                >
+                <Text
+                  style={styles.historyButtonText}
+                >
+                  View full history
+                </Text>
+
+                <Text
+                  style={styles.historyButtonArrow}
+                >
+                  →
+                </Text>
+              </View>
+
+          </TouchableOpacity>
+
+
+          {/* ACTIONS */}
+
+          <View
+            style={
+              styles.actionRow
+            }
+          >
+
+            <TouchableOpacity
+              style={[
+                styles.remindButton,
+
+                (!isDue ||
+                  !item.phone) &&
+                  styles.remindButtonSoft,
+              ]}
+              onPress={() =>
+                handleRemindTap(
+                  item
+                )
+              }
+              activeOpacity={
+                0.8
+              }
+            >
+              <Text
+                style={
+                  styles.remindIcon
+                }
+              >
+                🔔
+              </Text>
+
+              <Text
+                style={
+                  styles.remindText
+                }
+              >
+                Remind
+              </Text>
+            </TouchableOpacity>
+
+
+            <TouchableOpacity
+              style={
+                styles.receiveButton
+              }
+              onPress={() =>
+                setSelectedCustomer(
+                  item
+                )
+              }
+              activeOpacity={
+                0.85
+              }
+            >
+              <Text
+                style={
+                  styles.receiveText
+                }
+              >
+                Receive ₹
+              </Text>
+
+              <Text
+                style={
+                  styles.receiveArrow
+                }
+              >
+                →
+              </Text>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+      );
+    };
+
+
+  /* ==========================================================
+     MAIN UI
+     ========================================================== */
+
+  return (
+    <View
+      style={[
+        styles.container,
+        {
+          paddingTop:
+            Math.max(
+              insets.top,
+              14
+            ),
+
+          paddingBottom:
+            Math.max(
+              insets.bottom,
+              12
+            ),
+
+          paddingHorizontal:
+            horizontalPadding,
+        },
+      ]}
+    >
+
+      {/* ======================================================
+          HEADER
+          ====================================================== */}
+
+      <View
+        style={
+          styles.headerRow
+        }
+      >
+
+        <View
+          style={
+            styles.headerLeft
+          }
+        >
+
+          <View
+            style={
+              styles.headerBrandRow
+            }
+          >
+            <View
+              style={
+                styles.brandDot
+              }
+            />
+
+            <Text
+              style={
+                styles.brandText
+              }
+            >
+              COUNTR
+            </Text>
+          </View>
+
+          <Text
+            style={
+              styles.headerTitle
+            }
+          >
+            Khata
+          </Text>
+
+          <Text
+            style={
+              styles.headerSubtitle
+            }
+          >
+            Udhaar • Payments • History
+          </Text>
+
+        </View>
+
+
+        <TouchableOpacity
+          onPress={
+            onClose
+          }
+          style={
+            styles.closeButton
+          }
+          activeOpacity={
+            0.8
+          }
+        >
+          <Text
+            style={
+              styles.closeButtonText
+            }
+          >
+            Back
+          </Text>
+        </TouchableOpacity>
+
+      </View>
+
+
+      {/* ======================================================
+          SUMMARY
+          ====================================================== */}
+
+      <View
+        style={
+          styles.summaryCard
+        }
+      >
+
+        <View
+          style={
+            styles.summaryIcon
+          }
+        >
+          <Text
+            style={
+              styles.summaryIconText
+            }
+          >
+            ₹
+          </Text>
+        </View>
+
+        <View
+          style={
+            styles.summaryText
+          }
+        >
+          <Text
+            style={
+              styles.summaryLabel
+            }
+          >
+            KHATA REGISTER
+          </Text>
+
+          <Text
+            style={
+              styles.summaryTitle
+            }
+          >
+            {customers.length}{' '}
+            {customers.length ===
+            1
+              ? 'customer'
+              : 'customers'}
+          </Text>
+        </View>
+
+        <View
+          style={
+            styles.summaryLive
+          }
+        >
+          <View
+            style={
+              styles.summaryLiveDot
+            }
+          />
+
+          <Text
+            style={
+              styles.summaryLiveText
+            }
+          >
+            LIVE
+          </Text>
+        </View>
+
+      </View>
+
+
+      {/* ======================================================
+          CUSTOMER LIST
+          ====================================================== */}
+
+      {customers.length ===
+      0 ? (
+
+        <View
+          style={
+            styles.emptyState
+          }
+        >
+          <View
+            style={
+              styles.emptyIcon
+            }
+          >
+            <Text
+              style={
+                styles.emptyEmoji
+              }
+            >
+              ✓
+            </Text>
+          </View>
+
+          <Text
+            style={
+              styles.emptyTitle
+            }
+          >
+            Khata is clear
+          </Text>
+
+          <Text
+            style={
+              styles.emptyText
+            }
+          >
+            No customers have been
+            added to your Khata yet.
+          </Text>
+        </View>
+
+      ) : (
+
+        <FlatList
+          data={
+            customers
+          }
+
+          keyExtractor={
+            item =>
+              item.name
+          }
+
+          showsVerticalScrollIndicator={
+            false
+          }
+
+          keyboardShouldPersistTaps="handled"
+
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingBottom:
+                Math.max(
+                  insets.bottom +
+                    24,
+                  40
+                ),
+            },
+          ]}
+
+          removeClippedSubviews={
+            true
+          }
+
+          initialNumToRender={
+            15
+          }
+
+          maxToRenderPerBatch={
+            10
+          }
+
+          windowSize={
+            5
+          }
+
+          refreshControl={
+            <RefreshControl
+              refreshing={
+                refreshing
+              }
+              onRefresh={
+                onRefresh
+              }
+              tintColor="#5B8D25"
+              colors={[
+                '#5B8D25',
+              ]}
+            />
+          }
+
+          renderItem={
+            renderCustomer
+          }
         />
+
       )}
 
-      {/* =================================================
-          TRANSACTION HISTORY MODAL
-          ================================================= */}
+
+      {/* ======================================================
+          HISTORY MODAL
+          ====================================================== */}
 
       <Modal
         visible={
@@ -990,6 +1325,7 @@ const KhataScreen = ({
           closeHistory
         }
       >
+
         <KeyboardAvoidingView
           style={
             styles.modalKeyboardContainer
@@ -1001,6 +1337,7 @@ const KhataScreen = ({
               : 'height'
           }
         >
+
           <View
             style={[
               styles.modalOverlay,
@@ -1016,6 +1353,7 @@ const KhataScreen = ({
               },
             ]}
           >
+
             <View
               style={[
                 styles.historyModalContent,
@@ -1028,16 +1366,19 @@ const KhataScreen = ({
                 },
               ]}
             >
+
               <View
                 style={
                   styles.historyHeaderRow
                 }
               >
+
                 <View
                   style={
                     styles.historyHeaderText
                   }
                 >
+
                   <Text
                     style={
                       styles.modalTitle
@@ -1046,9 +1387,8 @@ const KhataScreen = ({
                       2
                     }
                   >
-                    {
-                      activeCustomerHistory?.name
-                    }
+                    {activeCustomerHistory?.name ||
+                      'Customer'}
                     's Khata
                   </Text>
 
@@ -1061,19 +1401,17 @@ const KhataScreen = ({
                     }
                   >
                     📞{' '}
-                    {activeCustomerHistory?.phone
-                      ? activeCustomerHistory.phone
-                      : 'No phone number added'}
+                    {activeCustomerHistory?.phone ||
+                      'No phone number added'}
                   </Text>
 
                   <Text
                     style={[
                       styles.historySubtitle,
+
                       activeCustomerHistory?.balance <
-                        0 && {
-                        color:
-                          '#0C9C4C',
-                      },
+                        0 &&
+                        styles.historyAdvance,
                     ]}
                   >
                     {activeCustomerHistory?.balance <
@@ -1090,14 +1428,16 @@ const KhataScreen = ({
                           2
                         )}`}
                   </Text>
+
                 </View>
+
 
                 <TouchableOpacity
                   onPress={
                     closeHistory
                   }
                   style={
-                    styles.closeCircleBtn
+                    styles.closeCircleButton
                   }
                   activeOpacity={
                     0.8
@@ -1105,55 +1445,105 @@ const KhataScreen = ({
                 >
                   <Text
                     style={
-                      styles.closeCircleBtnText
+                      styles.closeCircleText
                     }
                   >
-                    ✕
+                    ×
                   </Text>
                 </TouchableOpacity>
+
               </View>
+
 
               <FlatList
                 data={
                   activeCustomerHistory?.history ||
                   []
                 }
+
                 keyExtractor={(
                   item,
                   index
                 ) =>
                   `${item.id}-${index}`
                 }
+
                 showsVerticalScrollIndicator={
                   false
                 }
+
                 keyboardShouldPersistTaps="handled"
+
                 removeClippedSubviews={
                   true
                 }
+
                 initialNumToRender={
                   15
                 }
+
                 maxToRenderPerBatch={
                   10
                 }
-                windowSize={5}
+
+                windowSize={
+                  5
+                }
+
                 contentContainerStyle={{
-                  paddingBottom: 12,
+                  paddingBottom:
+                    12,
                 }}
+
+                ListEmptyComponent={
+                  <View
+                    style={
+                      styles.historyEmpty
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.historyEmptyText
+                      }
+                    >
+                      No transactions found.
+                    </Text>
+                  </View>
+                }
+
                 renderItem={({
                   item,
                 }) => (
+
                   <View
                     style={
                       styles.historyRow
                     }
                   >
+
+                    <View
+                      style={
+                        styles.historyTimeline
+                      }
+                    >
+                      <View
+                        style={[
+                          styles.historyDot,
+
+                          item.type ===
+                            'PAYMENT' &&
+                            styles.historyDotPayment,
+                        ]}
+                      />
+                    </View>
+
+
                     <View
                       style={
                         styles.historyInfo
                       }
                     >
+
                       <Text
                         style={
                           item.type ===
@@ -1166,9 +1556,9 @@ const KhataScreen = ({
                         'CREDIT'
                           ? item.amount ===
                             0
-                            ? '🟢 Account Created'
-                            : '🔴 Udhar (Credit)'
-                          : '🟢 Paid (Received)'}
+                            ? 'Account Created'
+                            : 'Udhar Added'
+                          : 'Payment Received'}
                       </Text>
 
                       <Text
@@ -1181,15 +1571,26 @@ const KhataScreen = ({
                         ).toLocaleDateString(
                           'en-IN',
                           {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
+                            day:
+                              'numeric',
+
+                            month:
+                              'short',
+
+                            year:
+                              'numeric',
+
+                            hour:
+                              '2-digit',
+
+                            minute:
+                              '2-digit',
                           }
                         )}
                       </Text>
+
                     </View>
+
 
                     <Text
                       style={
@@ -1210,17 +1611,23 @@ const KhataScreen = ({
                         2
                       )}
                     </Text>
+
                   </View>
                 )}
               />
+
             </View>
+
           </View>
+
         </KeyboardAvoidingView>
+
       </Modal>
 
-      {/* =================================================
-          PHONE POPUP MODAL
-          ================================================= */}
+
+      {/* ======================================================
+          PHONE MODAL
+          ====================================================== */}
 
       <Modal
         visible={
@@ -1235,6 +1642,7 @@ const KhataScreen = ({
           )
         }
       >
+
         <KeyboardAvoidingView
           style={
             styles.modalKeyboardContainer
@@ -1246,6 +1654,7 @@ const KhataScreen = ({
               : 'height'
           }
         >
+
           <View
             style={[
               styles.modalOverlay,
@@ -1261,6 +1670,7 @@ const KhataScreen = ({
               },
             ]}
           >
+
             <View
               style={[
                 styles.modalContent,
@@ -1270,6 +1680,21 @@ const KhataScreen = ({
                 },
               ]}
             >
+
+              <View
+                style={
+                  styles.modalIcon
+                }
+              >
+                <Text
+                  style={
+                    styles.modalIconText
+                  }
+                >
+                  📱
+                </Text>
+              </View>
+
               <Text
                 style={
                   styles.modalTitle
@@ -1283,21 +1708,31 @@ const KhataScreen = ({
                   styles.modalSubtitle
                 }
               >
-                We don't have a number for{' '}
-                {
-                  activeRemindCustomer?.name
-                }
-                . Add it once to send automatic reminders.
+                Add a mobile number for{' '}
+                <Text
+                  style={
+                    styles.modalStrong
+                  }
+                >
+                  {
+                    activeRemindCustomer?.name
+                  }
+                </Text>
+                . Countr will use it
+                to send a WhatsApp
+                Khata reminder.
               </Text>
 
               <TextInput
                 style={
                   styles.input
                 }
-                placeholder="10-digit Mobile Number"
-                placeholderTextColor="#9CA3AF"
+                placeholder="10-digit mobile number"
+                placeholderTextColor="#9AA39D"
                 keyboardType="phone-pad"
-                maxLength={10}
+                maxLength={
+                  10
+                }
                 value={
                   newPhoneInput
                 }
@@ -1318,9 +1753,10 @@ const KhataScreen = ({
                   styles.modalBtnRow
                 }
               >
+
                 <TouchableOpacity
                   style={
-                    styles.cancelBtn
+                    styles.cancelButton
                   }
                   onPress={() =>
                     setPhoneModalVisible(
@@ -1333,16 +1769,17 @@ const KhataScreen = ({
                 >
                   <Text
                     style={
-                      styles.cancelBtnText
+                      styles.cancelButtonText
                     }
                   >
                     Cancel
                   </Text>
                 </TouchableOpacity>
 
+
                 <TouchableOpacity
                   style={
-                    styles.confirmBtn
+                    styles.confirmButton
                   }
                   onPress={
                     savePhoneAndSend
@@ -1353,21 +1790,35 @@ const KhataScreen = ({
                 >
                   <Text
                     style={
-                      styles.confirmBtnText
+                      styles.confirmButtonText
                     }
                   >
                     Save & Send
                   </Text>
+
+                  <Text
+                    style={
+                      styles.confirmButtonArrow
+                    }
+                  >
+                    →
+                  </Text>
                 </TouchableOpacity>
+
               </View>
+
             </View>
+
           </View>
+
         </KeyboardAvoidingView>
+
       </Modal>
 
-      {/* =================================================
+
+      {/* ======================================================
           PAYMENT MODAL
-          ================================================= */}
+          ====================================================== */}
 
       <Modal
         visible={
@@ -1386,6 +1837,7 @@ const KhataScreen = ({
           );
         }}
       >
+
         <KeyboardAvoidingView
           style={
             styles.modalKeyboardContainer
@@ -1397,6 +1849,7 @@ const KhataScreen = ({
               : 'height'
           }
         >
+
           <View
             style={[
               styles.modalOverlay,
@@ -1412,6 +1865,7 @@ const KhataScreen = ({
               },
             ]}
           >
+
             <View
               style={[
                 styles.modalContent,
@@ -1421,12 +1875,27 @@ const KhataScreen = ({
                 },
               ]}
             >
+
+              <View
+                style={
+                  styles.modalIconGreen
+                }
+              >
+                <Text
+                  style={
+                    styles.modalIconGreenText
+                  }
+                >
+                  ₹
+                </Text>
+              </View>
+
               <Text
                 style={
                   styles.modalTitle
                 }
               >
-                Settle Account
+                Receive Payment
               </Text>
 
               <Text
@@ -1440,21 +1909,29 @@ const KhataScreen = ({
                       selectedCustomer.balance
                     ).toFixed(
                       2
-                    )} in advance`
+                    )} in advance.`
                   : `${selectedCustomer?.name} owes ₹${Number(
                       selectedCustomer?.balance ||
                         0
                     ).toFixed(
                       2
-                    )}`}
+                    )}.`}
+              </Text>
+
+              <Text
+                style={
+                  styles.amountLabel
+                }
+              >
+                AMOUNT RECEIVED
               </Text>
 
               <TextInput
                 style={
-                  styles.input
+                  styles.amountInput
                 }
-                placeholder="Amount Received (₹)"
-                placeholderTextColor="#9CA3AF"
+                placeholder="₹ 0.00"
+                placeholderTextColor="#A1AAA4"
                 keyboardType="decimal-pad"
                 value={
                   paymentAmount
@@ -1470,9 +1947,10 @@ const KhataScreen = ({
                   styles.modalBtnRow
                 }
               >
+
                 <TouchableOpacity
                   style={
-                    styles.cancelBtn
+                    styles.cancelButton
                   }
                   onPress={() => {
                     setSelectedCustomer(
@@ -1489,16 +1967,17 @@ const KhataScreen = ({
                 >
                   <Text
                     style={
-                      styles.cancelBtnText
+                      styles.cancelButtonText
                     }
                   >
                     Cancel
                   </Text>
                 </TouchableOpacity>
 
+
                 <TouchableOpacity
                   style={
-                    styles.confirmBtn
+                    styles.confirmButton
                   }
                   onPress={
                     handlePayment
@@ -1509,28 +1988,57 @@ const KhataScreen = ({
                 >
                   <Text
                     style={
-                      styles.confirmBtnText
+                      styles.confirmButtonText
                     }
                   >
                     Confirm Payment
                   </Text>
+
+                  <Text
+                    style={
+                      styles.confirmButtonArrow
+                    }
+                  >
+                    →
+                  </Text>
                 </TouchableOpacity>
+
               </View>
+
             </View>
+
           </View>
+
         </KeyboardAvoidingView>
+
       </Modal>
+
     </View>
   );
 };
 
+
+/* ============================================================
+   STYLES — COUNTR WHITE THEME
+   ============================================================ */
+
 const styles =
   StyleSheet.create({
+
+    /* ========================================================
+       MAIN
+       ======================================================== */
+
     container: {
       flex: 1,
       backgroundColor:
-        '#F5F7F6',
+        '#F5F7F5',
     },
+
+
+    /* ========================================================
+       HEADER
+       ======================================================== */
 
     headerRow: {
       flexDirection:
@@ -1542,155 +2050,345 @@ const styles =
       alignItems:
         'center',
 
-      marginBottom: 20,
+      marginBottom: 18,
     },
 
-    headerTextWrap: {
+    headerLeft: {
       flex: 1,
-      marginRight: 12,
+      minWidth: 0,
     },
 
-    header: {
-      fontSize: 24,
-      color: '#1B1F23',
-      fontWeight: '800',
-    },
-
-    headerHinglish: {
-      color: '#9CA3AF',
-      fontSize: 13,
-      fontStyle: 'italic',
-      marginTop: 1,
-    },
-
-    closeBtn: {
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-
-      backgroundColor:
-        '#FFFFFF',
-
-      borderRadius: 8,
-
-      borderWidth: 1,
-
-      borderColor:
-        '#EAECEC',
-    },
-
-    closeBtnText: {
-      color: '#1B1F23',
-      fontWeight: '600',
-    },
-
-    closeCircleBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-
-      backgroundColor:
-        '#F5F7F6',
-
-      alignItems:
-        'center',
-
-      justifyContent:
-        'center',
-
-      marginLeft: 12,
-    },
-
-    closeCircleBtnText: {
-      color: '#1B1F23',
-      fontWeight: '700',
-      fontSize: 16,
-    },
-
-    emptyState: {
-      flex: 1,
-
-      justifyContent:
-        'center',
-
-      alignItems:
-        'center',
-
-      paddingHorizontal: 20,
-    },
-
-    emptyEmoji: {
-      fontSize: 40,
-      marginBottom: 10,
-    },
-
-    emptyText: {
-      color: '#1B1F23',
-      fontSize: 17,
-      fontWeight: '600',
-      textAlign: 'center',
-    },
-
-    listContent: {
-      paddingTop: 2,
-    },
-
-    card: {
+    headerBrandRow: {
       flexDirection:
         'row',
 
-      justifyContent:
-        'space-between',
-
       alignItems:
         'center',
+
+      marginBottom: 3,
+    },
+
+    brandDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 7,
+      backgroundColor:
+        '#7CAD32',
+      marginRight: 6,
+    },
+
+    brandText: {
+      color: '#5D8E28',
+      fontSize: 9,
+      fontWeight: '900',
+      letterSpacing: 2,
+    },
+
+    headerTitle: {
+      color: '#142019',
+      fontSize: 26,
+      lineHeight: 30,
+      fontWeight: '900',
+      letterSpacing: -0.8,
+    },
+
+    headerSubtitle: {
+      color: '#7D8780',
+      fontSize: 11,
+      marginTop: 2,
+    },
+
+    closeButton: {
+      height: 40,
+      minWidth: 62,
+      paddingHorizontal: 15,
+      borderRadius: 13,
 
       backgroundColor:
         '#FFFFFF',
 
-      padding: 18,
+      borderWidth: 1,
 
-      borderRadius: 14,
+      borderColor:
+        '#E0E5E1',
 
-      marginBottom: 12,
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+    },
+
+    closeButtonText: {
+      color: '#27332C',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+
+
+    /* ========================================================
+       SUMMARY
+       ======================================================== */
+
+    summaryCard: {
+      minHeight: 76,
+
+      paddingHorizontal: 15,
+      paddingVertical: 13,
+
+      borderRadius: 20,
+
+      backgroundColor:
+        '#FFFFFF',
 
       borderWidth: 1,
 
       borderColor:
-        '#EAECEC',
+        '#DFE6DF',
 
-      /*
-       * Prevent action buttons from
-       * getting squeezed on narrow
-       * devices.
-       */
-      minHeight: 90,
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      marginBottom: 12,
+
+      shadowColor:
+        '#102015',
+
+      shadowOffset: {
+        width: 0,
+        height: 3,
+      },
+
+      shadowOpacity:
+        0.04,
+
+      shadowRadius:
+        10,
+
+      elevation: 1,
     },
 
-    cardInfo: {
+    summaryIcon: {
+      width: 46,
+      height: 46,
+      borderRadius: 15,
+
+      backgroundColor:
+        '#B8FF3D',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 12,
+    },
+
+    summaryIconText: {
+      color: '#102015',
+      fontSize: 21,
+      fontWeight: '900',
+    },
+
+    summaryText: {
       flex: 1,
-      paddingRight: 10,
+    },
+
+    summaryLabel: {
+      color: '#8A938D',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 1.5,
+      marginBottom: 3,
+    },
+
+    summaryTitle: {
+      color: '#17231B',
+      fontSize: 15,
+      fontWeight: '900',
+    },
+
+    summaryLive: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+
+      borderRadius: 9,
+
+      backgroundColor:
+        '#EFF8E9',
+    },
+
+    summaryLiveDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 5,
+
+      backgroundColor:
+        '#64A52B',
+
+      marginRight: 5,
+    },
+
+    summaryLiveText: {
+      color: '#5C8D28',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 0.8,
+    },
+
+
+    /* ========================================================
+       LIST
+       ======================================================== */
+
+    listContent: {
+      paddingTop: 1,
+    },
+
+    customerCard: {
+      backgroundColor:
+        '#FFFFFF',
+
+      borderRadius: 20,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#E0E6E0',
+
+      padding: 15,
+
+      marginBottom: 11,
+
+      shadowColor:
+        '#102015',
+
+      shadowOffset: {
+        width: 0,
+        height: 3,
+      },
+
+      shadowOpacity:
+        0.035,
+
+      shadowRadius:
+        9,
+
+      elevation: 1,
+    },
+
+    customerInfo: {
+      minWidth: 0,
+    },
+
+    customerTopRow: {
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+    },
+
+    customerAvatar: {
+      width: 43,
+      height: 43,
+      borderRadius: 14,
+
+      backgroundColor:
+        '#EEF4EA',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 11,
+    },
+
+    customerAvatarText: {
+      color: '#5D8E28',
+      fontSize: 17,
+      fontWeight: '900',
+    },
+
+    customerNameWrap: {
+      flex: 1,
       minWidth: 0,
     },
 
     customerName: {
-      color: '#1B1F23',
-      fontSize: 17,
-      fontWeight: '700',
-      marginBottom: 4,
+      color: '#17231B',
+      fontSize: 15,
+      fontWeight: '900',
+    },
+
+    customerPhone: {
+      color: '#8A938D',
+      fontSize: 10,
+      marginTop: 3,
+    },
+
+    noPhone: {
+      color: '#B0B7B2',
+      fontSize: 10,
+      marginTop: 3,
+    },
+
+    balanceBlock: {
+      alignItems:
+        'flex-end',
+
+      marginTop: 14,
+    },
+
+    balanceLabel: {
+      color: '#909992',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 1.2,
+      marginBottom: 2,
     },
 
     customerBalance: {
-      color: '#E0433B',
-      fontSize: 15,
-      fontWeight: '700',
+      fontSize: 21,
+      fontWeight: '900',
+      letterSpacing: -0.5,
     },
 
-    viewHistoryHint: {
-      color: '#0C9C4C',
-      fontSize: 12,
-      marginTop: 6,
-      fontWeight: '600',
+    balanceDue: {
+      color: '#D6534D',
     },
+
+    balanceAdvance: {
+      color: '#159457',
+    },
+
+    balanceSettled: {
+      color: '#68736C',
+    },
+
+    historyHint: {
+      color: '#719D39',
+      fontSize: 10,
+      fontWeight: '800',
+      marginTop: 8,
+    },
+
+
+    /* ========================================================
+       ACTIONS
+       ======================================================== */
 
     actionRow: {
       flexDirection:
@@ -1699,53 +2397,153 @@ const styles =
       alignItems:
         'center',
 
-      flexShrink: 0,
+      marginTop: 14,
+
+      paddingTop: 13,
+
+      borderTopWidth: 1,
+
+      borderTopColor:
+        '#EEF1EE',
     },
 
-    remindBtn: {
+    remindButton: {
+      flex: 1,
+
+      minHeight: 45,
+
+      borderRadius: 13,
+
       backgroundColor:
-        '#F5F7F6',
-
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-
-      borderRadius: 8,
+        '#F0F4EE',
 
       borderWidth: 1,
 
       borderColor:
-        '#EAECEC',
+        '#DDE5DA',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      flexDirection:
+        'row',
 
       marginRight: 8,
     },
 
-    remindBtnText: {
-      color: '#1B1F23',
-      fontWeight: '600',
-      fontSize: 13,
-    },
-
-    settleBtn: {
+    remindButtonSoft: {
       backgroundColor:
-        '#0C9C4C',
+        '#F6F7F6',
 
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-
-      borderRadius: 8,
+      borderColor:
+        '#E7EAE7',
     },
 
-    settleBtnText: {
-      color: '#fff',
-      fontWeight: '700',
+    remindIcon: {
       fontSize: 13,
+      marginRight: 5,
     },
 
-    /*
-     * ==============================
-     * MODAL SYSTEM
-     * ==============================
-     */
+    remindText: {
+      color: '#3B473F',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+
+    receiveButton: {
+      flex: 1,
+
+      minHeight: 45,
+
+      borderRadius: 13,
+
+      backgroundColor:
+        '#B8FF3D',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      flexDirection:
+        'row',
+    },
+
+    receiveText: {
+      color: '#102015',
+      fontSize: 12,
+      fontWeight: '900',
+    },
+
+    receiveArrow: {
+      color: '#102015',
+      fontSize: 17,
+      fontWeight: '900',
+      marginLeft: 6,
+    },
+
+
+    /* ========================================================
+       EMPTY STATE
+       ======================================================== */
+
+    emptyState: {
+      flex: 1,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      paddingHorizontal: 35,
+    },
+
+    emptyIcon: {
+      width: 70,
+      height: 70,
+      borderRadius: 23,
+
+      backgroundColor:
+        '#EAF6E2',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginBottom: 15,
+    },
+
+    emptyEmoji: {
+      color: '#6C9D35',
+      fontSize: 27,
+      fontWeight: '900',
+    },
+
+    emptyTitle: {
+      color: '#17231B',
+      fontSize: 19,
+      fontWeight: '900',
+      marginBottom: 6,
+    },
+
+    emptyText: {
+      color: '#7B857E',
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
+
+
+    /* ========================================================
+       MODAL BASE
+       ======================================================== */
 
     modalKeyboardContainer: {
       flex: 1,
@@ -1755,7 +2553,7 @@ const styles =
       flex: 1,
 
       backgroundColor:
-        'rgba(27,31,35,0.55)',
+        'rgba(20,32,25,0.38)',
 
       justifyContent:
         'center',
@@ -1768,57 +2566,152 @@ const styles =
       backgroundColor:
         '#FFFFFF',
 
-      padding: 25,
+      padding: 22,
 
-      borderRadius: 16,
+      borderRadius: 24,
 
       borderWidth: 1,
 
       borderColor:
-        '#EAECEC',
+        '#DFE6DF',
 
-      /*
-       * Width is supplied dynamically
-       * so this works on small phones,
-       * large phones and tablets.
-       */
+      shadowColor:
+        '#102015',
+
+      shadowOffset: {
+        width: 0,
+        height: 12,
+      },
+
+      shadowOpacity:
+        0.15,
+
+      shadowRadius:
+        25,
+
+      elevation: 8,
+    },
+
+    modalIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 15,
+
+      backgroundColor:
+        '#EEF4EA',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginBottom: 14,
+    },
+
+    modalIconText: {
+      fontSize: 20,
+    },
+
+    modalIconGreen: {
+      width: 48,
+      height: 48,
+      borderRadius: 15,
+
+      backgroundColor:
+        '#B8FF3D',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginBottom: 14,
+    },
+
+    modalIconGreenText: {
+      color: '#102015',
+      fontSize: 21,
+      fontWeight: '900',
     },
 
     modalTitle: {
-      color: '#1B1F23',
-      fontSize: 20,
-      fontWeight: '800',
-      marginBottom: 5,
+      color: '#142019',
+      fontSize: 21,
+      fontWeight: '900',
+      letterSpacing: -0.4,
+      marginBottom: 6,
     },
 
     modalSubtitle: {
-      color: '#6B7280',
-      fontSize: 14,
-      marginBottom: 20,
-      lineHeight: 20,
+      color: '#748078',
+      fontSize: 12,
+      lineHeight: 18,
+      marginBottom: 17,
+    },
+
+    modalStrong: {
+      color: '#29362E',
+      fontWeight: '900',
     },
 
     input: {
       backgroundColor:
-        '#F5F7F6',
+        '#F7F9F6',
 
-      color: '#1B1F23',
+      color: '#142019',
 
       paddingHorizontal: 15,
       paddingVertical: 14,
 
-      borderRadius: 10,
+      borderRadius: 14,
 
       borderWidth: 1,
 
       borderColor:
-        '#EAECEC',
+        '#DDE4DD',
 
-      marginBottom: 20,
+      marginBottom: 18,
 
-      fontSize: 18,
+      fontSize: 16,
 
       minHeight: 52,
+
+      fontWeight: '700',
+    },
+
+    amountLabel: {
+      color: '#87918A',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 1.5,
+      marginBottom: 6,
+    },
+
+    amountInput: {
+      backgroundColor:
+        '#F7F9F6',
+
+      color: '#142019',
+
+      paddingHorizontal: 15,
+      paddingVertical: 13,
+
+      borderRadius: 14,
+
+      borderWidth: 1,
+
+      borderColor:
+        '#DDE4DD',
+
+      marginBottom: 18,
+
+      fontSize: 25,
+
+      minHeight: 58,
+
+      fontWeight: '900',
     },
 
     modalBtnRow: {
@@ -1830,66 +2723,94 @@ const styles =
 
       alignItems:
         'center',
-
-      flexWrap:
-        'wrap',
     },
 
-    cancelBtn: {
-      paddingVertical: 12,
-      paddingHorizontal: 8,
+    cancelButton: {
+      minHeight: 46,
 
-      marginRight: 10,
-    },
+      paddingHorizontal: 14,
 
-    cancelBtnText: {
-      color: '#6B7280',
-      fontSize: 15,
-      fontWeight: '700',
-    },
-
-    confirmBtn: {
-      backgroundColor:
-        '#0C9C4C',
-
-      paddingVertical: 14,
-      paddingHorizontal: 18,
-
-      borderRadius: 10,
-
-      minHeight: 48,
+      alignItems:
+        'center',
 
       justifyContent:
         'center',
 
+      marginRight: 6,
+    },
+
+    cancelButtonText: {
+      color: '#7A857E',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+
+    confirmButton: {
+      minHeight: 46,
+
+      paddingHorizontal: 17,
+
+      borderRadius: 13,
+
+      backgroundColor:
+        '#B8FF3D',
+
       alignItems:
         'center',
+
+      justifyContent:
+        'center',
+
+      flexDirection:
+        'row',
     },
 
-    confirmBtnText: {
-      color: '#fff',
-      fontSize: 15,
-      fontWeight: '700',
+    confirmButtonText: {
+      color: '#102015',
+      fontSize: 12,
+      fontWeight: '900',
     },
 
-    /*
-     * ==============================
-     * HISTORY MODAL
-     * ==============================
-     */
+    confirmButtonArrow: {
+      color: '#102015',
+      fontSize: 17,
+      fontWeight: '900',
+      marginLeft: 7,
+    },
+
+
+    /* ========================================================
+       HISTORY MODAL
+       ======================================================== */
 
     historyModalContent: {
       backgroundColor:
         '#FFFFFF',
 
-      padding: 25,
+      padding: 20,
 
-      borderRadius: 16,
+      borderRadius: 25,
 
       borderWidth: 1,
 
       borderColor:
-        '#EAECEC',
+        '#DFE6DF',
+
+      shadowColor:
+        '#102015',
+
+      shadowOffset: {
+        width: 0,
+        height: 12,
+      },
+
+      shadowOpacity:
+        0.15,
+
+      shadowRadius:
+        25,
+
+      elevation: 8,
     },
 
     historyHeaderRow: {
@@ -1905,11 +2826,11 @@ const styles =
       borderBottomWidth: 1,
 
       borderBottomColor:
-        '#EAECEC',
+        '#E9EDE9',
 
       paddingBottom: 15,
 
-      marginBottom: 15,
+      marginBottom: 10,
     },
 
     historyHeaderText: {
@@ -1917,74 +2838,133 @@ const styles =
       minWidth: 0,
     },
 
-    historySubtitle: {
-      color: '#E0433B',
-      fontSize: 15,
+    closeCircleButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 13,
+
+      backgroundColor:
+        '#F1F4F1',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginLeft: 10,
+    },
+
+    closeCircleText: {
+      color: '#39453E',
+      fontSize: 24,
+      lineHeight: 26,
+      fontWeight: '300',
+    },
+
+    customerPhoneText: {
+      color: '#7B857E',
+      fontSize: 11,
       fontWeight: '700',
       marginTop: 4,
     },
 
-    customerPhoneText: {
-      color: '#6B7280',
-      fontSize: 13,
-      fontWeight: '600',
-      marginTop: 4,
+    historySubtitle: {
+      color: '#D6534D',
+      fontSize: 14,
+      fontWeight: '900',
+      marginTop: 5,
+    },
+
+    historyAdvance: {
+      color: '#159457',
+    },
+
+    historyEmpty: {
+      paddingVertical: 35,
+      alignItems:
+        'center',
+    },
+
+    historyEmptyText: {
+      color: '#8A938D',
+      fontSize: 12,
     },
 
     historyRow: {
       flexDirection:
         'row',
 
-      justifyContent:
-        'space-between',
-
       alignItems:
         'center',
 
-      paddingVertical: 12,
+      paddingVertical: 13,
 
       borderBottomWidth: 1,
 
       borderBottomColor:
-        '#F5F7F6',
+        '#F0F2F0',
+    },
+
+    historyTimeline: {
+      width: 18,
+      alignItems:
+        'center',
+    },
+
+    historyDot: {
+      width: 9,
+      height: 9,
+      borderRadius: 9,
+
+      backgroundColor:
+        '#D6534D',
+    },
+
+    historyDotPayment: {
+      backgroundColor:
+        '#159457',
     },
 
     historyInfo: {
       flex: 1,
       minWidth: 0,
-      marginRight: 12,
+      marginLeft: 4,
+      marginRight: 10,
     },
 
     historyTypeCredit: {
-      color: '#E0433B',
-      fontSize: 14,
-      fontWeight: '700',
+      color: '#D6534D',
+      fontSize: 13,
+      fontWeight: '900',
       marginBottom: 4,
     },
 
     historyTypePayment: {
-      color: '#0C9C4C',
-      fontSize: 14,
-      fontWeight: '700',
+      color: '#159457',
+      fontSize: 13,
+      fontWeight: '900',
       marginBottom: 4,
     },
 
     historyDate: {
-      color: '#9CA3AF',
-      fontSize: 12,
+      color: '#9AA39D',
+      fontSize: 10,
     },
 
     historyAmountCredit: {
-      color: '#E0433B',
-      fontSize: 17,
-      fontWeight: '800',
+      color: '#D6534D',
+      fontSize: 16,
+      fontWeight: '900',
     },
 
     historyAmountPayment: {
-      color: '#0C9C4C',
-      fontSize: 17,
-      fontWeight: '800',
+      color: '#159457',
+      fontSize: 16,
+      fontWeight: '900',
     },
+
   });
+
 
 export default KhataScreen;
