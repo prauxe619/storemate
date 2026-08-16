@@ -30,6 +30,7 @@ import {
 import {
   checkForExistingBackup,
   restoreFromDrive,
+  restoreFromCloudBackup,
 } from '../services/BackupService';
 
 import TelemetryService from '../services/TelemetryService';
@@ -793,141 +794,382 @@ const LoginScreen = ({
    * =========================================================== */
 
   const checkAndPromptRestore =
-    async () => {
+  async () => {
 
-      try {
+    try {
 
-        const backupResult =
-          await checkForExistingBackup();
+      /*
+       * =====================================================
+       * PRIMARY RESTORE
+       * =====================================================
+       *
+       * PostgreSQL is now the primary StoreMate
+       * backup source.
+       *
+       * It restores:
+       *
+       * - Inventory
+       * - Khata
+       * - Sales
+       * - Profile
+       */
 
+      setIsLoading(true);
+
+
+      const cloudResult =
+        await restoreFromCloudBackup();
+
+
+      /*
+       * =====================================================
+       * CLOUD RESTORE SUCCESS
+       * =====================================================
+       */
+
+      if (
+        cloudResult?.success === true
+      ) {
+
+        const counts =
+          cloudResult.counts ||
+          {};
+
+
+        const inventoryCount =
+          counts.inventory || 0;
+
+        const ledgerCount =
+          counts.ledger || 0;
+
+        const salesCount =
+          counts.sales || 0;
+
+
+        const totalRestored =
+          inventoryCount +
+          ledgerCount +
+          salesCount;
+
+
+        /*
+         * No data on cloud means this is
+         * probably a genuinely new account.
+         */
 
         if (
-          backupResult?.found &&
-          backupResult?.fileId
+          totalRestored === 0
         ) {
 
-          const backupDate =
-            new Date(
-              backupResult.modifiedTime
-            ).toLocaleDateString(
-              'en-IN',
-              {
-
-                day:
-                  'numeric',
-
-                month:
-                  'short',
-
-                year:
-                  'numeric',
-
-                hour:
-                  '2-digit',
-
-                minute:
-                  '2-digit',
-
-              }
-            );
+          console.log(
+            '☁️ Cloud restore completed but no business data exists.'
+          );
 
 
-          Alert.alert(
+          onLoginSuccess();
 
-            'Backup found ☁️',
+          return;
 
-            `We found a Google Drive backup for your shop from ${backupDate}.\n\nWould you like to restore your records?`,
-
-            [
-
-              {
-                text:
-                  'Start Fresh',
-
-                style:
-                  'cancel',
-
-                onPress:
-                  () =>
-                    onLoginSuccess(),
-              },
+        }
 
 
-              {
-                text:
-                  'Restore Data',
+        Alert.alert(
 
-                onPress:
-                  async () => {
+          'Shop restored 🎉',
 
-                    setIsLoading(
-                      true
-                    );
+          `Your shop data has been restored.\n\n` +
+
+          `Inventory: ${inventoryCount}\n` +
+
+          `Khata: ${ledgerCount}\n` +
+
+          `Sales: ${salesCount}`,
+
+          [
+
+            {
+
+              text:
+                'Continue',
+
+              onPress:
+                () =>
+                  onLoginSuccess(),
+
+            },
+
+          ],
+
+          {
+            cancelable:
+              false,
+          }
+
+        );
 
 
-                    try {
+        return;
 
+      }
+
+
+      /*
+       * =====================================================
+       * CLOUD RESTORE FAILED
+       * =====================================================
+       *
+       * Do NOT immediately fail login.
+       *
+       * Try Google Drive as a fallback.
+       */
+
+      console.log(
+        '☁️ Cloud restore unavailable:',
+        cloudResult?.message
+      );
+
+
+      /*
+       * =====================================================
+       * GOOGLE DRIVE FALLBACK
+       * =====================================================
+       */
+
+      const backupResult =
+        await checkForExistingBackup();
+
+
+      if (
+        backupResult?.found &&
+        backupResult?.fileId
+      ) {
+
+        const backupDate =
+          backupResult.modifiedTime
+
+            ? new Date(
+                backupResult.modifiedTime
+              ).toLocaleString(
+                'en-IN',
+                {
+
+                  day:
+                    'numeric',
+
+                  month:
+                    'short',
+
+                  year:
+                    'numeric',
+
+                  hour:
+                    '2-digit',
+
+                  minute:
+                    '2-digit',
+
+                }
+              )
+
+            : 'an earlier date';
+
+
+        Alert.alert(
+
+          'Cloud backup unavailable',
+
+          `We couldn't restore from StoreMate Cloud.\n\n` +
+
+          `A Google Drive backup from ${backupDate} ` +
+
+          `is available instead.\n\n` +
+
+          `Would you like to restore it?`,
+
+          [
+
+            {
+
+              text:
+                'Start Fresh',
+
+              style:
+                'cancel',
+
+              onPress:
+                () =>
+                  onLoginSuccess(),
+
+            },
+
+
+            {
+
+              text:
+                'Restore Drive Backup',
+
+              onPress:
+                async () => {
+
+                  setIsLoading(true);
+
+
+                  try {
+
+                    const result =
                       await restoreFromDrive(
                         backupResult.fileId
                       );
 
 
-                      Alert.alert(
-                        'Restored 🎉',
-                        'Your shop records have been restored successfully.'
-                      );
-
-                    } catch (
-                      error
-                    ) {
-
-                      Alert.alert(
-
-                        'Restore warning',
-
-                        'Could not complete the full restore: ' +
-                          error.message
-
-                      );
-
-                    } finally {
-
-                      setIsLoading(
-                        false
-                      );
+                    const counts =
+                      result?.restoredCounts ||
+                      {};
 
 
-                      onLoginSuccess();
-                    }
-                  },
-              },
+                    Alert.alert(
 
-            ],
+                      'Restored 🎉',
 
-            {
-              cancelable:
-                false,
-            }
-          );
+                      `Your Google Drive backup has been restored.\n\n` +
 
-        } else {
+                      `Inventory: ${
+                        counts.inventory || 0
+                      }\n` +
 
-          onLoginSuccess();
-        }
+                      `Khata: ${
+                        counts.ledger || 0
+                      }\n` +
 
-      } catch (
-        error
-      ) {
+                      `Sales: ${
+                        counts.sales || 0
+                      }`,
 
-        console.log(
-          'Drive backup check skipped:',
-          error?.message
+                      [
+
+                        {
+
+                          text:
+                            'Continue',
+
+                          onPress:
+                            () =>
+                              onLoginSuccess(),
+
+                        },
+
+                      ],
+
+                      {
+                        cancelable:
+                          false,
+                      }
+
+                    );
+
+
+                  } catch (
+                    error
+                  ) {
+
+                    Alert.alert(
+
+                      'Restore unavailable',
+
+                      error?.message ||
+
+                      'We could not restore the Google Drive backup. Your account is still safe.',
+
+                      [
+
+                        {
+
+                          text:
+                            'Continue',
+
+                          onPress:
+                            () =>
+                              onLoginSuccess(),
+
+                        },
+
+                      ],
+
+                      {
+                        cancelable:
+                          false,
+                      }
+
+                    );
+
+                  } finally {
+
+                    setIsLoading(
+                      false
+                    );
+
+                  }
+
+                },
+
+            },
+
+          ],
+
+          {
+            cancelable:
+              false,
+          }
+
         );
 
 
-        onLoginSuccess();
+        return;
+
       }
-    };
+
+
+      /*
+       * =====================================================
+       * NO CLOUD DATA + NO DRIVE BACKUP
+       * =====================================================
+       */
+
+      console.log(
+        'No cloud or Google Drive backup found.'
+      );
+
+
+      onLoginSuccess();
+
+
+    } catch (
+      error
+    ) {
+
+      console.log(
+        'Restore flow skipped:',
+        error?.message || error
+      );
+
+
+      /*
+       * Restore failure must NEVER
+       * block login.
+       */
+
+      onLoginSuccess();
+
+
+    } finally {
+
+      setIsLoading(
+        false
+      );
+
+    }
+
+  };
 
 
   /* ===========================================================

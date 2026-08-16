@@ -708,6 +708,352 @@ def sync_data():
         }), 500
 
 
+@app.route('/api/sync/restore', methods=['GET'])
+@jwt_required()
+def restore_sync_data():
+    """
+    StoreMate cloud -> mobile restore.
+
+    Returns ONLY data belonging to the authenticated merchant.
+
+    Restores:
+        - Profile
+        - Inventory
+        - Khata / Ledger
+        - Sales
+
+    Security:
+        - JWT identifies the merchant.
+        - owner_id is determined by the server.
+        - No owner_id is accepted from the client.
+        - Password/hash information is NEVER returned.
+    """
+
+    try:
+
+        # =====================================================
+        # 1. AUTHENTICATED USER
+        # =====================================================
+
+        current_user_email = get_jwt_identity()
+
+        user = User.query.filter_by(
+            email=current_user_email
+        ).first()
+
+        if not user:
+            return jsonify({
+                "status": "error",
+                "error": "Unauthorized"
+            }), 401
+
+        owner_id = str(user.id)
+
+
+        # =====================================================
+        # 2. PROFILE
+        # =====================================================
+
+        profile = {
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.shop_name,
+            "shop_name": user.shop_name,
+            "phone": user.phone,
+            "role": user.role,
+            "is_active": user.is_active,
+        }
+
+
+        # =====================================================
+        # 3. INVENTORY
+        # =====================================================
+        #
+        # IMPORTANT:
+        # Only records belonging to THIS merchant.
+        #
+
+        inventory_records = (
+            InventoryItem.query
+            .filter(
+                InventoryItem.owner_id == owner_id
+            )
+            .order_by(
+                InventoryItem.updated_at.asc()
+            )
+            .all()
+        )
+
+
+        inventory = []
+
+        for item in inventory_records:
+
+            inventory.append({
+
+                "id": item.id,
+
+                "owner_id": owner_id,
+
+                "barcode": (
+                    item.barcode
+                    if item.barcode is not None
+                    else ""
+                ),
+
+                "product_name": (
+                    item.product_name
+                    if item.product_name is not None
+                    else ""
+                ),
+
+                "quantity": (
+                    float(item.quantity)
+                    if item.quantity is not None
+                    else 0
+                ),
+
+                "unit": (
+                    item.unit
+                    if item.unit
+                    else "PCS"
+                ),
+
+                "purchase_price": (
+                    float(item.purchase_price)
+                    if item.purchase_price is not None
+                    else 0
+                ),
+
+                "selling_price": (
+                    float(item.selling_price)
+                    if item.selling_price is not None
+                    else 0
+                ),
+
+                "category": (
+                    item.category
+                    if item.category is not None
+                    else None
+                ),
+
+                "image_url": (
+                    item.image_url
+                    if item.image_url is not None
+                    else None
+                ),
+
+                "is_synced": True,
+
+                "created_at": (
+                    int(item.created_at)
+                    if item.created_at is not None
+                    else None
+                ),
+
+                "updated_at": (
+                    int(item.updated_at)
+                    if item.updated_at is not None
+                    else None
+                ),
+            })
+
+
+        # =====================================================
+        # 4. KHATA / LEDGER
+        # =====================================================
+
+        ledger_records = (
+            LedgerEntry.query
+            .filter(
+                LedgerEntry.owner_id == owner_id
+            )
+            .order_by(
+                LedgerEntry.created_at.asc()
+            )
+            .all()
+        )
+
+
+        ledger = []
+
+        for entry in ledger_records:
+
+            ledger.append({
+
+                "id": entry.id,
+
+                "owner_id": owner_id,
+
+                "customer_id": (
+                    entry.customer_id
+                    if entry.customer_id is not None
+                    else ""
+                ),
+
+                "amount": (
+                    float(entry.amount)
+                    if entry.amount is not None
+                    else 0
+                ),
+
+                "entry_type": (
+                    entry.entry_type
+                    if entry.entry_type is not None
+                    else ""
+                ),
+
+                "customer_phone": (
+                    entry.customer_phone
+                    if entry.customer_phone is not None
+                    else None
+                ),
+
+                "note": (
+                    entry.note
+                    if entry.note is not None
+                    else None
+                ),
+
+                "is_synced": True,
+
+                "created_at": (
+                    int(entry.created_at)
+                    if entry.created_at is not None
+                    else None
+                ),
+            })
+
+
+        # =====================================================
+        # 5. SALES
+        # =====================================================
+
+        sales_records = (
+            SalesTransaction.query
+            .filter(
+                SalesTransaction.owner_id == owner_id
+            )
+            .order_by(
+                SalesTransaction.created_at.asc()
+            )
+            .all()
+        )
+
+
+        sales = []
+
+        for sale in sales_records:
+
+            sales.append({
+
+                "id": sale.id,
+
+                "owner_id": owner_id,
+
+                "total_amount": (
+                    float(sale.total_amount)
+                    if sale.total_amount is not None
+                    else 0
+                ),
+
+                "payment_type": (
+                    sale.payment_type
+                    if sale.payment_type is not None
+                    else ""
+                ),
+
+                "is_synced": True,
+
+                "created_at": (
+                    int(sale.created_at)
+                    if sale.created_at is not None
+                    else None
+                ),
+            })
+
+
+        # =====================================================
+        # 6. RESPONSE
+        # =====================================================
+
+        response = {
+
+            "status": "success",
+
+            "owner_id": owner_id,
+
+            "profile": profile,
+
+            "inventory": inventory,
+
+            "ledger": ledger,
+
+            "sales": sales,
+
+            "counts": {
+
+                "inventory": len(
+                    inventory
+                ),
+
+                "ledger": len(
+                    ledger
+                ),
+
+                "sales": len(
+                    sales
+                ),
+            },
+
+        }
+
+
+        print(
+            "✅ STOREMATE RESTORE SUCCESS"
+        )
+
+        print(
+            f"User: {user.id}"
+        )
+
+        print(
+            f"Inventory: {len(inventory)}"
+        )
+
+        print(
+            f"Ledger: {len(ledger)}"
+        )
+
+        print(
+            f"Sales: {len(sales)}"
+        )
+
+
+        return jsonify(
+            response
+        ), 200
+
+
+    except Exception as e:
+
+        import traceback
+
+        traceback.print_exc()
+
+        return jsonify({
+
+            "status": "error",
+
+            "message":
+                "Restore failed.",
+
+            "error":
+                str(e),
+
+        }), 500
+
+    
 # ==========================================
 # 🤖 DUAL-ENGINE INVOICE SCANNER ROUTE
 # ==========================================
