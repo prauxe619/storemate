@@ -146,7 +146,7 @@ android {
      *
      * Release output:
      *
-     * StoreMate-v1.0.0-release.apk
+     * Countr-v1.0.0-release.apk
      *
      */
 
@@ -155,7 +155,7 @@ android {
         variant.outputs.all { output ->
 
             def appName =
-                "StoreMate"
+                "Countr"
 
             def versionNameValue =
                 variant.versionName ?: "1.0.0"

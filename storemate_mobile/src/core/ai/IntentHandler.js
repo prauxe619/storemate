@@ -1,12 +1,12 @@
 import { database } from '../database';
 import { Q } from '@nozbe/watermelondb';
 import { requireCurrentUserId } from '../auth/localUser';
-import TelemetryService from '../services/TelemetryService';
+import TelemetryService from '../../services/TelemetryService';
 
 
 /*
  * ============================================================
- * StoreMate IntentHandler
+ * Countr IntentHandler
  * ============================================================
  *
  * Responsibilities:
