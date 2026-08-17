@@ -9,7 +9,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Modal,
   ScrollView,
@@ -24,7 +23,9 @@ import {
 import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-
+import {
+  useAppAlert,
+} from '../components/AppAlert';
 import {
   Q,
 } from '@nozbe/watermelondb';
@@ -78,7 +79,7 @@ const PROFILE_KEY_PREFIX =
 
 
 const HomeScreen = () => {
-
+  const { showAlert } = useAppAlert();
   const insets =
     useSafeAreaInsets();
 
@@ -974,6 +975,7 @@ const HomeScreen = () => {
           setAiStatus(
             `Mic failed: ${errorMsg}`
           );
+
           TelemetryService.logError(
             'voice_speech',
             errorMsg,
@@ -1484,7 +1486,7 @@ const HomeScreen = () => {
           );
 
 
-          Alert.alert(
+          showAlert(
             'Payment Type',
 
             resultMessage.message,
@@ -1626,9 +1628,6 @@ const HomeScreen = () => {
         }
 
 
-        /*
-        * Voice command was actually executed successfully.
-        */
         TelemetryService.logVoice(
           safeVoiceText,
           safeAIData.intent,
@@ -1752,19 +1751,19 @@ const HomeScreen = () => {
           );
 
           setIsListening(
-              true
-            );
+            true
+          );
 
-            TelemetryService.trackEvent(
-              'voice_listening_started',
-              'voice',
-              {
-                offline:
-                  isOffline,
-              }
-            );
+          TelemetryService.trackEvent(
+            'voice_listening_started',
+            'voice',
+            {
+              offline:
+                isOffline,
+            }
+          );
 
-            await SpeechEngine.start();
+          await SpeechEngine.start();
         }
 
       } catch (error) {
@@ -1774,26 +1773,26 @@ const HomeScreen = () => {
         );
 
         TelemetryService.logError(
-            'voice_microphone',
-            error?.message ||
+          'voice_microphone',
+          error?.message ||
+            'Microphone permission denied.',
+          error?.stack
+        );
+
+        TelemetryService.trackEvent(
+          'voice_microphone_unavailable',
+          'voice',
+          {
+            message:
+              error?.message ||
               'Microphone permission denied.',
-            error?.stack
-          );
+          }
+        );
 
-          TelemetryService.trackEvent(
-            'voice_microphone_unavailable',
-            'voice',
-            {
-              message:
-                error?.message ||
-                'Microphone permission denied.',
-            }
-          );
-
-          handleVoiceUnavailable(
-            error.message ||
-              'Microphone permission denied.'
-          );
+        handleVoiceUnavailable(
+          error.message ||
+            'Microphone permission denied.'
+        );
       }
     };
 
@@ -1812,7 +1811,7 @@ const HomeScreen = () => {
       );
 
 
-      Alert.alert(
+      showAlert(
         'Microphone Error',
 
         `${reason}\n\nPlease check Settings > Apps > StoreMate > Permissions > Microphone.`,
@@ -1864,7 +1863,7 @@ const HomeScreen = () => {
         );
 
 
-        Alert.alert(
+        showAlert(
           result?.success
             ? 'Synced ✓'
             : 'Sync paused',
@@ -1883,7 +1882,7 @@ const HomeScreen = () => {
           false
         );
 
-        Alert.alert(
+        showAlert(
           'Error',
           error.message
         );
@@ -1906,7 +1905,7 @@ const HomeScreen = () => {
           10
       ) {
 
-        return Alert.alert(
+        return showAlert(
           'Validation',
           'Please enter a valid 10-digit mobile number.'
         );
@@ -1920,7 +1919,7 @@ const HomeScreen = () => {
         )
       ) {
 
-        return Alert.alert(
+        return showAlert(
           'Validation',
           'Please enter a valid UPI ID.'
         );
@@ -2065,14 +2064,14 @@ const HomeScreen = () => {
         );
 
 
-        Alert.alert(
+        showAlert(
           'Ready 🎉',
           'Your shop details have been saved.'
         );
 
       } catch (error) {
 
-        Alert.alert(
+        showAlert(
           'Error',
           error.message ||
             'Could not save details.'
@@ -2491,15 +2490,54 @@ const HomeScreen = () => {
                 }
               >
 
-                <Text
+                {/* =================================================
+                    MODERN MICROPHONE ICON
+                    Replaces the old ● / ■ character
+                    ================================================= */}
+
+                <View
                   style={
                     styles.micIcon
                   }
                 >
-                  {isListening
-                    ? '■'
-                    : '●'}
-                </Text>
+
+                  <View
+                    style={[
+                      styles.micCapsule,
+
+                      isListening &&
+                        styles.micCapsuleListening,
+                    ]}
+                  />
+
+                  <View
+                    style={[
+                      styles.micArc,
+
+                      isListening &&
+                        styles.micArcListening,
+                    ]}
+                  />
+
+                  <View
+                    style={[
+                      styles.micStem,
+
+                      isListening &&
+                        styles.micStemListening,
+                    ]}
+                  />
+
+                  <View
+                    style={[
+                      styles.micBase,
+
+                      isListening &&
+                        styles.micBaseListening,
+                    ]}
+                  />
+
+                </View>
 
               </TouchableOpacity>
 
@@ -2522,15 +2560,39 @@ const HomeScreen = () => {
               }
             >
 
-              <Text
+              {/* SMALL MICROPHONE ICON */}
+
+              <View
                 style={
-                  styles.voiceStatusIconText
+                  styles.smallMicIcon
                 }
               >
-                {isListening
-                  ? '●'
-                  : '◉'}
-              </Text>
+
+                <View
+                  style={
+                    styles.smallMicCapsule
+                  }
+                />
+
+                <View
+                  style={
+                    styles.smallMicArc
+                  }
+                />
+
+                <View
+                  style={
+                    styles.smallMicStem
+                  }
+                />
+
+                <View
+                  style={
+                    styles.smallMicBase
+                  }
+                />
+
+              </View>
 
             </View>
 
@@ -3096,7 +3158,8 @@ const HomeScreen = () => {
           <View
             style={
               styles.sectionHeading
-            }>
+            }
+          >
 
             <View>
 
@@ -3931,18 +3994,30 @@ const styles =
     },
 
     heroTitle: {
-      color: '#142019',
+      color:
+        '#142019',
+
       fontSize: 29,
+
       lineHeight: 31,
-      fontWeight: '900',
+
+      fontWeight:
+        '900',
+
       letterSpacing: -1,
     },
 
     heroTitleSecond: {
-      color: '#6C9137',
+      color:
+        '#6C9137',
+
       fontSize: 25,
+
       lineHeight: 28,
-      fontWeight: '800',
+
+      fontWeight:
+        '800',
+
       letterSpacing: -0.8,
     },
 
@@ -4025,15 +4100,128 @@ const styles =
         '#E9685E',
     },
 
+
+    /* ========================================================
+       MAIN MICROPHONE ICON
+       ======================================================== */
+
     micIcon: {
-      color:
+      width: 34,
+
+      height: 38,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'flex-end',
+
+      position:
+        'relative',
+    },
+
+    micCapsule: {
+      position:
+        'absolute',
+
+      top: 0,
+
+      left: 10,
+
+      width: 14,
+
+      height: 23,
+
+      borderRadius: 8,
+
+      backgroundColor:
+        '#173018',
+    },
+
+    micCapsuleListening: {
+      backgroundColor:
+        '#FFFFFF',
+    },
+
+    micArc: {
+      position:
+        'absolute',
+
+      left: 5,
+
+      top: 12,
+
+      width: 24,
+
+      height: 19,
+
+      borderWidth: 3,
+
+      borderTopWidth: 0,
+
+      borderColor:
         '#173018',
 
-      fontSize: 22,
+      borderBottomLeftRadius: 14,
 
-      fontWeight:
-        '900',
+      borderBottomRightRadius: 14,
     },
+
+    micArcListening: {
+      borderColor:
+        '#FFFFFF',
+    },
+
+    micStem: {
+      position:
+        'absolute',
+
+      bottom: 2,
+
+      left: 15,
+
+      width: 3,
+
+      height: 9,
+
+      borderRadius: 2,
+
+      backgroundColor:
+        '#173018',
+    },
+
+    micStemListening: {
+      backgroundColor:
+        '#FFFFFF',
+    },
+
+    micBase: {
+      position:
+        'absolute',
+
+      bottom: 0,
+
+      left: 9,
+
+      width: 15,
+
+      height: 3,
+
+      borderRadius: 2,
+
+      backgroundColor:
+        '#173018',
+    },
+
+    micBaseListening: {
+      backgroundColor:
+        '#FFFFFF',
+    },
+
+
+    /* ========================================================
+       VOICE STATUS
+       ======================================================== */
 
     voiceStatusBox: {
       backgroundColor:
@@ -4078,6 +4266,104 @@ const styles =
         'center',
 
       marginRight: 9,
+    },
+
+
+    /* ========================================================
+       SMALL MICROPHONE ICON
+       ======================================================== */
+
+    smallMicIcon: {
+      width: 18,
+
+      height: 20,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'flex-end',
+
+      position:
+        'relative',
+    },
+
+    smallMicCapsule: {
+      position:
+        'absolute',
+
+      top: 0,
+
+      left: 5,
+
+      width: 8,
+
+      height: 12,
+
+      borderRadius: 5,
+
+      backgroundColor:
+        '#69952F',
+    },
+
+    smallMicArc: {
+      position:
+        'absolute',
+
+      left: 2,
+
+      top: 7,
+
+      width: 14,
+
+      height: 10,
+
+      borderWidth: 2,
+
+      borderTopWidth: 0,
+
+      borderColor:
+        '#69952F',
+
+      borderBottomLeftRadius: 8,
+
+      borderBottomRightRadius: 8,
+    },
+
+    smallMicStem: {
+      position:
+        'absolute',
+
+      bottom: 2,
+
+      left: 8,
+
+      width: 2,
+
+      height: 5,
+
+      borderRadius: 1,
+
+      backgroundColor:
+        '#69952F',
+    },
+
+    smallMicBase: {
+      position:
+        'absolute',
+
+      bottom: 0,
+
+      left: 5,
+
+      width: 8,
+
+      height: 2,
+
+      borderRadius: 1,
+
+      backgroundColor:
+        '#69952F',
     },
 
     voiceStatusIconText: {

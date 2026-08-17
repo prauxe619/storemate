@@ -11,7 +11,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
   ScrollView,
   TextInput,
   Linking,
@@ -21,7 +20,7 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
-
+import { useAppAlert } from '../components/AppAlert';
 import {
   requireCurrentUserId,
 } from '../core/auth/localUser';
@@ -280,6 +279,7 @@ const POSScreen = ({
 
   const insets =
     useSafeAreaInsets();
+  const { showAlert } = useAppAlert();
 
 
   /* ===========================================================
@@ -870,7 +870,7 @@ const POSScreen = ({
           product.quantity
         ) {
 
-          Alert.alert(
+          showAlert(
             'Stock Limit',
 
             `Only ${product.quantity} ${product.productName} available.`
@@ -1533,7 +1533,7 @@ const POSScreen = ({
 
         } else {
 
-          Alert.alert(
+          showAlert(
             'Product Not Found',
 
             `Barcode ${cleanBarcode} inventory mein nahi mila.`
@@ -1554,7 +1554,7 @@ const POSScreen = ({
         );
 
 
-        Alert.alert(
+        showAlert(
           'Scan Error',
 
           'Barcode process nahi ho saka.'
@@ -1598,7 +1598,7 @@ const POSScreen = ({
               item.maxQty
             ) {
 
-              Alert.alert(
+              showAlert(
                 'Stock Limit',
 
                 `Only ${item.maxQty} available.`
@@ -1684,7 +1684,7 @@ const POSScreen = ({
               item.maxQty
             ) {
 
-              Alert.alert(
+              showAlert(
                 'Stock Limit',
 
                 `Only ${item.maxQty} available.`
@@ -1759,7 +1759,7 @@ const POSScreen = ({
       }
 
 
-      Alert.alert(
+      showAlert(
 
         'Clear Sale?',
 
@@ -1932,7 +1932,7 @@ const POSScreen = ({
         );
 
 
-        Alert.alert(
+        showAlert(
           'Scanner Error',
 
           'Barcode read nahi ho saka.'
@@ -1961,7 +1961,7 @@ const POSScreen = ({
         0
       ) {
 
-        Alert.alert(
+        showAlert(
           'Cart Empty',
 
           'Pehle sale mein product add karein.'
@@ -2004,7 +2004,7 @@ const POSScreen = ({
             !customerName.trim()
           ) {
 
-            Alert.alert(
+            showAlert(
               'Customer Required',
 
               'Udhaar ke liye customer ka naam enter karein.'
@@ -2216,7 +2216,7 @@ const POSScreen = ({
         );
 
 
-        Alert.alert(
+        showAlert(
 
           'Sale Complete ✓',
 
@@ -2267,7 +2267,7 @@ const POSScreen = ({
         );
 
 
-        Alert.alert(
+        showAlert(
 
           'Checkout Failed',
 
@@ -2332,7 +2332,7 @@ const POSScreen = ({
             PermissionsAndroid.RESULTS.GRANTED
           ) {
 
-            Alert.alert(
+            showAlert(
 
               'Camera Disabled',
 
@@ -2374,7 +2374,7 @@ const POSScreen = ({
         );
 
 
-        Alert.alert(
+        showAlert(
           'Camera Error',
 
           'Camera start nahi ho saka.'
@@ -2884,22 +2884,48 @@ const POSScreen = ({
 
 
               <View
-                style={
-                  styles.voiceButtonIcon
-                }
-              >
+              style={styles.voiceButtonIcon}
+            >
+              <View style={styles.micIcon}>
 
-                <Text
-                  style={
-                    styles.voiceButtonIconText
-                  }
-                >
-                  {isListening
-                    ? '■'
-                    : '●'}
-                </Text>
+                {/* microphone head */}
+                <View
+                  style={[
+                    styles.micHead,
+                    isListening &&
+                      styles.micHeadListening,
+                  ]}
+                />
+
+                {/* microphone U-shaped holder */}
+                <View
+                  style={[
+                    styles.micArc,
+                    isListening &&
+                      styles.micArcListening,
+                  ]}
+                />
+
+                {/* microphone stem */}
+                <View
+                  style={[
+                    styles.micStem,
+                    isListening &&
+                      styles.micStemListening,
+                  ]}
+                />
+
+                {/* microphone bottom */}
+                <View
+                  style={[
+                    styles.micBase,
+                    isListening &&
+                      styles.micBaseListening,
+                  ]}
+                />
 
               </View>
+            </View>
 
 
               <View
@@ -4668,15 +4694,106 @@ receiptHintDot: {
     },
 
 
-    voiceButtonIconText: {
-      color:
-        COLORS.dark,
+    /* ========================================================
+   MICROPHONE ICON
+   ======================================================== */
 
-      fontSize: 14,
+micIcon: {
+  width: 25,
+  height: 29,
 
-      fontWeight:
-        '900',
-    },
+  alignItems: 'center',
+  justifyContent: 'flex-start',
+
+  position: 'relative',
+},
+
+
+micHead: {
+  width: 10,
+  height: 17,
+
+  borderRadius: 6,
+
+  backgroundColor:
+    '#173018',
+
+  position: 'absolute',
+
+  top: 0,
+},
+
+
+micHeadListening: {
+  backgroundColor:
+    '#FFFFFF',
+},
+
+
+micArc: {
+  position: 'absolute',
+
+  width: 18,
+  height: 17,
+
+  borderWidth: 2,
+
+  borderTopWidth: 0,
+
+  borderColor:
+    '#173018',
+
+  borderBottomLeftRadius: 10,
+  borderBottomRightRadius: 10,
+
+  bottom: 5,
+},
+
+
+micArcListening: {
+  borderColor:
+    '#FFFFFF',
+},
+
+
+micStem: {
+  position: 'absolute',
+
+  width: 2.5,
+  height: 6,
+
+  backgroundColor:
+    '#173018',
+
+  bottom: 1,
+},
+
+
+micStemListening: {
+  backgroundColor:
+    '#FFFFFF',
+},
+
+
+micBase: {
+  position: 'absolute',
+
+  width: 10,
+  height: 2.5,
+
+  borderRadius: 2,
+
+  backgroundColor:
+    '#173018',
+
+  bottom: 0,
+},
+
+
+micBaseListening: {
+  backgroundColor:
+    '#FFFFFF',
+},
 
 
     commandButtonText: {

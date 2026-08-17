@@ -440,7 +440,7 @@ def sync_data():
             updated_at = safe_int(item_data.get("updated_at"))
 
             if updated_at is None:
-                updated_at = int(datetime.utcnow().timestamp() * 1000)
+                updated_at = int(datetime.datetime.utcnow().timestamp() * 1000)
 
             item = db.session.get(InventoryItem, item_id)
 
@@ -528,7 +528,7 @@ def sync_data():
             created_at = safe_int(entry_data.get("created_at"))
 
             if created_at is None:
-                created_at = int(datetime.utcnow().timestamp() * 1000)
+                created_at = int(datetime.datetime.utcnow().timestamp() * 1000)
 
             entry = db.session.get(LedgerEntry, entry_id)
 
@@ -599,7 +599,7 @@ def sync_data():
             created_at = safe_int(sale_data.get("created_at"))
 
             if created_at is None:
-                created_at = int(datetime.utcnow().timestamp() * 1000)
+                created_at = int(datetime.datetime.utcnow().timestamp() * 1000)
 
             sale = db.session.get(SalesTransaction, sale_id)
 
@@ -755,13 +755,34 @@ def restore_sync_data():
         # =====================================================
 
         profile = {
-            "id": str(user.id),
-            "email": user.email,
-            "name": user.shop_name,
-            "shop_name": user.shop_name,
-            "phone": user.phone,
-            "role": user.role,
-            "is_active": user.is_active,
+
+            "id":
+                str(user.id),
+
+            "email":
+                user.email,
+
+            "name":
+                user.shop_name,
+
+            "shop_name":
+                user.shop_name,
+
+            "phone":
+                user.phone or "",
+
+            "address":
+                user.address or "",
+
+            "upi_id":
+                user.upi_id or "",
+
+            "role":
+                user.role,
+
+            "is_active":
+                user.is_active,
+
         }
 
 
@@ -1927,51 +1948,65 @@ def google_auth():
         traceback.print_exc()
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
-@app.route('/api/v1/auth/profile', methods=['GET'])
-@jwt_required()
-def get_profile():
-    current_user_email = get_jwt_identity() 
-    user = User.query.filter_by(email=current_user_email).first()
-    
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-        
-    return jsonify({
-        "email": user.email,
-        "shop_name": user.shop_name,
-        "phone": getattr(user, 'phone', '') or "",
-        "address": getattr(user, 'address', '') or "",
-        "upi_id": getattr(user, 'upi_id', '') or ""
-    }), 200
-
-
 @app.route('/api/v1/auth/profile', methods=['PUT'])
 @jwt_required()
 def update_profile():
+
     current_user_email = get_jwt_identity()
-    user = User.query.filter_by(email=current_user_email).first()
-    
+
+    user = User.query.filter_by(
+        email=current_user_email
+    ).first()
+
     if not user:
-        return jsonify({"error": "User not found"}), 404
-        
-    data = request.json or {}
-    
-    user.shop_name = data.get('shop_name', user.shop_name)
-    user.phone = data.get('phone', user.phone)
-    
-    if hasattr(user, 'address') and 'address' in data:
-        user.address = data['address']
-    if hasattr(user, 'upi_id') and 'upi_id' in data:
-        user.upi_id = data['upi_id']
-    
+        return jsonify({
+            "error": "User not found"
+        }), 404
+
+    data = request.get_json(silent=True) or {}
+
+    if 'shop_name' in data:
+        user.shop_name = str(
+            data['shop_name']
+        ).strip()
+
+    if 'phone' in data:
+        user.phone = str(
+            data['phone']
+        ).strip()
+
+    if 'address' in data:
+        user.address = str(
+            data['address']
+        ).strip()
+
+    if 'upi_id' in data:
+        user.upi_id = str(
+            data['upi_id']
+        ).strip()
+
     db.session.commit()
-    
+
     return jsonify({
-        "message": "Profile updated successfully", 
-        "shop_name": user.shop_name,
-        "phone": user.phone,
-        "address": getattr(user, 'address', ''),
-        "upi_id": getattr(user, 'upi_id', '')
+
+        "message":
+            "Profile updated successfully",
+
+        "email":
+            user.email,
+
+        "shop_name":
+            user.shop_name or "",
+
+        "phone":
+            user.phone or "",
+
+        "address":
+            user.address or "",
+
+        "upi_id":
+            user.upi_id or "",
+
     }), 200
 
 
@@ -2039,12 +2074,12 @@ def get_all_users():
 @app.route('/admin/telemetry-dashboard')
 @admin_session_required
 def admin_dashboard_ui():
-    return render_template('admin_dashboard.html')
+    return render_template('admin/admin_dashboard.html')
 
 @app.route('/admin/dashboard')
 @admin_session_required
 def admin_merchant_dashboard():
-    return render_template('dashboard.html')
+    return render_template('admin/dashboard.html')
 
 
 #--------------User Facing Routes----------------#

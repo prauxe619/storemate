@@ -8,14 +8,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-
+import { useAppAlert } from '../components/AppAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
@@ -51,6 +50,8 @@ import {
 const LoginScreen = ({
   onLoginSuccess,
 }) => {
+
+  const { showAlert } = useAppAlert();
 
   const insets =
     useSafeAreaInsets();
@@ -201,7 +202,7 @@ const LoginScreen = ({
           !email.trim()
         ) {
 
-          return Alert.alert(
+          return showAlert(
             'Email required',
             'Please enter your registered email address.'
           );
@@ -253,7 +254,7 @@ const LoginScreen = ({
           }
 
 
-          Alert.alert(
+          showAlert(
             'OTP sent 📩',
             'Check your email inbox for the 6-digit reset code.'
           );
@@ -267,7 +268,7 @@ const LoginScreen = ({
           error
         ) {
 
-          Alert.alert(
+          showAlert(
             'Unable to send OTP',
             error.message
           );
@@ -300,7 +301,7 @@ const LoginScreen = ({
           !newPassword
         ) {
 
-          return Alert.alert(
+          return showAlert(
             'Missing information',
             'Please enter the 6-digit OTP and your new password.'
           );
@@ -312,7 +313,7 @@ const LoginScreen = ({
           6
         ) {
 
-          return Alert.alert(
+          return showAlert(
             'Invalid OTP',
             'Please enter the complete 6-digit OTP.'
           );
@@ -448,7 +449,7 @@ const LoginScreen = ({
           error
         ) {
 
-          Alert.alert(
+          showAlert(
             'Password reset failed',
             error.message
           );
@@ -476,7 +477,7 @@ const LoginScreen = ({
         !password
       ) {
 
-        return Alert.alert(
+        return showAlert(
           'Missing information',
           'Please enter your email and password.'
         );
@@ -489,7 +490,7 @@ const LoginScreen = ({
         !shopName.trim()
       ) {
 
-        return Alert.alert(
+        return showAlert(
           'Shop name required',
           'Please enter your shop name.'
         );
@@ -596,7 +597,7 @@ const LoginScreen = ({
            * ===================================================
            */
 
-          Alert.alert(
+          showAlert(
             'Shop created 🎉',
             'Your Countr shop has been registered. You can now log in.'
           );
@@ -616,7 +617,7 @@ const LoginScreen = ({
         error
       ) {
 
-        Alert.alert(
+        showAlert(
           'Authentication failed',
           error.message
         );
@@ -774,7 +775,7 @@ const LoginScreen = ({
             'Google Sign-In was cancelled.'
         ) {
 
-          Alert.alert(
+          showAlert(
             'Google login error',
             error.message
           );
@@ -873,7 +874,7 @@ const LoginScreen = ({
         }
 
 
-        Alert.alert(
+        showAlert(
 
           'Shop restored 🎉',
 
@@ -974,7 +975,7 @@ const LoginScreen = ({
             : 'an earlier date';
 
 
-        Alert.alert(
+        showAlert(
 
           'Cloud backup unavailable',
 
@@ -1027,7 +1028,7 @@ const LoginScreen = ({
                       {};
 
 
-                    Alert.alert(
+                    showAlert(
 
                       'Restored 🎉',
 
@@ -1072,7 +1073,7 @@ const LoginScreen = ({
                     error
                   ) {
 
-                    Alert.alert(
+                    showAlert(
 
                       'Restore unavailable',
 

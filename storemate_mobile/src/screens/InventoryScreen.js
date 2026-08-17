@@ -11,7 +11,6 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   Modal,
   PermissionsAndroid,
@@ -20,7 +19,7 @@ import {
   KeyboardAvoidingView,
   useWindowDimensions,
 } from 'react-native';
-
+import { useAppAlert } from '../components/AppAlert';
 import { database } from '../core/database';
 
 import {
@@ -654,6 +653,7 @@ const UnitSelector = ({
 const InventoryScreen = ({
   onClose,
 }) => {
+  const { showAlert } = useAppAlert();
 
   const insets =
     useSafeAreaInsets();
@@ -991,7 +991,7 @@ const InventoryScreen = ({
         !sellingPrice ||
         !quantity
       ) {
-        return Alert.alert(
+        return showAlert(
           'Missing Info',
           'Product name, sell price, and quantity are required.'
         );
@@ -1023,7 +1023,7 @@ const InventoryScreen = ({
         ) ||
         parsedSellingPrice < 0
       ) {
-        return Alert.alert(
+        return showAlert(
           'Invalid price',
           'Please enter a valid selling price.'
         );
@@ -1035,7 +1035,7 @@ const InventoryScreen = ({
         ) ||
         parsedQuantity <= 0
       ) {
-        return Alert.alert(
+        return showAlert(
           'Invalid quantity',
           'Please enter a valid quantity.'
         );
@@ -1127,7 +1127,7 @@ const InventoryScreen = ({
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Error',
           error.message ||
             'Could not add product.'
@@ -1228,7 +1228,7 @@ const InventoryScreen = ({
       if (
         !editName.trim()
       ) {
-        return Alert.alert(
+        return showAlert(
           'Missing Product Name',
           'Please enter the product name.'
         );
@@ -1260,7 +1260,7 @@ const InventoryScreen = ({
         ) ||
         parsedSellingPrice < 0
       ) {
-        return Alert.alert(
+        return showAlert(
           'Invalid Sell Price',
           'Please enter a valid selling price.'
         );
@@ -1272,7 +1272,7 @@ const InventoryScreen = ({
         ) ||
         parsedQuantity < 0
       ) {
-        return Alert.alert(
+        return showAlert(
           'Invalid Quantity',
           'Please enter a valid quantity.'
         );
@@ -1335,7 +1335,7 @@ const InventoryScreen = ({
           }
         );
 
-        Alert.alert(
+        showAlert(
           'Updated',
           'Product details have been updated.'
         );
@@ -1349,7 +1349,7 @@ const InventoryScreen = ({
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Update Error',
           error.message ||
             'Could not update product.'
@@ -1371,7 +1371,7 @@ const InventoryScreen = ({
         return;
       }
 
-      Alert.alert(
+      showAlert(
         'Delete Product',
 
         `Are you sure you want to delete ${editingItem.productName}?`,
@@ -1412,7 +1412,7 @@ const InventoryScreen = ({
 
                 } catch (error) {
 
-                  Alert.alert(
+                  showAlert(
                     'Delete Error',
                     error.message ||
                       'Could not delete product.'
@@ -1438,7 +1438,7 @@ const InventoryScreen = ({
           !scannedItems ||
           scannedItems.length === 0
         ) {
-          return Alert.alert(
+          return showAlert(
             'No Items',
             'There are no scanned items to save.'
           );
@@ -1628,7 +1628,7 @@ const InventoryScreen = ({
           }
         );
 
-        Alert.alert(
+        showAlert(
           'Stock Updated',
           'Your scanned items have been added to inventory.'
         );
@@ -1653,7 +1653,7 @@ const InventoryScreen = ({
           error?.stack
         );
 
-        Alert.alert(
+        showAlert(
           'Database Error',
           error.message ||
             'Could not save scanned items.'
@@ -1703,7 +1703,7 @@ const InventoryScreen = ({
       itemName
     ) => {
 
-      Alert.alert(
+      showAlert(
         'Remove Item',
 
         `Are you sure you want to remove ${
@@ -1782,7 +1782,7 @@ const InventoryScreen = ({
             PermissionsAndroid.RESULTS.GRANTED
           ) {
 
-            Alert.alert(
+            showAlert(
               'Camera Disabled',
               'Please enable camera permissions to scan.'
             );
@@ -1809,7 +1809,7 @@ const InventoryScreen = ({
           error?.stack
         );
 
-        Alert.alert(
+        showAlert(
           'Camera Error',
           'Camera could not be initialized.'
         );
@@ -1917,7 +1917,7 @@ const InventoryScreen = ({
 
         } else {
 
-          Alert.alert(
+          showAlert(
             'No Items Found',
             "Countr couldn't read the items clearly."
           );
@@ -1925,7 +1925,7 @@ const InventoryScreen = ({
 
       } catch (error) {
 
-        Alert.alert(
+        showAlert(
           'Upload Failed',
           error.message ||
             'Could not open the gallery.'
@@ -2158,7 +2158,7 @@ const InventoryScreen = ({
 
                     } else {
 
-                      Alert.alert(
+                      showAlert(
                         'No Items Found',
                         "Countr couldn't read the invoice clearly."
                       );
@@ -2178,7 +2178,7 @@ const InventoryScreen = ({
                       error?.stack
                     );
 
-                    Alert.alert(
+                    showAlert(
                       'Scan Failed',
                       error?.message ||
                         'Could not read the invoice.'
@@ -2754,18 +2754,15 @@ const InventoryScreen = ({
                   marginRight: 8,
                 },
               ]}
-
               placeholder="Barcode"
               placeholderTextColor="#9AA39D"
-
-              value={
-                barcode
-              }
-
-              onChangeText={
-                setBarcode
-              }
-
+              value={barcode}
+              onChangeText={text => {
+                setBarcode(text);
+              }}
+              autoCorrect={false}
+              autoCapitalize="none"
+              blurOnSubmit={false}
               returnKeyType="next"
             />
 
@@ -2777,18 +2774,15 @@ const InventoryScreen = ({
                   flex: 1.7,
                 },
               ]}
-
               placeholder="Product name"
               placeholderTextColor="#9AA39D"
-
-              value={
-                productName
-              }
-
-              onChangeText={
-                setProductName
-              }
-
+              value={productName}
+              onChangeText={text => {
+                setProductName(text);
+              }}
+              autoCorrect={false}
+              autoCapitalize="words"
+              blurOnSubmit={false}
               returnKeyType="next"
             />
 
@@ -3338,7 +3332,7 @@ const InventoryScreen = ({
         }
 
         ListHeaderComponent={
-          renderHeader
+          renderHeader()
         }
 
         ListEmptyComponent={
@@ -4888,6 +4882,8 @@ const styles =
         1.5,
 
       marginBottom: 3,
+
+      marginTop: 3,
     },
 
     formTitle: {

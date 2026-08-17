@@ -9,15 +9,17 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  FlatList,
   TouchableOpacity,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
+
+import {
+  useAppAlert,
+} from '../components/AppAlert';
 
 import {
   database,
@@ -173,6 +175,7 @@ async function loadCustomers() {
         byName[key].phone =
           entry.customerPhone;
       }
+
     }
   );
 
@@ -233,6 +236,11 @@ const ManualEntryScreen = ({
   onSaved,
   initialQuery = '',
 }) => {
+
+  const {
+    showAlert,
+  } = useAppAlert();
+
 
   const insets =
     useSafeAreaInsets();
@@ -328,6 +336,7 @@ const ManualEntryScreen = ({
           setAllCustomers(
             customers
           );
+
         }
 
       })
@@ -342,7 +351,9 @@ const ManualEntryScreen = ({
 
 
     return () => {
+
       mounted = false;
+
     };
 
   }, []);
@@ -355,28 +366,35 @@ const ManualEntryScreen = ({
   const filteredCustomers =
     useMemo(() => {
 
-      if (
-        !searchQuery.trim()
-      ) {
-
-        return allCustomers
-          .slice(0, 20);
-      }
-
-
       const query =
         searchQuery
           .trim()
           .toLowerCase();
 
 
+      if (!query) {
+
+        return allCustomers.slice(
+          0,
+          20
+        );
+
+      }
+
+
       return allCustomers
-        .filter(customer =>
-          customer.name
-            .toLowerCase()
-            .includes(query)
+        .filter(
+          customer =>
+            customer.name
+              .toLowerCase()
+              .includes(
+                query
+              )
         )
-        .slice(0, 30);
+        .slice(
+          0,
+          30
+        );
 
     }, [
       searchQuery,
@@ -437,6 +455,7 @@ const ManualEntryScreen = ({
       if (!name) {
 
         return;
+
       }
 
 
@@ -496,12 +515,21 @@ const ManualEntryScreen = ({
         value <= 0
       ) {
 
-        Alert.alert(
-          'Invalid amount',
-          'Please enter an amount greater than ₹0.'
-        );
+        showAlert({
+
+          type:
+            'warning',
+
+          title:
+            'Invalid amount',
+
+          message:
+            'Please enter an amount greater than ₹0.',
+
+        });
 
         return;
+
       }
 
 
@@ -538,6 +566,7 @@ const ManualEntryScreen = ({
       if (!canSave) {
 
         return;
+
       }
 
 
@@ -621,8 +650,15 @@ const ManualEntryScreen = ({
         );
 
 
-        onSaved &&
-          onSaved(entry);
+        if (
+          onSaved
+        ) {
+
+          onSaved(
+            entry
+          );
+
+        }
 
 
         TelemetryService.trackEvent(
@@ -640,26 +676,41 @@ const ManualEntryScreen = ({
         );
 
 
-        onClose &&
+        if (
+          onClose
+        ) {
+
           onClose();
+
+        }
 
 
       } catch (
         error
       ) {
 
-        Alert.alert(
-          'Could not save',
-          error?.message ||
-            'Something went wrong while saving the entry.'
-        );
+        showAlert({
+
+          type:
+            'error',
+
+          title:
+            'Could not save',
+
+          message:
+            error?.message ||
+            'Something went wrong while saving the entry.',
+
+        });
 
       } finally {
 
         setIsSaving(
           false
         );
+
       }
+
     };
 
 
@@ -681,10 +732,13 @@ const ManualEntryScreen = ({
       ) {
 
         return {
+
           text:
             `Owes ₹${balance.toFixed(0)}`,
+
           style:
             styles.balanceOwes,
+
         };
 
       }
@@ -695,23 +749,164 @@ const ManualEntryScreen = ({
       ) {
 
         return {
+
           text:
             `Advance ₹${Math.abs(
               balance
             ).toFixed(0)}`,
+
           style:
             styles.balanceAdvance,
+
         };
 
       }
 
 
       return {
+
         text:
           'Settled',
+
         style:
           styles.balanceSettled,
+
       };
+
+    };
+
+
+  /* ==========================================================
+   * CUSTOMER ROW
+   *
+   * IMPORTANT:
+   * This is rendered directly inside ScrollView.
+   * No FlatList is used here.
+   *
+   * This prevents the TextInput from losing focus when
+   * searchQuery changes after every typed character.
+   * ========================================================== */
+
+  const renderCustomerRow =
+    customer => {
+
+      const balance =
+        getBalanceLabel(
+          customer
+        );
+
+
+      return (
+
+        <TouchableOpacity
+
+          key={
+            `${customer.name}-${customer.phone || ''}`
+          }
+
+          style={
+            styles.customerRow
+          }
+
+          onPress={() =>
+            handleSelectCustomer(
+              customer
+            )
+          }
+
+          activeOpacity={
+            0.75
+          }
+        >
+
+          <View
+            style={
+              styles.customerAvatar
+            }
+          >
+
+            <Text
+              style={
+                styles.customerAvatarText
+              }
+            >
+              {customer.name
+                .charAt(
+                  0
+                )
+                .toUpperCase()}
+            </Text>
+
+          </View>
+
+
+          <View
+            style={
+              styles.customerInfo
+            }
+          >
+
+            <Text
+              style={
+                styles.customerName
+              }
+
+              numberOfLines={
+                1
+              }
+            >
+              {customer.name}
+            </Text>
+
+
+            <View
+              style={
+                styles.customerMeta
+              }
+            >
+
+              <Text
+                style={
+                  styles.customerPhone
+                }
+              >
+                {customer.phone
+                  ? customer.phone
+                  : 'No WhatsApp number'}
+              </Text>
+
+
+              <View
+                style={
+                  styles.metaDot
+                }
+              />
+
+
+              <Text
+                style={
+                  balance.style
+                }
+              >
+                {balance.text}
+              </Text>
+
+            </View>
+
+          </View>
+
+
+          <Text
+            style={
+              styles.customerArrow
+            }
+          >
+            ›
+          </Text>
+
+        </TouchableOpacity>
+
+      );
 
     };
 
@@ -729,18 +924,20 @@ const ManualEntryScreen = ({
       }
 
       behavior={
-        Platform.OS ===
-        'ios'
+        Platform.OS === 'ios'
           ? 'padding'
-          : 'height'
+          : undefined
       }
+
     >
 
       <View
+
         style={[
           styles.container,
 
           {
+
             paddingTop:
               Math.max(
                 insets.top,
@@ -755,8 +952,11 @@ const ManualEntryScreen = ({
 
             paddingHorizontal:
               horizontalPadding,
+
           },
+
         ]}
+
       >
 
         <ScrollView
@@ -769,18 +969,22 @@ const ManualEntryScreen = ({
             styles.scrollContent
           }
 
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+
+          keyboardDismissMode="none"
 
           showsVerticalScrollIndicator={
             false
           }
 
-          keyboardDismissMode={
-            Platform.OS ===
-            'ios'
-              ? 'interactive'
-              : 'on-drag'
+          nestedScrollEnabled={
+            false
           }
+
+          automaticallyAdjustKeyboardInsets={
+            Platform.OS === 'ios'
+          }
+
         >
 
           {/* ==================================================
@@ -841,15 +1045,19 @@ const ManualEntryScreen = ({
 
 
             <TouchableOpacity
+
               onPress={
                 onClose
               }
+
               style={
                 styles.closeBtn
               }
+
               activeOpacity={
                 0.75
               }
+
             >
 
               <Text
@@ -971,7 +1179,9 @@ const ManualEntryScreen = ({
           </View>
 
 
-          {/* SEARCH */}
+          {/* ==================================================
+              SEARCH
+              ================================================== */}
 
           <View
             style={
@@ -1004,26 +1214,52 @@ const ManualEntryScreen = ({
                 searchQuery
               }
 
-              onChangeText={text => {
+              onChangeText={
+                text => {
 
-                setSearchQuery(
-                  text
-                );
+                  setSearchQuery(
+                    text
+                  );
 
-                setSelectedCustomer(
-                  null
-                );
 
-              }}
+                  if (
+                    selectedCustomer !==
+                    null
+                  ) {
 
-              returnKeyType="done"
+                    setSelectedCustomer(
+                      null
+                    );
+
+                  }
+
+                }
+              }
+
+              returnKeyType="next"
+
+              blurOnSubmit={
+                false
+              }
+
+              autoCorrect={
+                false
+              }
+
+              autoCapitalize="words"
+
+              keyboardType="default"
+
+              importantForAutofill="no"
 
             />
 
           </View>
 
 
-          {/* CUSTOMER LIST */}
+          {/* ==================================================
+              CUSTOMER LIST
+              ================================================== */}
 
           {!selectedCustomer && (
 
@@ -1036,150 +1272,13 @@ const ManualEntryScreen = ({
               {filteredCustomers.length >
                 0 ? (
 
-                <FlatList
+                <View>
 
-                  data={
-                    filteredCustomers
-                  }
+                  {filteredCustomers.map(
+                    renderCustomerRow
+                  )}
 
-                  keyExtractor={
-                    item =>
-                      item.name
-                  }
-
-                  keyboardShouldPersistTaps="handled"
-
-                  scrollEnabled={
-                    filteredCustomers.length >
-                    5
-                  }
-
-                  nestedScrollEnabled={
-                    true
-                  }
-
-                  renderItem={({
-                    item,
-                  }) => {
-
-                    const balance =
-                      getBalanceLabel(
-                        item
-                      );
-
-
-                    return (
-
-                      <TouchableOpacity
-
-                        style={
-                          styles.customerRow
-                        }
-
-                        onPress={() =>
-                          handleSelectCustomer(
-                            item
-                          )
-                        }
-
-                        activeOpacity={
-                          0.75
-                        }
-                      >
-
-                        <View
-                          style={
-                            styles.customerAvatar
-                          }
-                        >
-
-                          <Text
-                            style={
-                              styles.customerAvatarText
-                            }
-                          >
-                            {item.name
-                              .charAt(
-                                0
-                              )
-                              .toUpperCase()}
-                          </Text>
-
-                        </View>
-
-
-                        <View
-                          style={
-                            styles.customerInfo
-                          }
-                        >
-
-                          <Text
-                            style={
-                              styles.customerName
-                            }
-                            numberOfLines={
-                              1
-                            }
-                          >
-                            {item.name}
-                          </Text>
-
-
-                          <View
-                            style={
-                              styles.customerMeta
-                            }
-                          >
-
-                            <Text
-                              style={
-                                styles.customerPhone
-                              }
-                            >
-                              {item.phone
-                                ? item.phone
-                                : 'No WhatsApp number'}
-                            </Text>
-
-
-                            <View
-                              style={
-                                styles.metaDot
-                              }
-                            />
-
-
-                            <Text
-                              style={
-                                balance.style
-                              }
-                            >
-                              {
-                                balance.text
-                              }
-                            </Text>
-
-                          </View>
-
-                        </View>
-
-
-                        <Text
-                          style={
-                            styles.customerArrow
-                          }
-                        >
-                          ›
-                        </Text>
-
-                      </TouchableOpacity>
-
-                    );
-
-                  }}
-
-                />
+                </View>
 
               ) : (
 
@@ -1220,7 +1319,9 @@ const ManualEntryScreen = ({
               )}
 
 
-              {/* ADD NEW */}
+              {/* =================================================
+                  ADD NEW CUSTOMER
+                  ================================================= */}
 
               {searchQuery.trim() &&
                 !exactMatchExists && (
@@ -1238,6 +1339,7 @@ const ManualEntryScreen = ({
                   activeOpacity={
                     0.8
                   }
+
                 >
 
                   <View
@@ -1266,7 +1368,7 @@ const ManualEntryScreen = ({
                     <Text
                       style={
                         styles.newCustomerTitle
-                      }
+                    }
                     >
                       Add new customer
                     </Text>
@@ -1276,6 +1378,7 @@ const ManualEntryScreen = ({
                       style={
                         styles.newCustomerName
                       }
+
                       numberOfLines={
                         1
                       }
@@ -1358,6 +1461,7 @@ const ManualEntryScreen = ({
                       style={
                         styles.selectedName
                       }
+
                       numberOfLines={
                         1
                       }
@@ -1398,9 +1502,11 @@ const ManualEntryScreen = ({
                         styles.selectedBalance
                       }
                     >
-                      {getBalanceLabel(
-                        selectedCustomer
-                      ).text}
+                      {
+                        getBalanceLabel(
+                          selectedCustomer
+                        ).text
+                      }
                     </Text>
 
                   )}
@@ -1431,6 +1537,7 @@ const ManualEntryScreen = ({
                 activeOpacity={
                   0.7
                 }
+
               >
 
                 <Text
@@ -1527,6 +1634,12 @@ const ManualEntryScreen = ({
                     setNewPhone
                   }
 
+                  returnKeyType="done"
+
+                  blurOnSubmit={
+                    false
+                  }
+
                 />
 
               </View>
@@ -1591,7 +1704,9 @@ const ManualEntryScreen = ({
               </View>
 
 
-              {/* PRESET AMOUNTS */}
+              {/* ==================================================
+                  PRESET AMOUNTS
+                  ================================================== */}
 
               <View
                 style={
@@ -1625,6 +1740,7 @@ const ManualEntryScreen = ({
                       activeOpacity={
                         0.8
                       }
+
                     >
 
                       <Text
@@ -1663,6 +1779,7 @@ const ManualEntryScreen = ({
                   activeOpacity={
                     0.8
                   }
+
                 >
 
                   <Text
@@ -1681,7 +1798,9 @@ const ManualEntryScreen = ({
               </View>
 
 
-              {/* CUSTOM AMOUNT */}
+              {/* ==================================================
+                  CUSTOM AMOUNT
+                  ================================================== */}
 
               {showCustomInput && (
 
@@ -1728,6 +1847,12 @@ const ManualEntryScreen = ({
                         setCustomAmount
                       }
 
+                      returnKeyType="done"
+
+                      blurOnSubmit={
+                        false
+                      }
+
                       autoFocus
 
                     />
@@ -1748,6 +1873,7 @@ const ManualEntryScreen = ({
                     activeOpacity={
                       0.8
                     }
+
                   >
 
                     <Text
@@ -1765,7 +1891,9 @@ const ManualEntryScreen = ({
               )}
 
 
-              {/* SELECTED AMOUNT */}
+              {/* ==================================================
+                  SELECTED AMOUNT
+                  ================================================== */}
 
               {amount && (
 
@@ -1848,6 +1976,10 @@ const ManualEntryScreen = ({
               </View>
 
 
+              {/* ==================================================
+                  TYPE CONTAINER
+                  ================================================== */}
+
               <View
                 style={
                   styles.typeContainer
@@ -1875,6 +2007,7 @@ const ManualEntryScreen = ({
                   activeOpacity={
                     0.82
                   }
+
                 >
 
                   <View
@@ -1973,6 +2106,7 @@ const ManualEntryScreen = ({
                   activeOpacity={
                     0.82
                   }
+
                 >
 
                   <View
@@ -2101,6 +2235,7 @@ const ManualEntryScreen = ({
                     'CREDIT'
                       ? 'Udhaar added for'
                       : 'Payment received from'}{' '}
+
                     <Text
                       style={
                         styles.finalPreviewName
@@ -2110,6 +2245,7 @@ const ManualEntryScreen = ({
                         selectedCustomer.name
                       }
                     </Text>
+
                   </Text>
 
                 </View>
@@ -2119,6 +2255,7 @@ const ManualEntryScreen = ({
             </>
 
           )}
+
 
           <View
             style={
@@ -2159,6 +2296,7 @@ const ManualEntryScreen = ({
             activeOpacity={
               0.86
             }
+
           >
 
             {isSaving ? (
@@ -2218,6 +2356,7 @@ const ManualEntryScreen = ({
       </View>
 
     </KeyboardAvoidingView>
+
   );
 };
 
@@ -2228,10 +2367,6 @@ const ManualEntryScreen = ({
 
 const styles =
   StyleSheet.create({
-
-    /* ========================================================
-       BASE
-       ======================================================== */
 
     keyboardContainer: {
       flex: 1,

@@ -1,23 +1,72 @@
 /*
  * ============================================================
- * StoreMate Offline-First Voice Router
+ * StoreMate Offline-First Voice Command Router
  * ============================================================
  *
- * Responsibilities:
+ * RESPONSIBILITIES
+ * ------------------------------------------------------------
  *
- * 1. Always create a local interpretation first.
- * 2. Offline -> use local immediately.
- * 3. Online -> try backend AI only when appropriate.
+ * 1. ALWAYS parse locally first.
+ * 2. Work without internet.
+ * 3. Use backend AI only when local interpretation is not
+ *    sufficiently confident.
  * 4. NEVER allow backend AI to override a high-confidence
- *    local transactional interpretation.
+ *    local transactional command.
+ * 5. Pass quantity + unit information through unchanged.
+ * 6. Unit conversion is handled downstream by IntentHandler /
+ *    UnitConversion.js.
  *
- * This is intentionally conservative because voice commands
- * can modify inventory, sales, money and customer records.
+ * ARCHITECTURE
+ * ------------------------------------------------------------
+ *
+ * Voice
+ *   ↓
+ * LocalVoiceParser
+ *   ↓
+ * High-confidence transaction?
+ *   ├── YES → local result
+ *   │
+ *   └── NO
+ *        ↓
+ *      Internet?
+ *        ├── NO → local result
+ *        │
+ *        └── YES → Backend AI
+ *                       ↓
+ *                    Remote result
+ *
+ * IMPORTANT
+ * ------------------------------------------------------------
+ *
+ * This router does NOT perform inventory quantity conversion.
+ *
+ * Example:
+ *
+ * "add 200 gram sugar"
+ *
+ * LocalVoiceParser:
+ *
+ * {
+ *   intent: "inventory.add",
+ *   product: "sugar",
+ *   quantity: 200,
+ *   unit: "GRAM"
+ * }
+ *
+ * Then:
+ *
+ * IntentHandler
+ *      ↓
+ * UnitConversion
+ *      ↓
+ * 200 GRAM → 0.2 KG
+ *
  * ============================================================
  */
 
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { BASE_URL } from '../../config/api';
 
 import {
@@ -25,65 +74,292 @@ import {
 } from './LocalVoiceParser';
 
 
+/*
+ * ============================================================
+ * CONFIGURATION
+ * ============================================================
+ */
+
 const SERVER_TIMEOUT_MS = 5000;
 
 
 /*
- * ============================================================
- * HELPERS
- * ============================================================
+ * High-confidence local transaction threshold.
+ *
+ * If the local parser reaches this confidence level,
+ * backend AI is completely bypassed.
  */
 
-const safeString = value =>
-  typeof value === 'string'
-    ? value
-        .replace(/[\u0000-\u001F\u007F]/g, '')
-        .trim()
-        .slice(0, 500)
-    : '';
+const LOCAL_TRANSACTION_CONFIDENCE = 0.90;
 
 
-const isUsableNetwork = state =>
-  state?.isConnected === true &&
-  state?.isInternetReachable !== false;
+/*
+ * Safety threshold.
+ *
+ * Even if local confidence is slightly below the primary
+ * threshold, a sufficiently strong transactional result
+ * should still prevent the backend from changing its meaning.
+ */
+
+const LOCAL_SAFETY_CONFIDENCE = 0.85;
 
 
 /*
  * ============================================================
- * LOCAL PRIORITY INTENTS
+ * LOCAL TRANSACTIONAL INTENTS
  * ============================================================
  *
- * These commands can directly change:
+ * These intents can modify important shop data.
  *
- * - customers
- * - Khata
- * - payments
- * - inventory
- * - prices
- * - sales
+ * A high-confidence local interpretation of these commands
+ * should NEVER be replaced by backend AI.
  *
- * If the local parser confidently understands one of these,
- * the backend AI is NOT allowed to reinterpret it.
+ * IMPORTANT:
  *
- * This is important for offline-first behavior and prevents
- * online AI from changing a correctly detected command.
+ * Only intents actually produced by LocalVoiceParser should
+ * be added here.
+ *
  * ============================================================
  */
 
 const LOCAL_PRIORITY_INTENTS = new Set([
+
+  /*
+   * ----------------------------------------------------------
+   * CUSTOMER
+   * ----------------------------------------------------------
+   */
+
   'customer.create',
+
+  'customer.update',
+
+  'customer.delete',
+
+
+  /*
+   * ----------------------------------------------------------
+   * KHATA
+   * ----------------------------------------------------------
+   */
+
   'khata.credit',
+
+  'khata.debit',
+
+  'khata.payment',
+
+  'khata.settle',
+
+  'khata.update',
+
+  'khata.delete',
+
   'query.khata',
+
+
+  /*
+   * ----------------------------------------------------------
+   * INVENTORY
+   * ----------------------------------------------------------
+   */
+
   'inventory.create',
+
   'inventory.add',
+
+  'inventory.remove',
+
+  'inventory.update',
+
   'inventory.update_price',
+
+  'inventory.delete',
+
+
+  /*
+   * ----------------------------------------------------------
+   * SALES
+   * ----------------------------------------------------------
+   */
+
   'sale.create',
+
+  'sale.update',
+
+  'sale.delete',
+
+
+  /*
+   * ----------------------------------------------------------
+   * PURCHASES
+   * ----------------------------------------------------------
+   */
+
+  'purchase.create',
+
+  'purchase.update',
+
+
+  /*
+   * ----------------------------------------------------------
+   * EXPENSES
+   * ----------------------------------------------------------
+   */
+
+  'expense.create',
+
 ]);
 
 
 /*
  * ============================================================
+ * SAFE STRING
+ * ============================================================
+ */
+
+const safeString = value => {
+
+  if (
+    typeof value !== 'string'
+  ) {
+    return '';
+  }
+
+
+  return value
+    .replace(
+      /[\u0000-\u001F\u007F]/g,
+      ''
+    )
+    .trim()
+    .slice(0, 500);
+};
+
+
+/*
+ * ============================================================
+ * SAFE ARRAY
+ * ============================================================
+ */
+
+const safeArray = value => {
+
+  if (
+    !Array.isArray(value)
+  ) {
+    return [];
+  }
+
+
+  return value
+    .filter(
+      item =>
+        typeof item === 'string'
+    )
+    .map(
+      item =>
+        safeString(item)
+    )
+    .filter(
+      Boolean
+    )
+    .slice(0, 1000);
+};
+
+
+/*
+ * ============================================================
+ * NETWORK CHECK
+ * ============================================================
+ *
+ * Network is considered usable when:
+ *
+ * isConnected === true
+ *
+ * AND
+ *
+ * isInternetReachable !== false
+ *
+ * If isInternetReachable is null/unknown,
+ * we still allow the request.
+ *
+ * ============================================================
+ */
+
+const isUsableNetwork = state => {
+
+  return (
+    state?.isConnected === true &&
+    state?.isInternetReachable !== false
+  );
+};
+
+
+/*
+ * ============================================================
+ * CONFIDENCE
+ * ============================================================
+ */
+
+const getConfidence = result => {
+
+  const confidence =
+    Number(
+      result?.confidence
+    );
+
+
+  if (
+    !Number.isFinite(
+      confidence
+    )
+  ) {
+    return 0;
+  }
+
+
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      confidence
+    )
+  );
+};
+
+
+/*
+ * ============================================================
+ * IS LOCAL PRIORITY INTENT
+ * ============================================================
+ */
+
+const isLocalPriorityIntent = result => {
+
+  return (
+    !!result &&
+    LOCAL_PRIORITY_INTENTS.has(
+      result.intent
+    )
+  );
+};
+
+
+/*
+ * ============================================================
  * NORMALIZE REMOTE RESULT
+ * ============================================================
+ *
+ * Backend must return an object containing at least:
+ *
+ * {
+ *   intent: "inventory.add"
+ * }
+ *
+ * Invalid responses are rejected and local interpretation
+ * is used instead.
+ *
  * ============================================================
  */
 
@@ -92,22 +368,86 @@ const normalizeRemoteResult = remote => {
   if (
     !remote ||
     typeof remote !== 'object' ||
-    Array.isArray(remote) ||
+    Array.isArray(remote)
+  ) {
+    return null;
+  }
+
+
+  if (
     typeof remote.intent !== 'string'
   ) {
     return null;
   }
 
+
+  const intent =
+    remote.intent
+      .trim()
+      .toLowerCase();
+
+
+  if (!intent) {
+    return null;
+  }
+
+
   return {
+
     ...remote,
 
-    intent:
-      remote.intent
-        .trim()
-        .toLowerCase(),
+    intent,
 
     source:
-      remote.source || 'remote',
+      remote.source ||
+      'remote',
+
+  };
+};
+
+
+/*
+ * ============================================================
+ * LOCAL RESULT NORMALIZER
+ * ============================================================
+ *
+ * We don't modify the parser's actual data.
+ *
+ * We only ensure the result is an object.
+ *
+ * ============================================================
+ */
+
+const normalizeLocalResult = local => {
+
+  if (
+    !local ||
+    typeof local !== 'object' ||
+    Array.isArray(local)
+  ) {
+    return {
+
+      intent:
+        'unknown',
+
+      confidence:
+        0,
+
+      source:
+        'local',
+
+    };
+  }
+
+
+  return {
+
+    ...local,
+
+    source:
+      local.source ||
+      'local',
+
   };
 };
 
@@ -116,30 +456,75 @@ const normalizeRemoteResult = remote => {
  * ============================================================
  * MAIN ROUTER
  * ============================================================
+ *
+ * parseVoiceCommand({
+ *
+ *   text,
+ *
+ *   inventoryNames,
+ *
+ *   customerNames
+ *
+ * })
+ *
+ * ============================================================
  */
 
 export async function parseVoiceCommand({
+
   text,
+
   inventoryNames = [],
+
   customerNames = [],
+
 }) {
+
+  /*
+   * ==========================================================
+   * SANITIZE INPUT
+   * ==========================================================
+   */
 
   const safeText =
     safeString(text);
+
+
+  const safeInventoryNames =
+    safeArray(
+      inventoryNames
+    );
+
+
+  const safeCustomerNames =
+    safeArray(
+      customerNames
+    );
 
 
   /*
    * ==========================================================
    * EMPTY COMMAND
    * ==========================================================
+   *
+   * Even empty input goes through the local parser so that
+   * LocalVoiceParser remains the single source of truth for
+   * its fallback/unknown structure.
+   * ==========================================================
    */
 
   if (!safeText) {
 
-    return parseVoiceCommandLocally(
-      '',
-      inventoryNames,
-      customerNames
+    const emptyResult =
+      parseVoiceCommandLocally(
+        '',
+        safeInventoryNames,
+        safeCustomerNames
+      );
+
+
+    return normalizeLocalResult(
+      emptyResult
     );
   }
 
@@ -149,17 +534,62 @@ export async function parseVoiceCommand({
    * LOCAL PARSE FIRST
    * ==========================================================
    *
-   * This ALWAYS runs.
+   * THIS ALWAYS HAPPENS.
    *
-   * Therefore voice commands do not depend on internet
-   * availability for basic command recognition.
+   * Therefore:
+   *
+   * Internet ON  → local first
+   * Internet OFF → local first
+   *
+   * ==========================================================
    */
 
-  const localResult =
-    parseVoiceCommandLocally(
-      safeText,
-      inventoryNames,
-      customerNames
+  let localResult;
+
+
+  try {
+
+    localResult =
+      parseVoiceCommandLocally(
+        safeText,
+        safeInventoryNames,
+        safeCustomerNames
+      );
+
+  } catch (error) {
+
+    /*
+     * Local parser failure.
+     *
+     * We don't silently fabricate an intent.
+     *
+     * If online, backend gets a chance.
+     */
+
+    console.error(
+      'VoiceCommandRouter: local parser failed',
+      error?.message || error
+    );
+
+
+    localResult = {
+
+      intent:
+        'unknown',
+
+      confidence:
+        0,
+
+      source:
+        'local_error',
+
+    };
+  }
+
+
+  localResult =
+    normalizeLocalResult(
+      localResult
     );
 
 
@@ -170,33 +600,40 @@ export async function parseVoiceCommand({
    *
    * Example:
    *
-   * "create Ravi account"
+   * "add 200 gram sugar"
    *
-   * Local parser:
+   * Local:
    *
-   * customer.create
-   * customer_name = Ravi
+   * inventory.add
+   * confidence 0.95
    *
-   * We immediately return it.
+   * → RETURN IMMEDIATELY.
    *
-   * Backend AI never gets the opportunity to reinterpret
-   * it as a product or sale.
+   * Backend AI is NOT contacted.
+   *
+   * ==========================================================
    */
 
   if (
-    LOCAL_PRIORITY_INTENTS.has(
-      localResult?.intent
+
+    isLocalPriorityIntent(
+      localResult
     ) &&
-    Number(
-      localResult?.confidence || 0
-    ) >= 0.90
+
+    getConfidence(
+      localResult
+    ) >=
+    LOCAL_TRANSACTION_CONFIDENCE
+
   ) {
 
     return {
+
       ...localResult,
 
       source:
         'local_priority',
+
     };
   }
 
@@ -208,9 +645,9 @@ export async function parseVoiceCommand({
    *
    * If there is no internet:
    *
-   * LOCAL RESULT IS RETURNED IMMEDIATELY.
+   * return local interpretation.
    *
-   * No backend call is attempted.
+   * ==========================================================
    */
 
   try {
@@ -228,13 +665,19 @@ export async function parseVoiceCommand({
       return localResult;
     }
 
-  } catch {
+  } catch (error) {
 
     /*
-     * NetInfo failure must NEVER break voice commands.
+     * NetInfo itself failed.
      *
-     * Remain offline-first.
+     * Stay offline-first.
      */
+
+    console.log(
+      'VoiceCommandRouter: NetInfo unavailable, using local parser',
+      error?.message || error
+    );
+
 
     return localResult;
   }
@@ -245,12 +688,13 @@ export async function parseVoiceCommand({
    * BACKEND REQUEST
    * ==========================================================
    *
-   * Only reached when:
+   * Internet appears available.
    *
-   * 1. Local parser did not produce a high-confidence
-   *    transactional intent.
+   * Local parser was not sufficiently confident to completely
+   * own the command.
    *
-   * 2. Internet appears available.
+   * Give backend AI a chance.
+   * ==========================================================
    */
 
   const controller =
@@ -259,8 +703,11 @@ export async function parseVoiceCommand({
 
   const timeoutId =
     setTimeout(
-      () =>
-        controller.abort(),
+      () => {
+
+        controller.abort();
+
+      },
       SERVER_TIMEOUT_MS
     );
 
@@ -272,92 +719,212 @@ export async function parseVoiceCommand({
      * AUTH TOKEN
      * ========================================================
      *
-     * /api/v1/ai/parse-intent requires a valid JWT on the
-     * backend. Using getItem (single-key) here, NOT multiGet,
-     * consistent with the AsyncStorage fix applied elsewhere
-     * in this app.
+     * Your backend expects:
      *
-     * The header is attached conditionally: if no token is
-     * found (e.g. a rare storage read failure), the request
-     * still goes out. The backend will then correctly return
-     * 401, which the existing "BACKEND FAILURE -> LOCAL" check
-     * below already handles by falling back to the local
-     * result. Voice commands degrade gracefully either way.
+     * Authorization:
+     * Bearer <JWT>
+     *
+     * We use getItem because userToken is stored as one key.
+     * ========================================================
      */
 
     let token = null;
 
+
     try {
-      token = await AsyncStorage.getItem('userToken');
+
+      token =
+        await AsyncStorage.getItem(
+          'userToken'
+        );
+
     } catch (tokenError) {
+
       console.log(
         'VoiceCommandRouter: failed to read auth token',
-        tokenError?.message
+        tokenError?.message ||
+          tokenError
       );
     }
+
+
+    /*
+     * ========================================================
+     * REQUEST BODY
+     * ========================================================
+     */
+
+    const requestBody = {
+
+      text:
+        safeText,
+
+      inventory_names:
+        safeInventoryNames,
+
+      customer_names:
+        safeCustomerNames,
+
+      voice_language:
+        'hi-en-hinglish',
+
+      voice_features: {
+
+        price_qualified_products:
+          true,
+
+        direct_khata_item_sales:
+          true,
+
+        product_aliases:
+          true,
+
+        mixed_units:
+          true,
+
+      },
+
+      local_hint: {
+
+        intent:
+          localResult.intent,
+
+        product:
+          localResult.product ||
+          null,
+
+        qty:
+          localResult.qty ??
+          null,
+
+        unit:
+          localResult.unit ||
+          null,
+
+        price_hint:
+          localResult.price_hint ??
+          null,
+
+        customer_name:
+          localResult.customer_name ||
+          null,
+
+        payment_type:
+          localResult.payment_type ||
+          null,
+
+        confidence:
+          getConfidence(
+            localResult
+          ),
+
+      },
+
+    };
+
+
+    /*
+     * ========================================================
+     * SEND TO BACKEND
+     * ========================================================
+     */
 
     const response =
       await fetch(
         `${BASE_URL}/api/v1/ai/parse-intent`,
         {
+
           method:
             'POST',
 
           headers: {
+
             'Content-Type':
               'application/json',
+
             ...(token
-              ? { Authorization: `Bearer ${token}` }
+              ? {
+                  Authorization:
+                    `Bearer ${token}`,
+                }
               : {}),
+
           },
 
           body:
-            JSON.stringify({
-              text:
-                safeText,
-
-              inventory_names:
-                Array.isArray(
-                  inventoryNames
-                )
-                  ? inventoryNames
-                  : [],
-
-              customer_names:
-                Array.isArray(
-                  customerNames
-                )
-                  ? customerNames
-                  : [],
-            }),
+            JSON.stringify(
+              requestBody
+            ),
 
           signal:
             controller.signal,
+
         }
       );
 
 
     /*
      * ========================================================
-     * BACKEND FAILURE -> LOCAL
+     * BACKEND FAILURE
      * ========================================================
      *
-     * Also covers a 401 from a missing/expired token — voice
-     * commands never hard-fail, they just fall back to the
-     * local parser.
+     * 401
+     * 403
+     * 404
+     * 429
+     * 500
+     * 502
+     * timeout
+     *
+     * ALL fall back to local.
+     * ========================================================
      */
 
     if (
       !response.ok
     ) {
 
+      console.log(
+        `VoiceCommandRouter: backend returned ${response.status}; using local result`
+      );
+
+
       return localResult;
     }
 
 
-    const remoteRaw =
-      await response.json();
+    /*
+     * ========================================================
+     * PARSE REMOTE JSON
+     * ========================================================
+     */
 
+    let remoteRaw;
+
+
+    try {
+
+      remoteRaw =
+        await response.json();
+
+    } catch (jsonError) {
+
+      console.log(
+        'VoiceCommandRouter: invalid backend JSON',
+        jsonError?.message ||
+          jsonError
+      );
+
+
+      return localResult;
+    }
+
+
+    /*
+     * ========================================================
+     * NORMALIZE REMOTE
+     * ========================================================
+     */
 
     const remote =
       normalizeRemoteResult(
@@ -366,7 +933,7 @@ export async function parseVoiceCommand({
 
 
     /*
-     * Invalid backend response -> local.
+     * Invalid backend response.
      */
 
     if (!remote) {
@@ -377,25 +944,40 @@ export async function parseVoiceCommand({
 
     /*
      * ========================================================
-     * SECOND SAFETY CHECK
+     * SECOND TRANSACTION SAFETY CHECK
      * ========================================================
      *
-     * This protects against a situation where the local
-     * confidence was slightly below the first threshold but
-     * still strong enough that we don't want the backend
-     * changing the meaning of a transactional command.
+     * Example:
+     *
+     * Local:
+     *
+     * inventory.add
+     * confidence 0.87
+     *
+     * Remote:
+     *
+     * sale.create
+     *
+     * We DO NOT allow the remote model to reinterpret it.
+     *
+     * ========================================================
      */
 
     if (
-      LOCAL_PRIORITY_INTENTS.has(
-        localResult?.intent
+
+      isLocalPriorityIntent(
+        localResult
       ) &&
-      Number(
-        localResult?.confidence || 0
-      ) >= 0.85
+
+      getConfidence(
+        localResult
+      ) >=
+      LOCAL_SAFETY_CONFIDENCE
+
     ) {
 
       return {
+
         ...localResult,
 
         source:
@@ -403,6 +985,7 @@ export async function parseVoiceCommand({
 
         remoteIntent:
           remote.intent,
+
       };
     }
 
@@ -412,29 +995,51 @@ export async function parseVoiceCommand({
      * REMOTE RESULT
      * ========================================================
      *
-     * Only commands that local parsing could not confidently
-     * classify reach this point.
+     * Local parser was not confident enough to claim the
+     * command.
+     *
+     * Backend AI is therefore allowed to interpret it.
+     *
+     * ========================================================
      */
 
     return {
+
       ...remote,
 
       source:
         remote.source ||
         'remote',
+
     };
 
-  } catch {
+  } catch (error) {
 
     /*
      * ========================================================
      * NETWORK / TIMEOUT / DNS FAILURE
      * ========================================================
      *
-     * Always fall back to local interpretation.
+     * NEVER break the voice feature because internet failed.
      *
-     * This is the critical offline-first behavior.
+     * ========================================================
      */
+
+    const errorMessage =
+      error?.name === 'AbortError'
+
+        ? 'Backend voice request timed out'
+
+        : (
+            error?.message ||
+            'Unknown network error'
+          );
+
+
+    console.log(
+      `VoiceCommandRouter: ${errorMessage}; using local result`
+    );
+
 
     return localResult;
 
@@ -446,5 +1051,11 @@ export async function parseVoiceCommand({
   }
 }
 
+
+/*
+ * ============================================================
+ * DEFAULT EXPORT
+ * ============================================================
+ */
 
 export default parseVoiceCommand;

@@ -3,14 +3,13 @@ import React, {
   useEffect,
   useContext,
 } from 'react';
-
+import { useAppAlert } from '../components/AppAlert';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Image,
   Modal,
@@ -75,8 +74,8 @@ const profileStorageKey = userId =>
    ============================================================ */
 
 const ProfileScreen = () => {
-  const { logout } =
-    useContext(AuthContext);
+  const { logout } = useContext(AuthContext);
+  const { showAlert } = useAppAlert();
 
   const insets =
     useSafeAreaInsets();
@@ -383,7 +382,7 @@ const ProfileScreen = () => {
         );
 
         if (mounted) {
-          Alert.alert(
+          showAlert(
             'Profile',
             'Unable to load your shop profile.'
           );
@@ -405,7 +404,7 @@ const ProfileScreen = () => {
   const saveProfile =
     async () => {
       if (!currentUserId) {
-        Alert.alert(
+        showAlert(
           'Profile',
           'No active user found.'
         );
@@ -414,7 +413,7 @@ const ProfileScreen = () => {
       }
 
       if (!shopName.trim()) {
-        Alert.alert(
+        showAlert(
           'Shop name required',
           'Please enter your shop name.'
         );
@@ -519,7 +518,7 @@ const ProfileScreen = () => {
           false
         );
 
-        Alert.alert(
+        showAlert(
           'Saved',
           'Your shop profile has been updated.'
         );
@@ -529,7 +528,7 @@ const ProfileScreen = () => {
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Save failed',
           'Could not save your profile. Please try again.'
         );
@@ -582,7 +581,7 @@ const ProfileScreen = () => {
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Photo',
           'Unable to select the shop photo.'
         );
@@ -607,7 +606,7 @@ const ProfileScreen = () => {
       try {
         await backupNow();
 
-        Alert.alert(
+        showAlert(
           'Backup complete',
           'Your Countr data backup has been completed.'
         );
@@ -617,7 +616,7 @@ const ProfileScreen = () => {
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Backup failed',
           error?.message ||
             'Unable to create backup right now.'
@@ -750,7 +749,7 @@ const ProfileScreen = () => {
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Export failed',
           error?.message ||
             'Unable to export your Khata.'
@@ -773,7 +772,7 @@ const ProfileScreen = () => {
         feedbackText.trim();
 
       if (!message) {
-        Alert.alert(
+        showAlert(
           'Feedback',
           'Please write your feedback first.'
         );
@@ -837,7 +836,7 @@ const ProfileScreen = () => {
           false
         );
 
-        Alert.alert(
+        showAlert(
           'Thank you',
           'Your feedback has been sent to the Countr team.'
         );
@@ -847,7 +846,7 @@ const ProfileScreen = () => {
           error
         );
 
-        Alert.alert(
+        showAlert(
           'Could not send',
           'Please try again later.'
         );
@@ -865,7 +864,7 @@ const ProfileScreen = () => {
 
   const handleLogout =
     () => {
-      Alert.alert(
+      showAlert(
         'Log out of Countr?',
 
         'You can sign back in anytime. Your shop data stays associated with your account.',

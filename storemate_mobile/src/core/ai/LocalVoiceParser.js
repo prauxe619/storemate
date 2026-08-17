@@ -3,34 +3,44 @@
  * StoreMate Local Voice Parser
  * ============================================================
  *
- * OFFLINE-FIRST KIRANA VOICE ENGINE
+ * OFFLINE-FIRST KIRANA / LOCAL STORE VOICE ENGINE
  *
- * Understands:
+ * Languages:
+ *   - English
+ *   - Hindi
+ *   - Hinglish
+ *   - Mixed Hindi + English
  *
- * Hindi
- * Hinglish
- * English
- * Mixed Hindi + English
+ * Designed for commands such as:
  *
- * Examples:
- *
- *   500 gram sugar
+ *   200 gram sugar
+ *   500g sugar add karo
  *   aadha kilo chini
  *   paav kilo chawal
- *   2 packet biscuit
- *   do packet biscuit
- *   5 piece soap
- *   1 bottle milk
- *   1 dozen eggs
- *   10 cigarette
+ *   pauna kilo aata
+ *   sawa kilo sugar
+ *   dedh kilo rice
+ *   dhai kilo dal
  *
- *   500 gram chini dalo
- *   biscuit ke 2 packet jodo
- *   5 cigarette add karo
+ *   1 kg 250 gram sugar
+ *   2 litre 500 ml oil
+ *
+ *   2 packet biscuit
+ *   5 piece soap
+ *   1 dozen eggs
+ *   1 gross pen
+ *   2 pair socks
+ *   1 box biscuit
+ *   3 pouch milk
+ *   5 bottle oil
+ *   2 carton cold drink
+ *   10 strip medicine
+ *   2 tray eggs
+ *   1 sack rice
+ *   1 bori wheat
  *
  *   mere paas Parle G kitna hai
  *   Parle G kitna stock hai
- *   sabudana kitna bacha hai
  *
  *   Rakesh ke khate mein 100 dalo
  *   Rakesh ko 100 udhaar do
@@ -39,7 +49,8 @@
  * IMPORTANT:
  *
  * This file NEVER writes to WatermelonDB.
- * IntentHandler.js is responsible for database writes.
+ * IntentHandler.js performs all database operations.
+ *
  * ============================================================
  */
 
@@ -50,16 +61,19 @@
  * ============================================================
  */
 
-const MAX_TEXT_LENGTH = 500;
+const MAX_TEXT_LENGTH =
+  500;
 
-const MAX_QUANTITY = 100000;
+const MAX_QUANTITY =
+  100000;
 
-const MAX_AMOUNT = 100000000;
+const MAX_AMOUNT =
+  100000000;
 
 
 /*
  * ============================================================
- * SYNONYMS
+ * ACTION / LANGUAGE SYNONYMS
  * ============================================================
  */
 
@@ -85,7 +99,9 @@ const SYNONYMS = {
   bechi: 'sell',
   bechna: 'sell',
   bechdo: 'sell',
+  bechdo: 'sell',
 
+  bikri: 'sell',
   bikri: 'sell',
   bik: 'sell',
 
@@ -101,6 +117,7 @@ const SYNONYMS = {
 
   add: 'add',
   added: 'add',
+  adding: 'add',
 
   ad: 'add',
 
@@ -109,6 +126,7 @@ const SYNONYMS = {
   jodo: 'add',
   jod: 'add',
   jorna: 'add',
+  jor: 'add',
 
   daalo: 'add',
   dalo: 'add',
@@ -118,20 +136,18 @@ const SYNONYMS = {
   chadha: 'add',
   chadhao: 'add',
   chadao: 'add',
+  chadhana: 'add',
 
   bharo: 'add',
   bhar: 'add',
 
-  bhandar: 'add',
-
   stock: 'stock',
-
   maal: 'stock',
 
 
   /*
    * ----------------------------------------------------------
-   * SALES / INVENTORY HINDI
+   * REMOVE
    * ----------------------------------------------------------
    */
 
@@ -223,6 +239,7 @@ const SYNONYMS = {
   discount: 'discount',
   chhoot: 'discount',
   chut: 'discount',
+  chhut: 'discount',
 
 
   /*
@@ -236,8 +253,6 @@ const SYNONYMS = {
 
   customer: 'customer',
   customers: 'customer',
-
-  account: 'account',
 
   naya: 'new',
   naye: 'new',
@@ -254,6 +269,7 @@ const SYNONYMS = {
   banado: 'create',
   banaao: 'create',
   banaye: 'create',
+
   khol: 'create',
   kholo: 'create',
   kholna: 'create',
@@ -267,102 +283,11 @@ const SYNONYMS = {
 
   karo: 'do',
   kar: 'do',
-
   kardo: 'do',
   kardena: 'do',
 
-  do: 'do',
-
   please: 'please',
   pls: 'please',
-
-
-  /*
-   * ----------------------------------------------------------
-   * NUMBER WORDS
-   * ----------------------------------------------------------
-   */
-
-  ek: '1',
-  aik: '1',
-  eka: '1',
-
-  do: '2',
-  dono: '2',
-
-  teen: '3',
-  tin: '3',
-
-  char: '4',
-  chaar: '4',
-
-  panch: '5',
-  paanch: '5',
-
-  chhe: '6',
-  che: '6',
-  chhah: '6',
-
-  saat: '7',
-  sat: '7',
-
-  aath: '8',
-  ath: '8',
-
-  nau: '9',
-  naoo: '9',
-
-  das: '10',
-
-  gyarah: '11',
-  gyaarah: '11',
-
-  barah: '12',
-  baarah: '12',
-
-  terah: '13',
-  chaudah: '14',
-  pandrah: '15',
-  solah: '16',
-  satrah: '17',
-  atharah: '18',
-  unnis: '19',
-  bees: '20',
-
-  ikkis: '21',
-  bais: '22',
-  teiis: '23',
-  teis: '23',
-  chaubis: '24',
-  pachis: '25',
-  chhabis: '26',
-  satais: '27',
-  athais: '28',
-  untees: '29',
-  tees: '30',
-
-  chaalis: '40',
-  chalis: '40',
-
-  pachaas: '50',
-  pachas: '50',
-
-  saath: '60',
-  sattar: '70',
-  assi: '80',
-  nabbe: '90',
-
-  sau: '100',
-  so: '100',
-
-  hundred: '100',
-
-  hazaar: '1000',
-  hazar: '1000',
-  thousand: '1000',
-
-  lakh: '100000',
-  lac: '100000',
 };
 
 
@@ -399,7 +324,18 @@ const DEVANAGARI_NUMBERS = {
   'उन्नीस': 19,
   'बीस': 20,
 
+  'इक्कीस': 21,
+  'बाईस': 22,
+  'तेईस': 23,
+  'तेइस': 23,
+  'चौबीस': 24,
+  'पच्चीस': 25,
+  'छब्बीस': 26,
+  'सत्ताईस': 27,
+  'अट्ठाईस': 28,
+  'उनतीस': 29,
   'तीस': 30,
+
   'चालीस': 40,
   'पचास': 50,
   'साठ': 60,
@@ -408,195 +344,167 @@ const DEVANAGARI_NUMBERS = {
   'नब्बे': 90,
 
   'सौ': 100,
+
   'हज़ार': 1000,
   'हजार': 1000,
+
   'लाख': 100000,
 };
 
 
 /*
  * ============================================================
- * UNIT DEFINITIONS
- * ============================================================
- *
- * IMPORTANT:
- * The returned unit is normalized.
- *
- * KG
- * GRAM
- * LITRE
- * ML
- * PIECE
- * PACK
- * BOTTLE
- * BOX
- * DOZEN
- * STRIP
- * CARTON
- * BUNDLE
+ * ENGLISH / HINGLISH NUMBER WORDS
  * ============================================================
  */
 
-const UNIT_ALIASES = {
+const SMALL_NUMBERS = {
 
-  /*
-   * Weight
-   */
+  zero: 0,
 
-  kg: 'KG',
-  kgs: 'KG',
-  kilo: 'KG',
-  kilos: 'KG',
-  kilogram: 'KG',
-  kilograms: 'KG',
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
 
-  kiloGram: 'KG',
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
 
-  'किलो': 'KG',
-  'किलोग्राम': 'KG',
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
 
+  ek: 1,
+  aik: 1,
+  eka: 1,
 
-  gram: 'GRAM',
-  grams: 'GRAM',
-  gm: 'GRAM',
-  gms: 'GRAM',
-  g: 'GRAM',
+  do: 2,
+  dono: 2,
 
-  'ग्राम': 'GRAM',
-  'ग्राम्': 'GRAM',
+  teen: 3,
+  tin: 3,
 
+  char: 4,
+  chaar: 4,
 
-  /*
-   * Liquid
-   */
+  panch: 5,
+  paanch: 5,
 
-  litre: 'LITRE',
-  liter: 'LITRE',
-  litres: 'LITRE',
-  liters: 'LITRE',
-  l: 'LITRE',
+  chhe: 6,
+  che: 6,
+  chhah: 6,
 
-  'लीटर': 'LITRE',
-  'लीटर': 'LITRE',
+  saat: 7,
+  sat: 7,
 
+  aath: 8,
+  ath: 8,
 
-  ml: 'ML',
-  millilitre: 'ML',
-  millilitres: 'ML',
-  milliliter: 'ML',
-  milliliters: 'ML',
+  nau: 9,
+  naoo: 9,
 
-  'मिली': 'ML',
-  'मिलीलीटर': 'ML',
+  das: 10,
 
+  gyarah: 11,
+  gyaarah: 11,
 
-  /*
-   * Individual item
-   */
+  barah: 12,
+  baarah: 12,
 
-  piece: 'PIECE',
-  pieces: 'PIECE',
-  pc: 'PIECE',
-  pcs: 'PIECE',
-  piecees: 'PIECE',
+  terah: 13,
+  chaudah: 14,
+  pandrah: 15,
+  solah: 16,
+  satrah: 17,
+  atharah: 18,
+  unnis: 19,
+  bees: 20,
 
-  'पीस': 'PIECE',
-  'नग': 'PIECE',
-  nag: 'PIECE',
-  नग: 'PIECE',
+  ikkis: 21,
+  bais: 22,
+  baais: 22,
+  teis: 23,
+  teiis: 23,
+  chaubis: 24,
+  pachis: 25,
+  chhabis: 26,
+  satais: 27,
+  athais: 28,
+  untees: 29,
+  tees: 30,
 
+  chaalis: 40,
+  chalis: 40,
 
-  /*
-   * Packets
-   */
+  pachaas: 50,
+  pachas: 50,
 
-  packet: 'PACK',
-  packets: 'PACK',
-  pkt: 'PACK',
-  pkts: 'PACK',
-  pack: 'PACK',
-  packs: 'PACK',
-
-  'पैकेट': 'PACK',
-  'पैकेट्स': 'PACK',
-
-
-  /*
-   * Bottle
-   */
-
-  bottle: 'BOTTLE',
-  bottles: 'BOTTLE',
-  btl: 'BOTTLE',
-
-  'बोतल': 'BOTTLE',
-  'बॉटल': 'BOTTLE',
-
-
-  /*
-   * Box
-   */
-
-  box: 'BOX',
-  boxes: 'BOX',
-  dabba: 'BOX',
-  dabbe: 'BOX',
-  dibba: 'BOX',
-  dibbe: 'BOX',
-
-  'डिब्बा': 'BOX',
-  'डिब्बे': 'BOX',
-  'डब्बा': 'BOX',
-  'डब्बे': 'BOX',
-
-
-  /*
-   * Dozen
-   */
-
-  dozen: 'DOZEN',
-  dz: 'DOZEN',
-
-  'दर्जन': 'DOZEN',
-
-
-  /*
-   * Strip
-   */
-
-  strip: 'STRIP',
-  strips: 'STRIP',
-
-  'स्ट्रिप': 'STRIP',
-
-
-  /*
-   * Carton
-   */
-
-  carton: 'CARTON',
-  cartons: 'CARTON',
-
-  'कार्टन': 'CARTON',
-
-
-  /*
-   * Bundle
-   */
-
-  bundle: 'BUNDLE',
-  bundles: 'BUNDLE',
-
-  gaddi: 'BUNDLE',
-  gaddi: 'BUNDLE',
-
-  'बंडल': 'BUNDLE',
+  saath: 60,
+  sattar: 70,
+  assi: 80,
+  nabbe: 90,
 };
 
 
 /*
  * ============================================================
- * FRACTION / APPROXIMATE QUANTITY WORDS
+ * MULTIPLIERS
+ * ============================================================
+ */
+
+const MULTIPLIERS = {
+
+  hundred: 100,
+  sau: 100,
+  so: 100,
+
+  thousand: 1000,
+  hazaar: 1000,
+  hazar: 1000,
+
+  lakh: 100000,
+  lac: 100000,
+};
+
+
+/*
+ * ============================================================
+ * FRACTION / LOCAL QUANTITY WORDS
+ * ============================================================
+ *
+ * These are extremely important for Indian kirana speech.
+ *
+ * aadha kilo     = 0.5 KG
+ * paav kilo      = 0.25 KG
+ * pauna kilo     = 0.75 KG
+ * sawa kilo      = 1.25 KG
+ * dedh kilo      = 1.5 KG
+ * dhai kilo      = 2.5 KG
+ *
+ * Also works with litre where spoken:
+ *
+ * aadha litre
+ * pauna litre
+ * sawa litre
+ *
  * ============================================================
  */
 
@@ -609,8 +517,11 @@ const FRACTION_WORDS = {
 
   paav: 0.25,
   pav: 0.25,
+  paawa: 0.25,
+
   pauna: 0.75,
   paune: 0.75,
+  pona: 0.75,
 
   quarter: 0.25,
 
@@ -624,14 +535,378 @@ const FRACTION_WORDS = {
   dhai: 2.5,
   dhaai: 2.5,
 
-  'डेढ़': 1.5,
-  'ढाई': 2.5,
   'आधा': 0.5,
   'आधे': 0.5,
+  'आधी': 0.5,
+
   'पाव': 0.25,
   'पौना': 0.75,
+  'पौने': 0.75,
+
   'सवा': 1.25,
+
+  'डेढ़': 1.5,
+
+  'ढाई': 2.5,
 };
+
+
+/*
+ * ============================================================
+ * UNIT ALIASES
+ * ============================================================
+ *
+ * ALL units are normalized into canonical names.
+ *
+ * The parser does not perform stock conversion itself.
+ * It only tells IntentHandler what unit the user said.
+ *
+ * UnitConversion.js is responsible for mathematical conversion.
+ *
+ * ============================================================
+ */
+
+const UNIT_ALIASES = {
+
+  /*
+   * ==========================================================
+   * WEIGHT
+   * ==========================================================
+   */
+
+  mg: 'MG',
+  mgs: 'MG',
+  milligram: 'MG',
+  milligrams: 'MG',
+  milligramme: 'MG',
+  milligrammes: 'MG',
+
+  'मिलीग्राम': 'MG',
+  'मिलीग्राम्': 'MG',
+
+  gram: 'GRAM',
+  grams: 'GRAM',
+  gm: 'GRAM',
+  gms: 'GRAM',
+  g: 'GRAM',
+  gramme: 'GRAM',
+  grammes: 'GRAM',
+
+  'ग्राम': 'GRAM',
+  'ग्राम्': 'GRAM',
+
+  kg: 'KG',
+  kgs: 'KG',
+  kilo: 'KG',
+  kilos: 'KG',
+  kilogram: 'KG',
+  kilograms: 'KG',
+  kilogramme: 'KG',
+  kilogrammes: 'KG',
+
+  'किलो': 'KG',
+  'किलोग्राम': 'KG',
+
+  quintal: 'QUINTAL',
+  quintals: 'QUINTAL',
+  qtl: 'QUINTAL',
+
+  'क्विंटल': 'QUINTAL',
+  'क्विन्टल': 'QUINTAL',
+
+  ton: 'TON',
+  tons: 'TON',
+  tonne: 'TON',
+  tonnes: 'TON',
+  mt: 'TON',
+  metricton: 'TON',
+
+  'टन': 'TON',
+
+
+  /*
+   * Traditional / local weight names.
+   *
+   * These are recognized, but conversion should only be enabled
+   * in UnitConversion.js if you want to support them.
+   */
+
+  tola: 'TOLA',
+  tolas: 'TOLA',
+
+  'तोला': 'TOLA',
+
+  chhatak: 'CHHATAK',
+  chatak: 'CHHATAK',
+  chhatacks: 'CHHATAK',
+
+  'छटांक': 'CHHATAK',
+
+  seer: 'SEER',
+  ser: 'SEER',
+
+  'सेर': 'SEER',
+
+  maund: 'MAUND',
+  man: 'MAUND',
+
+  'मन': 'MAUND',
+  'मण': 'MAUND',
+
+
+  /*
+   * ==========================================================
+   * LIQUID / VOLUME
+   * ==========================================================
+   */
+
+  ml: 'ML',
+  mls: 'ML',
+
+  millilitre: 'ML',
+  millilitres: 'ML',
+  milliliter: 'ML',
+  milliliters: 'ML',
+
+  milliliteres: 'ML',
+
+  'मिली': 'ML',
+  'एमएल': 'ML',
+  'मिलीलीटर': 'ML',
+
+  litre: 'LITRE',
+  liter: 'LITRE',
+  litres: 'LITRE',
+  liters: 'LITRE',
+  l: 'LITRE',
+
+  'लीटर': 'LITRE',
+  'लीटर': 'LITRE',
+  'ली': 'LITRE',
+
+
+  /*
+   * ==========================================================
+   * COUNT
+   * ==========================================================
+   */
+
+  piece: 'PIECE',
+  pieces: 'PIECE',
+  pc: 'PIECE',
+  pcs: 'PIECE',
+  piecee: 'PIECE',
+  piecees: 'PIECE',
+
+  item: 'PIECE',
+  items: 'PIECE',
+
+  nag: 'PIECE',
+  नग: 'PIECE',
+
+  'पीस': 'PIECE',
+  'नग': 'PIECE',
+  'नग्ग': 'PIECE',
+
+  dozen: 'DOZEN',
+  dozens: 'DOZEN',
+  dz: 'DOZEN',
+
+  'दर्जन': 'DOZEN',
+
+  gross: 'GROSS',
+
+  'ग्रॉस': 'GROSS',
+  'ग्रोस': 'GROSS',
+
+  pair: 'PAIR',
+  pairs: 'PAIR',
+
+  jodi: 'PAIR',
+  jodiyaan: 'PAIR',
+  jodiya: 'PAIR',
+
+  'जोड़ी': 'PAIR',
+  'जोड़ी': 'PAIR',
+
+  set: 'SET',
+  sets: 'SET',
+
+  'सेट': 'SET',
+
+
+  /*
+   * ==========================================================
+   * PACKAGING
+   * ==========================================================
+   */
+
+  pack: 'PACK',
+  packs: 'PACK',
+  packet: 'PACK',
+  packets: 'PACK',
+  pkt: 'PACK',
+  pkts: 'PACK',
+
+  'पैक': 'PACK',
+  'पैकेट': 'PACK',
+  'पैकेट्स': 'PACK',
+
+  pouch: 'POUCH',
+  pouches: 'POUCH',
+
+  'पाउच': 'POUCH',
+
+  sachet: 'SACHET',
+  sachets: 'SACHET',
+
+  'सैशे': 'SACHET',
+  'सैशेट': 'SACHET',
+
+  bag: 'BAG',
+  bags: 'BAG',
+
+  'बैग': 'BAG',
+
+  bottle: 'BOTTLE',
+  bottles: 'BOTTLE',
+  btl: 'BOTTLE',
+
+  'बोतल': 'BOTTLE',
+  'बॉटल': 'BOTTLE',
+
+  jar: 'JAR',
+  jars: 'JAR',
+
+  'जार': 'JAR',
+
+  box: 'BOX',
+  boxes: 'BOX',
+
+  dabba: 'BOX',
+  dabbe: 'BOX',
+  dibba: 'BOX',
+  dibbe: 'BOX',
+
+  'डिब्बा': 'BOX',
+  'डिब्बे': 'BOX',
+  'डब्बा': 'BOX',
+  'डब्बे': 'BOX',
+
+  tin: 'TIN',
+  tins: 'TIN',
+
+  'टिन': 'TIN',
+
+  can: 'CAN',
+  cans: 'CAN',
+
+  'कैन': 'CAN',
+  'कनस्तर': 'CAN',
+
+  carton: 'CARTON',
+  cartons: 'CARTON',
+
+  'कार्टन': 'CARTON',
+
+  tray: 'TRAY',
+  trays: 'TRAY',
+
+  'ट्रे': 'TRAY',
+
+  strip: 'STRIP',
+  strips: 'STRIP',
+
+  'स्ट्रिप': 'STRIP',
+
+  blister: 'BLISTER',
+  blisters: 'BLISTER',
+
+  'ब्लिस्टर': 'BLISTER',
+
+  tube: 'TUBE',
+  tubes: 'TUBE',
+
+  'ट्यूब': 'TUBE',
+
+  cup: 'CUP',
+  cups: 'CUP',
+
+  'कप': 'CUP',
+
+
+  /*
+   * ==========================================================
+   * STORE / LOOSE GOODS UNITS
+   * ==========================================================
+   */
+
+  bundle: 'BUNDLE',
+  bundles: 'BUNDLE',
+
+  gaddi: 'BUNDLE',
+  gaddis: 'BUNDLE',
+
+  'बंडल': 'BUNDLE',
+  'गड्डी': 'BUNDLE',
+  'गद्दी': 'BUNDLE',
+
+  bunch: 'BUNCH',
+  bunches: 'BUNCH',
+
+  'गुच्छा': 'BUNCH',
+  'गुच्छे': 'BUNCH',
+  'बंच': 'BUNCH',
+
+  roll: 'ROLL',
+  rolls: 'ROLL',
+
+  'रोल': 'ROLL',
+
+  sack: 'SACK',
+  sacks: 'SACK',
+
+  bora: 'BORI',
+  bori: 'BORI',
+  boras: 'BORI',
+
+  'बोरी': 'BORI',
+
+  crate: 'CRATE',
+  crates: 'CRATE',
+
+  'क्रेट': 'CRATE',
+
+  bucket: 'BUCKET',
+  buckets: 'BUCKET',
+
+  'बाल्टी': 'BUCKET',
+  'बाल्टी': 'BUCKET',
+
+  drum: 'DRUM',
+  drums: 'DRUM',
+
+  'ड्रम': 'DRUM',
+
+  basket: 'BASKET',
+  baskets: 'BASKET',
+
+  'टोकरी': 'BASKET',
+  'टोकरी': 'BASKET',
+};
+
+
+/*
+ * ============================================================
+ * ALL UNIT CANONICAL NAMES
+ * ============================================================
+ */
+
+const ALL_UNITS = new Set(
+  Object.values(
+    UNIT_ALIASES
+  )
+);
 
 
 /*
@@ -659,8 +934,8 @@ const STOP_WORDS = new Set([
   'remove',
   'stock',
 
-  'do',
   'please',
+  'pls',
 
   /*
    * Articles
@@ -681,16 +956,6 @@ const STOP_WORDS = new Set([
 
   'khata',
   'khate',
-
-  /*
-   * Hindi customer words
-   */
-
-  'banao',
-  'bnao',
-  'bana',
-  'banado',
-  'banaao',
 
   /*
    * Connectors
@@ -719,88 +984,7 @@ const STOP_WORDS = new Set([
   'called',
 
   /*
-   * Quantity / units
-   */
-
-  'kg',
-  'kgs',
-  'kilo',
-  'kilos',
-  'kilogram',
-  'kilograms',
-
-  'gram',
-  'grams',
-  'gm',
-  'gms',
-  'g',
-
-  'litre',
-  'liter',
-  'litres',
-  'liters',
-  'l',
-
-  'ml',
-
-  'piece',
-  'pieces',
-  'pc',
-  'pcs',
-
-  'packet',
-  'packets',
-  'pkt',
-  'pkts',
-  'pack',
-  'packs',
-
-  'bottle',
-  'bottles',
-  'btl',
-
-  'box',
-  'boxes',
-
-  'dabba',
-  'dabbe',
-  'dibba',
-  'dibbe',
-
-  'dozen',
-  'dz',
-
-  'strip',
-  'strips',
-
-  'carton',
-  'cartons',
-
-  'bundle',
-  'bundles',
-
-  /*
-   * Hindi units
-   */
-
-  'किलो',
-  'किलोग्राम',
-  'ग्राम',
-  'लीटर',
-  'मिली',
-  'पीस',
-  'नग',
-  'पैकेट',
-  'बोतल',
-  'डिब्बा',
-  'डिब्बे',
-  'दर्जन',
-  'स्ट्रिप',
-  'कार्टन',
-  'बंडल',
-
-  /*
-   * Query words
+   * Query
    */
 
   'how',
@@ -817,14 +1001,7 @@ const STOP_WORDS = new Set([
   'bacha',
   'bache',
   'baki',
-
-  /*
-   * Cash
-   */
-
-  'cash',
-  'nagad',
-  'rokar',
+  'baaki',
 
   /*
    * Payment
@@ -836,12 +1013,78 @@ const STOP_WORDS = new Set([
   'jama',
 
   /*
-   * Misc
+   * Cash
+   */
+
+  'cash',
+  'nagad',
+  'rokar',
+
+  /*
+   * Time
    */
 
   'today',
   'aaj',
+
+  /*
+   * Actions
+   */
+
+  'karo',
+  'kar',
+  'kardo',
+  'do',
+
+  'wala',
+  'wale',
+  'wali',
+  'waala',
+  'waale',
+  'waali',
+  'rupee',
+  'rupees',
+  'rupaye',
+  'rupay',
+  'rs',
+  'rs.',
+  'price',
+  'rate',
+
+  'वाला',
+  'वाले',
+  'वाली',
+  'रुपया',
+  'रुपये',
+  'रुपए',
+  'का',
+  'की',
+  'के',
 ]);
+
+
+/*
+ * Add every unit alias to STOP_WORDS.
+ *
+ * This prevents:
+ *
+ * "200 gram sugar"
+ *
+ * from becoming:
+ *
+ * "gram sugar"
+ *
+ * as the product name.
+ */
+
+Object.keys(
+  UNIT_ALIASES
+).forEach(
+  unit =>
+    STOP_WORDS.add(
+      unit
+    )
+);
 
 
 /*
@@ -850,41 +1093,41 @@ const STOP_WORDS = new Set([
  * ============================================================
  */
 
-const CUSTOMER_COMMAND_WORDS = new Set([
+const CUSTOMER_COMMAND_WORDS =
+  new Set([
 
-  'create',
-  'make',
-  'open',
-  'add',
-  'new',
+    'create',
+    'make',
+    'open',
+    'add',
+    'new',
 
-  'account',
-  'accounts',
+    'account',
+    'accounts',
 
-  'customer',
-  'customers',
+    'customer',
+    'customers',
 
-  'khata',
-  'khate',
+    'khata',
+    'khate',
 
-  'banao',
-  'bnao',
-  'bana',
-  'banado',
-  'banaao',
+    'banao',
+    'bnao',
+    'bana',
+    'banado',
+    'banaao',
 
-  'karo',
-  'kar',
-  'do',
+    'karo',
+    'kar',
 
-  'please',
+    'please',
 
-  'naam',
-  'named',
-  'called',
+    'naam',
+    'named',
+    'called',
 
-  'grahak',
-]);
+    'grahak',
+  ]);
 
 
 /*
@@ -899,6 +1142,7 @@ const cleanText = value => {
     typeof value !==
     'string'
   ) {
+
     return '';
   }
 
@@ -925,11 +1169,16 @@ const titleCase = value => {
 
 
   return cleaned
-    .split(/\s+/)
-    .filter(Boolean)
+    .split(
+      /\s+/
+    )
+    .filter(
+      Boolean
+    )
     .map(
       part =>
-        part.charAt(0).toUpperCase() +
+        part.charAt(0)
+          .toUpperCase() +
         part.slice(1)
     )
     .join(' ');
@@ -938,308 +1187,267 @@ const titleCase = value => {
 
 /*
  * ============================================================
- * DEVANAGARI DIGIT CONVERSION
+ * DEVANAGARI DIGITS
  * ============================================================
  */
 
-const convertDevanagariDigits = text => {
+const convertDevanagariDigits =
+  text => {
 
-  const map = {
+    const map = {
 
-    '०': '0',
-    '१': '1',
-    '२': '2',
-    '३': '3',
-    '४': '4',
-    '५': '5',
-    '६': '6',
-    '७': '7',
-    '८': '8',
-    '९': '9',
+      '०': '0',
+      '१': '1',
+      '२': '2',
+      '३': '3',
+      '४': '4',
+      '५': '5',
+      '६': '6',
+      '७': '7',
+      '८': '8',
+      '९': '9',
+    };
+
+
+    return text.replace(
+      /[०-९]/g,
+      digit =>
+        map[digit] ||
+        digit
+    );
   };
 
 
-  return text.replace(
-    /[०-९]/g,
-    digit =>
-      map[digit] ||
-      digit
-  );
-};
-
-
 /*
  * ============================================================
- * DEVANAGARI NUMBER WORD CONVERSION
+ * DEVANAGARI NUMBER WORDS
  * ============================================================
  */
 
-const convertDevanagariNumberWords = text => {
+const convertDevanagariNumberWords =
+  text => {
 
-  return text
-    .split(/\s+/)
-    .map(
-      word =>
-        DEVANAGARI_NUMBERS[word] !==
-        undefined
-          ? String(
-              DEVANAGARI_NUMBERS[
-                word
-              ]
-            )
-          : word
-    )
-    .join(' ');
-};
+    return text
+      .split(
+        /\s+/
+      )
+      .map(
+        word =>
+          DEVANAGARI_NUMBERS[
+            word
+          ] !== undefined
+
+            ? String(
+                DEVANAGARI_NUMBERS[
+                  word
+                ]
+              )
+
+            : word
+      )
+      .join(' ');
+  };
 
 
 /*
  * ============================================================
- * SPOKEN NUMBER NORMALIZATION
+ * NUMBER NORMALIZATION
  * ============================================================
  *
- * Handles:
+ * Supports:
  *
+ * two hundred
+ * five hundred
+ * two thousand
  * do sau
  * paanch sau
  * do hazaar
  * teen hazaar
- * one hundred
- * two hundred
- * five thousand
  *
- * Also:
- *
- * aadha kilo
- * paav kilo
- * dedh kilo
- * dhai kilo
  * ============================================================
  */
 
-const normalizeSpokenNumbers = text => {
+const normalizeSpokenNumbers =
+  text => {
 
-  let working =
-    convertDevanagariDigits(
-      text
-    );
+    let working =
+      convertDevanagariDigits(
+        text
+      );
 
 
-  working =
-    convertDevanagariNumberWords(
+    working =
+      convertDevanagariNumberWords(
+        working
+      );
+
+
+    const words =
       working
-    );
+        .split(
+          /\s+/
+        )
+        .filter(
+          Boolean
+        );
 
 
-  const words =
-    working
-      .split(/\s+/)
-      .filter(Boolean);
+    const output =
+      [];
 
 
-  const output =
-    [];
+    for (
+      let i = 0;
+      i < words.length;
+      i++
+    ) {
+
+      const word =
+        words[i];
+
+      const next =
+        words[i + 1];
 
 
-  const SMALL_NUMBERS = {
+      /*
+       * Fraction words stay as they are.
+       */
 
-    one: 1,
-    two: 2,
-    three: 3,
-    four: 4,
-    five: 5,
-    six: 6,
-    seven: 7,
-    eight: 8,
-    nine: 9,
-    ten: 10,
+      if (
+        FRACTION_WORDS[
+          word
+        ] !== undefined
+      ) {
 
-    eleven: 11,
-    twelve: 12,
-    thirteen: 13,
-    fourteen: 14,
-    fifteen: 15,
-    sixteen: 16,
-    seventeen: 17,
-    eighteen: 18,
-    nineteen: 19,
+        output.push(
+          word
+        );
 
-    twenty: 20,
-
-    ek: 1,
-    do: 2,
-    teen: 3,
-    tin: 3,
-    char: 4,
-    chaar: 4,
-    panch: 5,
-    paanch: 5,
-    chhe: 6,
-    che: 6,
-    chhah: 6,
-    saat: 7,
-    sat: 7,
-    aath: 8,
-    ath: 8,
-    nau: 9,
-    das: 10,
-  };
+        continue;
+      }
 
 
-  const MULTIPLIERS = {
-
-    hundred: 100,
-    sau: 100,
-    so: 100,
-
-    thousand: 1000,
-    hazaar: 1000,
-    hazar: 1000,
-
-    lakh: 100000,
-    lac: 100000,
-  };
+      const currentNumber =
+        SMALL_NUMBERS[
+          word
+        ];
 
 
-  for (
-    let i = 0;
-    i < words.length;
-    i++
-  ) {
-
-    const word =
-      words[i];
-
-    const next =
-      words[i + 1];
+      const nextMultiplier =
+        MULTIPLIERS[
+          next
+        ];
 
 
-    /*
-     * Fraction words.
-     */
+      /*
+       * one hundred
+       * do sau
+       * five thousand
+       */
 
-    if (
-      FRACTION_WORDS[
+      if (
+        currentNumber !==
+          undefined &&
+        nextMultiplier !==
+          undefined
+      ) {
+
+        output.push(
+          String(
+            currentNumber *
+            nextMultiplier
+          )
+        );
+
+
+        i++;
+
+        continue;
+      }
+
+
+      /*
+       * Numeric 2 + thousand.
+       */
+
+      if (
+        /^\d+(?:\.\d+)?$/.test(
+          word
+        ) &&
+        nextMultiplier !==
+          undefined
+      ) {
+
+        output.push(
+          String(
+            Number(word) *
+            nextMultiplier
+          )
+        );
+
+
+        i++;
+
+        continue;
+      }
+
+
+      /*
+       * Simple number.
+       */
+
+      if (
+        currentNumber !==
+        undefined
+      ) {
+
+        output.push(
+          String(
+            currentNumber
+          )
+        );
+
+        continue;
+      }
+
+
+      /*
+       * Devanagari / numeric multiplier.
+       */
+
+      if (
+        MULTIPLIERS[
+          word
+        ] !== undefined
+      ) {
+
+        output.push(
+          String(
+            MULTIPLIERS[
+              word
+            ]
+          )
+        );
+
+        continue;
+      }
+
+
+      output.push(
         word
-      ] !== undefined
-    ) {
-
-      output.push(
-        String(
-          FRACTION_WORDS[
-            word
-          ]
-        )
       );
-
-      continue;
     }
 
 
-    /*
-     * Simple English/Hinglish number
-     * followed by multiplier.
-     */
-
-    if (
-      SMALL_NUMBERS[word] !==
-        undefined &&
-      MULTIPLIERS[next] !==
-        undefined
-    ) {
-
-      output.push(
-        String(
-          SMALL_NUMBERS[word] *
-          MULTIPLIERS[next]
-        )
-      );
-
-      i++;
-
-      continue;
-    }
-
-
-    /*
-     * Hindi numeric word followed
-     * by multiplier.
-     */
-
-    if (
-      !Number.isNaN(
-        Number(word)
-      ) &&
-      MULTIPLIERS[next] !==
-        undefined
-    ) {
-
-      output.push(
-        String(
-          Number(word) *
-          MULTIPLIERS[next]
-        )
-      );
-
-      i++;
-
-      continue;
-    }
-
-
-    /*
-     * Standalone number words.
-     */
-
-    if (
-      SMALL_NUMBERS[word] !==
-      undefined
-    ) {
-
-      output.push(
-        String(
-          SMALL_NUMBERS[word]
-        )
-      );
-
-      continue;
-    }
-
-
-    /*
-     * Standalone multiplier.
-     */
-
-    if (
-      MULTIPLIERS[word] !==
-      undefined
-    ) {
-
-      output.push(
-        String(
-          MULTIPLIERS[word]
-        )
-      );
-
-      continue;
-    }
-
-
-    output.push(
-      word
+    return output.join(
+      ' '
     );
-  }
-
-
-  return output.join(
-    ' '
-  );
-};
+  };
 
 
 /*
  * ============================================================
- * NORMALIZATION
+ * TEXT NORMALIZATION
  * ============================================================
  */
 
@@ -1272,10 +1480,14 @@ const normalizeText = text => {
 
   const clean =
     numberNormalized
-      .split(/\s+/)
+      .split(
+        /\s+/
+      )
       .map(
         word =>
-          SYNONYMS[word] ||
+          SYNONYMS[
+            word
+          ] ||
           word
       )
       .join(' ');
@@ -1319,6 +1531,8 @@ const makeResult = ({
 
   payment_type = null,
 
+  price_hint = null,
+
   confidence = 0.95,
 
 }) => ({
@@ -1343,6 +1557,8 @@ const makeResult = ({
 
   payment_type,
 
+  price_hint,
+
   confidence,
 
   source:
@@ -1352,120 +1568,223 @@ const makeResult = ({
 
 /*
  * ============================================================
- * UNIT EXTRACTION
+ * UNIT NORMALIZATION
  * ============================================================
  */
 
-const extractUnit = raw => {
-
-  if (
-    !raw
-  ) {
-    return null;
-  }
-
-
-  const words =
-    raw
-      .toLowerCase()
-      .split(/\s+/);
-
-
-  for (
-    const word of words
-  ) {
+const normalizeUnit =
+  value => {
 
     if (
-      UNIT_ALIASES[word]
+      value === null ||
+      value === undefined
     ) {
 
-      return UNIT_ALIASES[
-        word
-      ];
+      return null;
     }
-  }
 
 
-  return null;
-};
+    const normalized =
+      String(
+        value
+      )
+        .trim()
+        .toLowerCase();
+
+
+    return (
+      UNIT_ALIASES[
+        normalized
+      ] ||
+      null
+    );
+  };
 
 
 /*
  * ============================================================
- * UNIT POSITION / QUANTITY
+ * UNIT EXTRACTION
  * ============================================================
  */
 
-const extractQuantityAndUnit = raw => {
+const extractUnit =
+  raw => {
 
-  if (
-    !raw
-  ) {
+    if (
+      !raw
+    ) {
 
-    return {
-
-      qty:
-        1,
-
-      unit:
-        null,
-    };
-  }
+      return null;
+    }
 
 
-  const normalized =
-    raw.toLowerCase();
-
-
-  /*
-   * ----------------------------------------------------------
-   * Fraction + unit
-   *
-   * aadha kilo
-   * paav kilo
-   * half kg
-   * dedh kilo
-   * ----------------------------------------------------------
-   */
-
-  for (
-    const [
-      fractionWord,
-      fractionValue
-    ] of Object.entries(
-      FRACTION_WORDS
-    )
-  ) {
-
-    const escaped =
-      fractionWord
-        .replace(
-          /[.*+?^${}()|[\]\\]/g,
-          '\\$&'
+    const words =
+      raw
+        .toLowerCase()
+        .split(
+          /\s+/
         );
 
 
-    const pattern =
-      new RegExp(
-        `\\b${escaped}\\s+([^\\s]+)`,
-        'i'
-      );
-
-
-    const match =
-      normalized.match(
-        pattern
-      );
-
-
-    if (
-      match
+    for (
+      const word of words
     ) {
 
-      const unit =
-        UNIT_ALIASES[
+      const normalized =
+        normalizeUnit(
+          word
+        );
+
+
+      if (
+        normalized
+      ) {
+
+        return normalized;
+      }
+    }
+
+
+    return null;
+  };
+
+
+/*
+ * ============================================================
+ * NUMBER + UNIT TOKEN PARSER
+ * ============================================================
+ *
+ * Handles:
+ *
+ * 500g
+ * 500 g
+ * 1.5kg
+ * 1.5 kg
+ * 200gram
+ * 2packet
+ * 2 packet
+ *
+ * ============================================================
+ */
+
+const parseNumberUnitTokens =
+  raw => {
+
+    const matches =
+      [];
+
+
+    /*
+     * Important:
+     *
+     * Number and unit can be touching:
+     *
+     * 500g
+     *
+     * OR separated:
+     *
+     * 500 g
+     */
+
+    const regex =
+      /(\d+(?:\.\d+)?)\s*([a-zA-Z\u0900-\u097F]+)/gi;
+
+
+    let match;
+
+
+    while (
+      (
+        match =
+          regex.exec(
+            raw
+          )
+      ) !== null
+    ) {
+
+      const value =
+        Number(
           match[1]
+        );
+
+
+      const unit =
+        normalizeUnit(
+          match[2]
+        );
+
+
+      if (
+        Number.isFinite(
+          value
+        ) &&
+        value > 0 &&
+        unit
+      ) {
+
+        matches.push({
+
+          qty:
+            value,
+
+          unit,
+
+          index:
+            match.index,
+
+          length:
+            match[0].length,
+        });
+      }
+    }
+
+
+    return matches;
+  };
+
+
+/*
+ * ============================================================
+ * FRACTION + UNIT PARSER
+ * ============================================================
+ */
+
+const parseFractionUnit =
+  raw => {
+
+    const words =
+      raw
+        .toLowerCase()
+        .split(
+          /\s+/
+        );
+
+
+    for (
+      let i = 0;
+      i < words.length - 1;
+      i++
+    ) {
+
+      const fraction =
+        FRACTION_WORDS[
+          words[i]
         ];
+
+
+      if (
+        fraction ===
+        undefined
+      ) {
+
+        continue;
+      }
+
+
+      const unit =
+        normalizeUnit(
+          words[i + 1]
+        );
 
 
       if (
@@ -1475,130 +1794,648 @@ const extractQuantityAndUnit = raw => {
         return {
 
           qty:
-            fractionValue,
+            fraction,
 
           unit,
+
+          index:
+            i,
         };
       }
     }
-  }
+
+
+    /*
+     * "half a kilo"
+     * "aadha ek kilo"
+     */
+
+    for (
+      let i = 0;
+      i < words.length - 2;
+      i++
+    ) {
+
+      const fraction =
+        FRACTION_WORDS[
+          words[i]
+        ];
+
+
+      if (
+        fraction ===
+        undefined
+      ) {
+
+        continue;
+      }
+
+
+      const possibleArticle =
+        words[i + 1];
+
+
+      const unit =
+        normalizeUnit(
+          words[i + 2]
+        );
+
+
+      if (
+        (
+          possibleArticle ===
+            'a' ||
+          possibleArticle ===
+            'an' ||
+          possibleArticle ===
+            'ek'
+        ) &&
+        unit
+      ) {
+
+        return {
+
+          qty:
+            fraction,
+
+          unit,
+
+          index:
+            i,
+        };
+      }
+    }
+
+
+    return null;
+  };
+
+
+/*
+ * ============================================================
+ * MIXED QUANTITY NORMALIZATION
+ * ============================================================
+ *
+ * Examples:
+ *
+ * 1 KG + 250 GRAM
+ *
+ * Returns:
+ *
+ * {
+ *   qty: 1.25,
+ *   unit: KG
+ * }
+ *
+ * 2 LITRE + 500 ML
+ *
+ * Returns:
+ *
+ * {
+ *   qty: 2.5,
+ *   unit: LITRE
+ * }
+ *
+ * 1 DOZEN + 4 PIECE
+ *
+ * Returns:
+ *
+ * {
+ *   qty: 16,
+ *   unit: PIECE
+ * }
+ *
+ * The parser only handles combinations where the relationship
+ * is unambiguous.
+ *
+ * ============================================================
+ */
+
+const MIXED_UNIT_FACTORS = {
+
+  /*
+   * Weight -> canonical KG.
+   */
+
+  MG: {
+    base: 'KG',
+    factor: 0.000001,
+  },
+
+  GRAM: {
+    base: 'KG',
+    factor: 0.001,
+  },
+
+  KG: {
+    base: 'KG',
+    factor: 1,
+  },
+
+  QUINTAL: {
+    base: 'KG',
+    factor: 100,
+  },
+
+  TON: {
+    base: 'KG',
+    factor: 1000,
+  },
 
 
   /*
-   * ----------------------------------------------------------
-   * Numeric quantity + unit
-   *
-   * 500 gram
-   * 2 packet
-   * 5 piece
-   * ----------------------------------------------------------
+   * Volume -> canonical LITRE.
    */
 
-  const numericUnitPattern =
-    /(?:^|\s)(\d+(?:\.\d+)?)\s*([a-zA-Z\u0900-\u097F]+)(?:\s|$)/i;
+  ML: {
+    base: 'LITRE',
+    factor: 0.001,
+  },
+
+  LITRE: {
+    base: 'LITRE',
+    factor: 1,
+  },
 
 
-  const numericUnitMatch =
-    normalized.match(
-      numericUnitPattern
-    );
+  /*
+   * Count -> canonical PIECE.
+   */
+
+  PIECE: {
+    base: 'PIECE',
+    factor: 1,
+  },
+
+  DOZEN: {
+    base: 'PIECE',
+    factor: 12,
+  },
+
+  GROSS: {
+    base: 'PIECE',
+    factor: 144,
+  },
+
+  PAIR: {
+    base: 'PIECE',
+    factor: 2,
+  },
+};
 
 
-  if (
-    numericUnitMatch
-  ) {
+const combineQuantityTokens =
+  tokens => {
 
-    const value =
-      Number(
-        numericUnitMatch[1]
-      );
+    if (
+      !tokens ||
+      tokens.length ===
+        0
+    ) {
+
+      return null;
+    }
 
 
-    const unit =
-      UNIT_ALIASES[
-        numericUnitMatch[2]
+    /*
+     * Single quantity.
+     */
+
+    if (
+      tokens.length ===
+      1
+    ) {
+
+      return {
+
+        qty:
+          Math.min(
+            tokens[0].qty,
+            MAX_QUANTITY
+          ),
+
+        unit:
+          tokens[0].unit,
+      };
+    }
+
+
+    /*
+     * Check if all units belong to
+     * the same convertible family.
+     */
+
+    const firstFactor =
+      MIXED_UNIT_FACTORS[
+        tokens[0].unit
       ];
 
 
     if (
-      Number.isFinite(
-        value
-      ) &&
-      value > 0 &&
-      unit
+      !firstFactor
     ) {
 
       return {
 
         qty:
-          Math.min(
-            value,
-            MAX_QUANTITY
-          ),
+          tokens[0].qty,
 
-        unit,
+        unit:
+          tokens[0].unit,
       };
     }
-  }
 
 
-  /*
-   * ----------------------------------------------------------
-   * Quantity without explicit unit
-   * ----------------------------------------------------------
-   */
-
-  const quantityMatch =
-    normalized.match(
-      /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/
-    );
+    const base =
+      firstFactor.base;
 
 
-  if (
-    quantityMatch
-  ) {
-
-    const value =
-      Number(
-        quantityMatch[1]
+    const compatible =
+      tokens.every(
+        token =>
+          MIXED_UNIT_FACTORS[
+            token.unit
+          ] &&
+          MIXED_UNIT_FACTORS[
+            token.unit
+          ].base ===
+          base
       );
 
 
     if (
-      Number.isFinite(
-        value
-      ) &&
-      value > 0
+      !compatible
+    ) {
+
+      /*
+       * Example:
+       *
+       * 2 packet + 3 bottle
+       *
+       * Cannot safely combine.
+       */
+
+      return {
+
+        qty:
+          tokens[0].qty,
+
+        unit:
+          tokens[0].unit,
+      };
+    }
+
+
+    /*
+     * Convert all to base unit.
+     */
+
+    let baseQuantity =
+      0;
+
+
+    tokens.forEach(
+      token => {
+
+        const factor =
+          MIXED_UNIT_FACTORS[
+            token.unit
+          ].factor;
+
+
+        baseQuantity +=
+          token.qty *
+          factor;
+      }
+    );
+
+
+    /*
+     * Prefer the larger practical unit
+     * where possible.
+     *
+     * KG instead of GRAM
+     * LITRE instead of ML
+     * PIECE for mixed count.
+     */
+
+    let outputUnit =
+      base;
+
+
+    let outputQuantity =
+      baseQuantity;
+
+
+    /*
+     * If quantity is very small, preserve
+     * a smaller unit for readability.
+     */
+
+    if (
+      base === 'KG'
+    ) {
+
+      if (
+        baseQuantity < 0.001
+      ) {
+
+        outputUnit =
+          'MG';
+
+        outputQuantity =
+          baseQuantity *
+          1000000;
+
+      } else if (
+        baseQuantity < 1
+      ) {
+
+        outputUnit =
+          'GRAM';
+
+        outputQuantity =
+          baseQuantity *
+          1000;
+      }
+
+    } else if (
+      base === 'LITRE'
+    ) {
+
+      if (
+        baseQuantity < 1
+      ) {
+
+        outputUnit =
+          'ML';
+
+        outputQuantity =
+          baseQuantity *
+          1000;
+      }
+
+    } else if (
+      base === 'PIECE'
+    ) {
+
+      outputUnit =
+        'PIECE';
+
+      outputQuantity =
+        baseQuantity;
+    }
+
+
+    return {
+
+      qty:
+        Math.min(
+          outputQuantity,
+          MAX_QUANTITY
+        ),
+
+      unit:
+        outputUnit,
+    };
+  };
+
+
+/*
+ * ============================================================
+ * QUANTITY + UNIT EXTRACTION
+ * ============================================================
+ */
+
+const extractQuantityAndUnit =
+  raw => {
+
+    if (
+      !raw
     ) {
 
       return {
 
         qty:
-          Math.min(
-            value,
-            MAX_QUANTITY
-          ),
+          1,
 
         unit:
           null,
       };
     }
-  }
 
 
-  /*
-   * Default.
-   */
+    /*
+     * --------------------------------------------------------
+     * FRACTION FIRST
+     * --------------------------------------------------------
+     *
+     * This prevents:
+     *
+     * aadha kilo
+     *
+     * from being interpreted incorrectly.
+     */
 
-  return {
+    const fraction =
+      parseFractionUnit(
+        raw
+      );
 
-    qty:
-      1,
 
-    unit:
-      null,
+    if (
+      fraction
+    ) {
+
+      return {
+
+        qty:
+          Math.min(
+            fraction.qty,
+            MAX_QUANTITY
+          ),
+
+        unit:
+          fraction.unit,
+      };
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * MULTIPLE NUMBER + UNIT PAIRS
+     * --------------------------------------------------------
+     */
+
+    const tokens =
+      parseNumberUnitTokens(
+        raw
+      );
+
+
+    /*
+     * "10kg or 5kg" / "10 kilo ya 5 kilo" are alternatives,
+     * not 15kg. Use the first spoken option rather than
+     * inventing a combined quantity.
+     */
+    if (
+      tokens.length > 1 &&
+      /\b(or|ya)\b|(?:या|या फिर)/i.test(raw)
+    ) {
+      return {
+        qty:
+          Math.min(
+            tokens[0].qty,
+            MAX_QUANTITY
+          ),
+        unit:
+          tokens[0].unit,
+      };
+    }
+
+
+    if (
+      tokens.length
+    ) {
+
+      /*
+       * Multiple quantities only when they are
+       * close enough to reasonably belong together.
+       */
+
+      if (
+        tokens.length >
+        1
+      ) {
+
+        const combined =
+          combineQuantityTokens(
+            tokens
+          );
+
+
+        if (
+          combined
+        ) {
+
+          return combined;
+        }
+      }
+
+
+      return {
+
+        qty:
+          Math.min(
+            tokens[0].qty,
+            MAX_QUANTITY
+          ),
+
+        unit:
+          tokens[0].unit,
+      };
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * FRACTION WITHOUT UNIT
+     * --------------------------------------------------------
+     *
+     * "aadha biscuit"
+     *
+     * We preserve the quantity but unit remains null.
+     */
+
+    const words =
+      raw
+        .toLowerCase()
+        .split(
+          /\s+/
+        );
+
+
+    for (
+      const word of words
+    ) {
+
+      if (
+        FRACTION_WORDS[
+          word
+        ] !== undefined
+      ) {
+
+        return {
+
+          qty:
+            FRACTION_WORDS[
+              word
+            ],
+
+          unit:
+            null,
+        };
+      }
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * SIMPLE NUMERIC QUANTITY
+     * --------------------------------------------------------
+     */
+
+    const quantityMatch =
+      raw.match(
+        /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/
+      );
+
+
+    if (
+      quantityMatch
+    ) {
+
+      const value =
+        Number(
+          quantityMatch[1]
+        );
+
+
+      if (
+        Number.isFinite(
+          value
+        ) &&
+        value > 0
+      ) {
+
+        return {
+
+          qty:
+            Math.min(
+              value,
+              MAX_QUANTITY
+            ),
+
+          unit:
+            null,
+        };
+      }
+    }
+
+
+    /*
+     * Default.
+     */
+
+    return {
+
+      qty:
+        1,
+
+      unit:
+        null,
+    };
   };
-};
 
 
 /*
@@ -1607,52 +2444,53 @@ const extractQuantityAndUnit = raw => {
  * ============================================================
  */
 
-const matchKnownCustomer = (
-  raw,
-  customerNames
-) => {
-
-  if (
-    !Array.isArray(
-      customerNames
-    )
-  ) {
-    return null;
-  }
-
-
-  const lower =
-    raw.toLowerCase();
-
-
-  const sorted =
+const matchKnownCustomer =
+  (
+    raw,
     customerNames
-      .filter(Boolean)
-      .map(
-        name =>
-          String(
-            name
-          )
-            .trim()
+  ) => {
+
+    if (
+      !Array.isArray(
+        customerNames
       )
-      .filter(Boolean)
-      .sort(
-        (a, b) =>
-          b.length -
-          a.length
-      );
+    ) {
+
+      return null;
+    }
 
 
-  return (
-    sorted.find(
-      name =>
-        lower.includes(
-          name.toLowerCase()
+    const lower =
+      raw.toLowerCase();
+
+
+    const sorted =
+      customerNames
+        .filter(Boolean)
+        .map(
+          name =>
+            String(
+              name
+            ).trim()
         )
-    ) ||
-    null
-  );
-};
+        .filter(Boolean)
+        .sort(
+          (a, b) =>
+            b.length -
+            a.length
+        );
+
+
+    return (
+      sorted.find(
+        name =>
+          lower.includes(
+            name.toLowerCase()
+          )
+      ) ||
+      null
+    );
+  };
 
 
 /*
@@ -1661,145 +2499,82 @@ const matchKnownCustomer = (
  * ============================================================
  */
 
-const isValidCustomerName = name => {
+const isValidCustomerName =
+  name => {
 
-  if (
-    !name ||
-    typeof name !==
-      'string'
-  ) {
+    if (
+      !name ||
+      typeof name !==
+        'string'
+    ) {
 
-    return false;
-  }
-
-
-  const cleaned =
-    name
-      .trim()
-      .replace(
-        /\s+/g,
-        ' '
-      );
+      return false;
+    }
 
 
-  if (
-    cleaned.length <
-      2 ||
-    cleaned.length >
-      100
-  ) {
-
-    return false;
-  }
+    const cleaned =
+      name
+        .trim()
+        .replace(
+          /\s+/g,
+          ' '
+        );
 
 
-  if (
-    /^\d+(?:\.\d+)?$/.test(
+    if (
+      cleaned.length <
+        2 ||
+      cleaned.length >
+        100
+    ) {
+
+      return false;
+    }
+
+
+    if (
+      /^\d+(?:\.\d+)?$/.test(
+        cleaned
+      )
+    ) {
+
+      return false;
+    }
+
+
+    const words =
       cleaned
-    )
-  ) {
-
-    return false;
-  }
-
-
-  const words =
-    cleaned
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-
-
-  if (
-    words.length ===
-    0
-  ) {
-
-    return false;
-  }
-
-
-  if (
-    words.every(
-      word =>
-        CUSTOMER_COMMAND_WORDS.has(
-          word
+        .toLowerCase()
+        .split(
+          /\s+/
         )
-    )
-  ) {
-
-    return false;
-  }
+        .filter(Boolean);
 
 
-  const badName =
-    new Set([
+    if (
+      words.length ===
+      0
+    ) {
 
-      'account',
-      'accounts',
-
-      'customer',
-      'customers',
-
-      'khata',
-      'khate',
-
-      'product',
-      'products',
-
-      'item',
-      'items',
-
-      'new',
-      'naya',
-
-      'create',
-      'make',
-      'open',
-
-      'add',
-
-      'please',
-
-      'for',
-      'of',
-
-      'named',
-      'called',
-
-      'kitna',
-      'kitni',
-      'kitne',
-
-      'stock',
-
-      'bacha',
-      'bache',
-
-      'left',
-
-      'how',
-      'much',
-      'many',
-
-    ]);
+      return false;
+    }
 
 
-  if (
-    words.some(
-      word =>
-        badName.has(
-          word
-        )
-    )
-  ) {
+    if (
+      words.every(
+        word =>
+          CUSTOMER_COMMAND_WORDS.has(
+            word
+          )
+      )
+    ) {
 
-    return false;
-  }
+      return false;
+    }
 
 
-  return true;
-};
+    return true;
+  };
 
 
 /*
@@ -1808,70 +2583,71 @@ const isValidCustomerName = name => {
  * ============================================================
  */
 
-const cleanCustomerName = value => {
+const cleanCustomerName =
+  value => {
 
-  if (
-    !value ||
-    typeof value !==
-      'string'
-  ) {
+    if (
+      !value ||
+      typeof value !==
+        'string'
+    ) {
 
-    return null;
-  }
+      return null;
+    }
 
 
-  let name =
-    value
-      .trim()
-      .replace(
-        /\s+/g,
-        ' '
+    let name =
+      value
+        .trim()
+        .replace(
+          /\s+/g,
+          ' '
+        );
+
+
+    name =
+      name.replace(
+        /^(?:please|pls)\s+/i,
+        ''
       );
 
 
-  name =
-    name.replace(
-      /^(?:please|pls)\s+/i,
-      ''
-    );
+    name =
+      name.replace(
+        /\s+(?:please|pls)$/i,
+        ''
+      );
 
 
-  name =
-    name.replace(
-      /\s+(?:please|pls)$/i,
-      ''
-    );
+    name =
+      name.replace(
+        /^(?:naya|new)\s+/i,
+        ''
+      );
 
 
-  name =
-    name.replace(
-      /^(?:naya|new)\s+/i,
-      ''
-    );
+    name =
+      name.replace(
+        /\s+(?:naya|new)$/i,
+        ''
+      );
 
 
-  name =
-    name.replace(
-      /\s+(?:naya|new)$/i,
-      ''
-    );
+    name =
+      name.replace(
+        /\s+(?:banao|bnao|bana|banado|banaao|karo|kar|do|khol|kholo|khol\s+do)$/i,
+        ''
+      );
 
 
-  name =
-    name.replace(
-      /\s+(?:banao|bnao|bana|banado|banaao|karo|kar|do|khol|kholo|khol\s+do)$/i,
-      ''
-    );
-
-
-  return isValidCustomerName(
-    name
-  )
-    ? titleCase(
-        name
-      )
-    : null;
-};
+    return isValidCustomerName(
+      name
+    )
+      ? titleCase(
+          name
+        )
+      : null;
+  };
 
 
 /*
@@ -1880,96 +2656,85 @@ const cleanCustomerName = value => {
  * ============================================================
  */
 
-const extractCustomerCreation = raw => {
+const extractCustomerCreation =
+  raw => {
 
-  const normalized =
-    raw
-      .toLowerCase()
-      .replace(
-        /\s+/g,
-        ' '
-      )
-      .trim();
-
-
-  const patterns = [
-
-    /^(?:please|pls)\s+(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
-
-    /^(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
-
-    /^(?:please\s+)?(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(?:account|customer|khata)\s+(?:for|of)\s+(.+)$/i,
-
-    /^(?:new|naya)\s+(.+?)\s+(?:account|customer|khata)$/i,
-
-    /^(.+?)\s+(?:account|customer|khata)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-    /^(.+?)\s+(?:ka|k|ke|ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-    /^(.+?)\s+(?:ka|k|ke|ki)\s+naya\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-    /^(.+?)\s+(?:ke\s+naam\s+ka|ke\s+naam\s+ke|ke\s+naam\s+ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
-
-    /^(?:naya|new)\s+(?:account|customer|khata|khate)\s+(.+?)\s+(?:ka|k|ke|ki)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do)$/i,
-
-    /^(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao)\s+(.+?)\s+(?:ka|k|ke|ki)$/i,
-
-  ];
+    const normalized =
+      raw
+        .toLowerCase()
+        .replace(
+          /\s+/g,
+          ' '
+        )
+        .trim();
 
 
-  for (
-    const pattern of patterns
-  ) {
+    const patterns = [
 
-    const match =
-      normalized.match(
-        pattern
-      );
+      /^(?:please|pls)\s+(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
+
+      /^(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(.+?)\s+(?:account|customer|khata)$/i,
+
+      /^(?:please\s+)?(?:create|make|open|add)\s+(?:a\s+|an\s+|new\s+)?(?:account|customer|khata)\s+(?:for|of)\s+(.+)$/i,
+
+      /^(?:new|naya)\s+(.+?)\s+(?:account|customer|khata)$/i,
+
+      /^(.+?)\s+(?:account|customer|khata)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+      /^(.+?)\s+(?:ka|k|ke|ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+      /^(.+?)\s+(?:ka|k|ke|ki)\s+naya\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+      /^(.+?)\s+(?:ke\s+naam\s+ka|ke\s+naam\s+ke|ke\s+naam\s+ki)\s+(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do|khol|kholo|khol\s+do)$/i,
+
+      /^(?:naya|new)\s+(?:account|customer|khata|khate)\s+(.+?)\s+(?:ka|k|ke|ki)\s+(?:banao|bnao|bana|banado|banaao|karo|kar\s+do)$/i,
+
+      /^(?:account|customer|khata|khate)\s+(?:banao|bnao|bana|banado|banaao)\s+(.+?)\s+(?:ka|k|ke|ki)$/i,
+
+    ];
 
 
-    if (
-      !match ||
-      !match[1]
+    for (
+      const pattern of patterns
     ) {
 
-      continue;
+      const match =
+        normalized.match(
+          pattern
+        );
+
+
+      if (
+        !match ||
+        !match[1]
+      ) {
+
+        continue;
+      }
+
+
+      const customerName =
+        cleanCustomerName(
+          match[1]
+        );
+
+
+      if (
+        customerName
+      ) {
+
+        return customerName;
+      }
     }
 
 
-    const customerName =
-      cleanCustomerName(
-        match[1]
-      );
-
-
-    if (
-      customerName
-    ) {
-
-      return customerName;
-    }
-  }
-
-
-  return null;
-};
+    return null;
+  };
 
 
 /*
  * ============================================================
- * PAYMENT / FLAT UDHAAR
- * ============================================================
- *
- * IMPORTANT:
- *
- * These patterns are matched against RAW text.
- *
- * This prevents:
- *
- * dalo -> add
- * udhaar -> khata
- *
- * from destroying Hindi patterns.
+ * PAYMENT / FLAT KHATA
  * ============================================================
  */
 
@@ -2025,19 +2790,9 @@ const extractPayment = (
   }
 
 
-  /*
-   * ----------------------------------------------------------
-   * New customer / flat Khata patterns
-   * ----------------------------------------------------------
-   */
-
-  const namePatterns = [
+  const patterns = [
 
     {
-      /*
-       * 800 rupees on Rakesh account
-       */
-
       pattern:
         /(\d+(?:\.\d+)?)\s*(?:rupees?|rs\.?|₹)?\s*(?:on|for)\s+([a-zA-Z][a-zA-Z .'-]*?)\s*(?:account|khata)?$/i,
 
@@ -2047,10 +2802,6 @@ const extractPayment = (
 
 
     {
-      /*
-       * Rakesh ke khate mein 100 dalo
-       */
-
       pattern:
         /^([a-zA-Z][a-zA-Z .'-]*?)\s+(?:ke|ka|ki)\s+khat[ae]\s+mein\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:dalo|daalo|chadhao|chadao|de\s*do)?$/i,
 
@@ -2060,10 +2811,6 @@ const extractPayment = (
 
 
     {
-      /*
-       * Rakesh ke account mein 100 add karo
-       */
-
       pattern:
         /^([a-zA-Z][a-zA-Z .'-]*?)\s+(?:ke|ka|ki)\s+(?:account|khata|khate)\s+(?:mein|me)\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:add|dalo|daalo|jodo|chadhao|chadao|de\s*do)?$/i,
 
@@ -2073,10 +2820,6 @@ const extractPayment = (
 
 
     {
-      /*
-       * credit 500 to Rakesh
-       */
-
       pattern:
         /^credit\s+(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:to|on)\s+([a-zA-Z][a-zA-Z .'-]*)$/i,
 
@@ -2086,10 +2829,6 @@ const extractPayment = (
 
 
     {
-      /*
-       * Rakesh ko 500 udhaar do
-       */
-
       pattern:
         /^([a-zA-Z][a-zA-Z .'-]*?)\s+ko\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:udhaar|udhar)?\s*(?:de\s*do|do|diye|diya)?$/i,
 
@@ -2099,17 +2838,12 @@ const extractPayment = (
 
 
     {
-      /*
-       * Rakesh se 500 mile
-       */
-
       pattern:
         /^([a-zA-Z][a-zA-Z .'-]*?)\s+(?:se|ne)\s+(?:₹|rs\.?)?\s*(\d+(?:\.\d+)?)\s*(?:rupees?)?\s*(?:mile|mil|gaye|diye|diya|received|jama)?$/i,
 
       isReceived:
         true,
     },
-
   ];
 
 
@@ -2117,7 +2851,7 @@ const extractPayment = (
     const {
       pattern,
       isReceived,
-    } of namePatterns
+    } of patterns
   ) {
 
     const match =
@@ -2178,104 +2912,88 @@ const extractPayment = (
   }
 
 
-  /*
-   * ----------------------------------------------------------
-   * English fallback
-   * ----------------------------------------------------------
-   */
-
-  const fallbackPatterns = [
-
-    /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?(?:ne|se)\s+(\d+(?:\.\d+)?)\s+received$/i,
-
-    /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?(\d+(?:\.\d+)?)\s+received$/i,
-
-    /^(?:([a-zA-Z][a-zA-Z .'-]*)\s+)?received\s+(\d+(?:\.\d+)?)$/i,
-
-    /^received\s+(\d+(?:\.\d+)?)\s+from\s+([a-zA-Z][a-zA-Z .'-]*)$/i,
-
-  ];
-
-
-  for (
-    const pattern of fallbackPatterns
-  ) {
-
-    const match =
-      raw.match(
-        pattern
-      );
-
-
-    if (
-      !match
-    ) {
-
-      continue;
-    }
-
-
-    let customerName =
-      null;
-
-    let amount =
-      null;
-
-
-    if (
-      pattern.source.startsWith(
-        '^received'
-      )
-    ) {
-
-      amount =
-        Number(
-          match[1]
-        );
-
-      customerName =
-        match[2];
-
-    } else {
-
-      customerName =
-        match[1];
-
-      amount =
-        Number(
-          match[2]
-        );
-    }
-
-
-    if (
-      Number.isFinite(
-        amount
-      ) &&
-      amount > 0
-    ) {
-
-      return {
-
-        customer_name:
-          customerName
-            ? titleCase(
-                customerName
-              )
-            : knownCustomer,
-
-        amount,
-
-        isReceived:
-          true,
-      };
-    }
-  }
-
-
   return null;
 };
 
+
+
+/*
+ * ============================================================
+ * PRODUCT / BRAND ALIASES + PRICE HINT + KHATA ITEM
+ * ============================================================
+ */
+
+const PRODUCT_ALIASES = [
+  { canonical: 'parle g', aliases: ['parle g','parle ji','parle jee','parle gee','parle gi','पारले जी','पार्ले जी','g biscuit'] },
+  { canonical: 'rice', aliases: ['rice','chawal','chaawal','चावल'] },
+  { canonical: 'sugar', aliases: ['sugar','chini','cheeni','चीनी','शक्कर'] },
+  { canonical: 'biscuit', aliases: ['biscuit','biscuits','biskit','biskits','बिस्किट','बिस्कुट'] },
+  { canonical: 'tooth brush', aliases: ['toothbrush','tooth brush','ब्रश','टूथब्रश','टूथ ब्रश'] },
+];
+
+const normalizeAliasText = value =>
+  cleanText(value).toLowerCase().replace(/[\/,]+/g,' ').replace(/\s+/g,' ').trim();
+
+const canonicalProductSpeech = value => {
+  const normalized = normalizeAliasText(value);
+  if (!normalized) return '';
+  for (const group of PRODUCT_ALIASES) {
+    if (
+      normalized === normalizeAliasText(group.canonical) ||
+      group.aliases.some(alias => normalizeAliasText(alias) === normalized)
+    ) return normalizeAliasText(group.canonical);
+  }
+  return normalized;
+};
+
+const parsePriceHint = raw => {
+  if (!raw) return null;
+  const text = convertDevanagariDigits(cleanText(raw).toLowerCase());
+  const patterns = [
+    /(?:^|\s)₹\s*(\d+(?:\.\d+)?)\b/i,
+    /(?:^|\s)(?:rs\.?|rupees?|rupee|rupaye|rupay|rupiya|rupiye)\s*(\d+(?:\.\d+)?)\b/i,
+    /\b(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|rupees?|rupee|rupaye|rupay|rupiya|rupiye)\b/i,
+    /\b(\d+(?:\.\d+)?)\s*(?:wala|wale|wali|waala|waale|waali)\b/i,
+    /\b(\d+(?:\.\d+)?)\s*(?:रुपये|रुपए|रुपया|वाला|वाले|वाली)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (Number.isFinite(value) && value > 0 && value <= MAX_AMOUNT) return value;
+  }
+  return null;
+};
+
+const extractKhataItemCommand = (raw, customerNames) => {
+  if (!raw) return null;
+  const normalized = raw.replace(/\s+/g,' ').trim();
+  const patterns = [
+    /^(.+?)\s+(?:ke|ka|ki)\s+(?:khate|khata|account|accounts)\s+(?:mein|me)\s+(.+)$/i,
+    /^(.+?)\s+(?:ke|ka|ki)\s+(?:udhaar|udhar|baki|baaki|credit)\s+(?:mein|me)\s+(.+)$/i,
+    /^(.+?)\s+ko\s+(.+?)\s+(?:udhaar|udhar|credit)(?:\s+(?:do|de\s*do))?$/i,
+    /^(.+?)\s+(?:के)\s+(?:खाते|खाता|उधार)\s+(?:में|मे)\s+(.+)$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match) continue;
+    const rawCustomer = cleanCustomerName(match[1]);
+    const itemText = cleanText(match[2]);
+    if (rawCustomer && itemText) {
+      return { customer_name: titleCase(rawCustomer), itemText };
+    }
+  }
+  const knownCustomer = matchKnownCustomer(raw, customerNames);
+  if (knownCustomer) {
+    const escaped = knownCustomer.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const remainder = normalized
+      .replace(new RegExp('^'+escaped,'i'),'')
+      .replace(/^(?:ke\s+)?(?:khate|khata|account|udhaar|udhar)\s+(?:mein|me)\s+/i,'')
+      .trim();
+    if (remainder) return { customer_name: titleCase(knownCustomer), itemText: remainder };
+  }
+  return null;
+};
 
 /*
  * ============================================================
@@ -2283,171 +3001,169 @@ const extractPayment = (
  * ============================================================
  */
 
-const productFromInventory = (
-  raw,
-  inventoryNames
-) => {
+const productFromInventory =
+  (
+    raw,
+    inventoryNames
+  ) => {
 
-  if (
-    !Array.isArray(
-      inventoryNames
-    ) ||
-    inventoryNames.length ===
-      0
-  ) {
+    if (!Array.isArray(inventoryNames) || inventoryNames.length === 0) {
+      return null;
+    }
+
+    const rawNormalized = normalizeAliasText(raw);
+    const rawCanonical = canonicalProductSpeech(rawNormalized);
+
+    const sorted = [...inventoryNames]
+      .filter(Boolean)
+      .map(name => String(name).trim())
+      .filter(Boolean)
+      .sort((a,b) => b.length - a.length);
+
+    const exact = sorted.find(
+      name => rawNormalized.includes(normalizeAliasText(name))
+    );
+
+    if (exact) return exact;
+
+    for (const name of sorted) {
+      const nameCanonical = canonicalProductSpeech(name);
+
+      if (rawCanonical === nameCanonical) return name;
+
+      if (
+        rawCanonical &&
+        nameCanonical &&
+        (rawCanonical.includes(nameCanonical) || nameCanonical.includes(rawCanonical))
+      ) return name;
+
+      /*
+       * Alias may be only one part of the sentence:
+       * "10 wala parle ji"
+       * "50 wala chawal 10kg"
+       */
+      const matchingGroup =
+        PRODUCT_ALIASES.find(group =>
+          group.aliases.some(alias =>
+            rawNormalized.includes(normalizeAliasText(alias))
+          )
+        );
+
+      if (
+        matchingGroup &&
+        normalizeAliasText(matchingGroup.canonical) === nameCanonical
+      ) {
+        return name;
+      }
+    }
 
     return null;
-  }
-
-
-  const lower =
-    raw.toLowerCase();
-
-
-  const sorted =
-    [...inventoryNames]
-      .filter(Boolean)
-      .map(
-        name =>
-          String(
-            name
-          ).trim()
-      )
-      .filter(Boolean)
-      .sort(
-        (a, b) =>
-          b.length -
-          a.length
-      );
-
-
-  return (
-    sorted.find(
-      name =>
-        lower.includes(
-          name.toLowerCase()
-        )
-    ) ||
-    null
-  );
-};
-
+  };
 
 /*
  * ============================================================
  * PRODUCT FALLBACK
  * ============================================================
- *
- * This is intentionally conservative.
- *
- * Words like:
- *
- * how
- * much
- * stock
- * have
- * bacha
- *
- * must NEVER become the product name.
- * ============================================================
  */
 
-const productFromWords = (
-  raw,
-  inventoryNames
-) => {
+const productFromWords =
+  (
+    raw,
+    inventoryNames
+  ) => {
 
-  const exact =
-    productFromInventory(
-      raw,
-      inventoryNames
-    );
-
-
-  if (
-    exact
-  ) {
-
-    return exact;
-  }
+    const exact =
+      productFromInventory(
+        raw,
+        inventoryNames
+      );
 
 
-  const tokens =
-    raw
-      .split(/\s+/)
-      .filter(
-        word => {
+    if (
+      exact
+    ) {
 
-          if (
-            !word
-          ) {
-            return false;
-          }
+      return exact;
+    }
 
 
-          /*
-           * Numbers.
-           */
+    const tokens =
+      raw
+        .split(
+          /\s+/
+        )
+        .filter(
+          word => {
 
-          if (
-            /^(?:₹|rs\.?|rupees?)?\d+(?:\.\d+)?$/i.test(
-              word
-            )
-          ) {
+            if (
+              !word
+            ) {
 
-            return false;
-          }
-
-
-          /*
-           * Units.
-           */
-
-          if (
-            UNIT_ALIASES[
-              word
-            ]
-          ) {
-
-            return false;
-          }
+              return false;
+            }
 
 
-          /*
-           * Fraction words.
-           */
+            /*
+             * Numbers.
+             */
 
-          if (
-            FRACTION_WORDS[
-              word
-            ] !==
-            undefined
-          ) {
+            if (
+              /^(?:₹|rs\.?|rupees?)?\d+(?:\.\d+)?$/i.test(
+                word
+              )
+            ) {
 
-            return false;
-          }
-
-
-          /*
-           * Stop words.
-           */
-
-          if (
-            STOP_WORDS.has(
-              word
-            )
-          ) {
-
-            return false;
-          }
+              return false;
+            }
 
 
-          /*
-           * Additional action/query words.
-           */
+            /*
+             * Units.
+             */
 
-          const ignored =
-            [
+            if (
+              normalizeUnit(
+                word
+              )
+            ) {
+
+              return false;
+            }
+
+
+            /*
+             * Fractions.
+             */
+
+            if (
+              FRACTION_WORDS[
+                word
+              ] !== undefined
+            ) {
+
+              return false;
+            }
+
+
+            /*
+             * Stop words.
+             */
+
+            if (
+              STOP_WORDS.has(
+                word
+              )
+            ) {
+
+              return false;
+            }
+
+
+            /*
+             * Common query/action words.
+             */
+
+            const ignored = [
 
               'sell',
               'becho',
@@ -2522,22 +3238,18 @@ const productFromWords = (
               'mera',
               'meri',
               'pass',
-
               'paas',
 
               'bacha',
               'bache',
               'baki',
+              'baaki',
 
               'hai',
               'hain',
 
               'today',
               'aaj',
-
-              'kitna',
-              'kitni',
-              'kitne',
 
               'ke',
               'ka',
@@ -2546,6 +3258,26 @@ const productFromWords = (
               'mein',
               'me',
 
+              'wala',
+              'wale',
+              'wali',
+              'waala',
+              'waale',
+              'waali',
+              'rupee',
+              'rupees',
+              'rupaye',
+              'rupay',
+              'rs',
+              'price',
+              'rate',
+
+              'वाला',
+              'वाले',
+              'वाली',
+              'रुपये',
+              'रुपए',
+
               'karo',
               'kar',
               'do',
@@ -2553,138 +3285,129 @@ const productFromWords = (
             ];
 
 
-          if (
-            ignored.includes(
-              word
-            )
-          ) {
+            if (
+              ignored.includes(
+                word
+              )
+            ) {
 
-            return false;
+              return false;
+            }
+
+
+            return true;
           }
+        );
 
 
-          return true;
-        }
+    return tokens.length
+      ? titleCase(
+          tokens.join(
+            ' '
+          )
+        )
+      : null;
+  };
+
+
+/*
+ * ============================================================
+ * INVENTORY QUERY
+ * ============================================================
+ */
+
+const isInventoryQuery =
+  (
+    raw,
+    clean
+  ) => {
+
+    return (
+
+      /\b(how\s+much|how\s+many|stock|inventory|have|has|left|remaining)\b/i.test(
+        raw
+      )
+
+      ||
+
+      /\b(kitna|kitni|kitne|mere\s+pass|mere\s+paas|mera\s+pass|meri\s+pass|bacha|bache|baki|baaki)\b/i.test(
+        raw
+      )
+
+      ||
+
+      /(?:कितना|कितनी|कितने|स्टॉक|माल|बचा|बचे|बाकी|पास)/i.test(
+        raw
+      )
+    );
+  };
+
+
+/*
+ * ============================================================
+ * KHATA QUERY
+ * ============================================================
+ */
+
+const isKhataQuery =
+  raw => {
+
+    return (
+
+      /\b(khata|khate|udhaar|udhar|baki|baaki|credit|account)\b/i.test(
+        raw
+      )
+
+      ||
+
+      /(?:उधार|उधारी|खाता|खाते|बकाया|क्रेडिट)/i.test(
+        raw
+      )
+    );
+  };
+
+
+/*
+ * ============================================================
+ * TODAY KHATA SUMMARY
+ * ============================================================
+ */
+
+const isTodayKhataSummary =
+  raw => {
+
+    const today =
+      /\b(today|aaj|aajki|aaj\s+ki|आज|आजकी|आज\s+की)\b/i.test(
+        raw
       );
 
 
-  return tokens.length
-    ? titleCase(
-        tokens.join(
-          ' '
-        )
+    const khata =
+      /\b(udhaar|udhar|udhari|baki|baaki|khata|khate|credit|account)\b/i.test(
+        raw
       )
-    : null;
-};
+      ||
+      /(?:उधार|उधारी|बकाया|खाता|खाते|क्रेडिट)/i.test(
+        raw
+      );
 
 
-/*
- * ============================================================
- * STOCK / INVENTORY QUERY DETECTION
- * ============================================================
- */
-
-const isInventoryQuery = (
-  raw,
-  clean
-) => {
-
-  return (
-
-    /*
-     * English
-     */
-
-    /\b(how\s+much|how\s+many|stock|inventory|have|has|left|remaining)\b/i.test(
-      raw
-    )
-
-    ||
-
-    /*
-     * Hindi / Hinglish
-     */
-
-    /\b(kitna|kitni|kitne|mere\s+pass|mere\s+paas|mera\s+pass|meri\s+pass|bacha|bache|baki|baaki)\b/i.test(
-      raw
-    )
-
-    ||
-
-    /*
-     * Devanagari
-     */
-
-    /(?:कितना|कितनी|कितने|स्टॉक|माल|बचा|बचे|बाकी|पास)/i.test(
-      raw
-    )
-  );
-};
+    const summaryWords =
+      /\b(kitna|kitni|kitne|how\s+much|how\s+many|total|amount|log|customer|customers|people|diya|diye|given|gave)\b/i.test(
+        raw
+      )
+      ||
+      /(?:कितना|कितनी|कितने|कुल|लोग|ग्राहक)/i.test(
+        raw
+      );
 
 
-/*
- * ============================================================
- * KHATA QUERY DETECTION
- * ============================================================
- */
-
-const isKhataQuery = raw => {
-
-  return (
-
-    /\b(khata|khate|udhaar|udhar|baki|baaki|credit|account)\b/i.test(
-      raw
-    )
-
-    ||
-
-    /(?:उधार|उधारी|खाता|खाते|बकाया|क्रेडिट)/i.test(
-      raw
-    )
-  );
-};
-
-
-/*
- * ============================================================
- * TODAY KHATA SUMMARY DETECTION
- * ============================================================
- */
-
-const isTodayKhataSummary = raw => {
-
-  const today =
-    /\b(today|aaj|aajki|aaj\s+ki|आज|आजकी|आज\s+की)\b/i.test(
-      raw
+    return (
+      today &&
+      khata &&
+      summaryWords
     );
-
-
-  const khata =
-    /\b(udhaar|udhar|udhari|baki|baaki|khata|khate|credit|account)\b/i.test(
-      raw
-    )
-    ||
-    /(?:उधार|उधारी|बकाया|खाता|खाते|क्रेडिट)/i.test(
-      raw
-    );
-
-
-  const summaryWords =
-    /\b(kitna|kitni|kitne|how\s+much|how\s+many|total|amount|log|customer|customers|people|diya|diye|given|gave)\b/i.test(
-      raw
-    )
-    ||
-    /(?:कितना|कितनी|कितने|कुल|लोग|ग्राहक)/i.test(
-      raw
-    );
-
-
-  return (
-    today &&
-    khata &&
-    summaryWords
-  );
-};
+  };
 
 
 /*
@@ -2710,7 +3433,7 @@ export function parseVoiceCommandLocally(
 
   /*
    * ==========================================================
-   * EMPTY
+   * EMPTY COMMAND
    * ==========================================================
    */
 
@@ -2734,8 +3457,7 @@ export function parseVoiceCommandLocally(
    * CUSTOMER CREATION
    * ==========================================================
    *
-   * MUST COME FIRST.
-   * ==========================================================
+   * Must be checked before generic product parsing.
    */
 
   const customer =
@@ -2762,9 +3484,44 @@ export function parseVoiceCommandLocally(
   }
 
 
+
   /*
    * ==========================================================
-   * PAYMENT / FLAT UDHAAR
+   * DIRECT KHATA + PRODUCT
+   * ==========================================================
+   */
+  const khataItem = extractKhataItemCommand(raw, customerNames);
+
+  if (khataItem) {
+    const { qty: itemQty, unit: itemUnit } =
+      extractQuantityAndUnit(khataItem.itemText);
+
+    const itemPriceHint = parsePriceHint(khataItem.itemText);
+    const itemProduct = productFromWords(khataItem.itemText, inventoryNames);
+
+    if (itemProduct) {
+      return makeResult({
+        intent: 'sale.create',
+        product: itemProduct,
+        qty:
+          itemPriceHint !== null &&
+          !itemUnit &&
+          itemQty === itemPriceHint
+            ? 1
+            : itemQty,
+        unit: itemUnit,
+        customer_name: khataItem.customer_name,
+        payment_type: 'KHATA',
+        price_hint: itemPriceHint,
+        confidence: 0.99,
+      });
+    }
+  }
+
+
+  /*
+   * ==========================================================
+   * PAYMENT / KHATA
    * ==========================================================
    */
 
@@ -2799,13 +3556,8 @@ export function parseVoiceCommandLocally(
         confidence:
           0.97,
       });
-
     }
 
-
-    /*
-     * Customer is being given credit.
-     */
 
     return makeResult({
 
@@ -2946,13 +3698,24 @@ export function parseVoiceCommandLocally(
    * ==========================================================
    */
 
-  const {
+  const price_hint = parsePriceHint(raw);
+
+  let {
     qty,
     unit,
-  } =
-    extractQuantityAndUnit(
-      raw
-    );
+  } = extractQuantityAndUnit(raw);
+
+  if (
+    price_hint !== null &&
+    !unit &&
+    qty === price_hint
+  ) {
+    /*
+     * The only number we found is the price:
+     * "₹10 Kurkure" / "10 wala Kurkure".
+     */
+    qty = 1;
+  }
 
 
   /*
@@ -2971,17 +3734,6 @@ export function parseVoiceCommandLocally(
   /*
    * ==========================================================
    * INVENTORY QUERY
-   * ==========================================================
-   *
-   * MUST COME BEFORE INVENTORY ADD.
-   *
-   * This prevents:
-   *
-   * "mere pass sabudana kitna hai"
-   *
-   * becoming:
-   *
-   * inventory.add
    * ==========================================================
    */
 
@@ -3007,6 +3759,27 @@ export function parseVoiceCommandLocally(
         product
           ? 0.97
           : 0.78,
+    });
+  }
+
+
+  /*
+   * ==========================================================
+   * PRICE-QUALIFIED SALE
+   * ==========================================================
+   */
+  if (price_hint !== null && product) {
+    const customerName = matchKnownCustomer(raw, customerNames);
+
+    return makeResult({
+      intent: 'sale.create',
+      product,
+      qty,
+      unit,
+      customer_name: customerName,
+      payment_type: customerName ? 'KHATA' : null,
+      price_hint,
+      confidence: customerName ? 0.99 : 0.96,
     });
   }
 
@@ -3049,6 +3822,8 @@ export function parseVoiceCommandLocally(
           ? 'KHATA'
           : null,
 
+      price_hint,
+
       confidence:
         product
           ? 0.96
@@ -3083,6 +3858,8 @@ export function parseVoiceCommandLocally(
       payment_type:
         'CASH',
 
+      price_hint,
+
       confidence:
         product
           ? 0.93
@@ -3114,6 +3891,8 @@ export function parseVoiceCommandLocally(
 
       unit,
 
+      price_hint,
+
       confidence:
         product
           ? 0.97
@@ -3129,12 +3908,12 @@ export function parseVoiceCommandLocally(
    *
    * Example:
    *
-   * "5 biscuit"
-   * "2 packet parle"
+   *   5 biscuit
+   *   2 packet parle
+   *   500 gram sugar
    *
-   * We only classify it as inventory.add when
-   * an actual inventory product is matched.
-   * ==========================================================
+   * Only treat as inventory.add when a product can
+   * actually be identified.
    */
 
   if (
@@ -3155,6 +3934,8 @@ export function parseVoiceCommandLocally(
       qty,
 
       unit,
+
+      price_hint,
 
       confidence:
         0.82,
@@ -3185,5 +3966,32 @@ export function parseVoiceCommandLocally(
   });
 }
 
+
+/*
+ * ============================================================
+ * OPTIONAL DEBUG EXPORT
+ * ============================================================
+ *
+ * Useful during development/testing.
+ *
+ * It does NOT write anything to the database.
+ * ============================================================
+ */
+
+export const getSupportedVoiceUnits =
+  () => {
+
+    return Array.from(
+      ALL_UNITS
+    );
+  };
+
+
+export {
+  parsePriceHint,
+  canonicalProductSpeech,
+  productFromInventory,
+  extractKhataItemCommand,
+};
 
 export default parseVoiceCommandLocally;

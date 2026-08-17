@@ -329,12 +329,8 @@ export default appSchema({
         {
           name:
             'created_at',
-
           type:
             'number',
-
-          isOptional:
-            true,
         },
 
 

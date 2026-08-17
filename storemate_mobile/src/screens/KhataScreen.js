@@ -11,14 +11,13 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  Alert,
   Linking,
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
 } from 'react-native';
-
+import { useAppAlert } from '../components/AppAlert';
 import { database } from '../core/database';
 import { Q } from '@nozbe/watermelondb';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,6 +35,7 @@ const KhataScreen = ({
 }) => {
   const insets =
     useSafeAreaInsets();
+  const { showAlert } = useAppAlert();
 
   const {
     width: windowWidth,
@@ -465,7 +465,7 @@ const KhataScreen = ({
       Linking.openURL(
         url
       ).catch(() =>
-        Alert.alert(
+        showAlert(
           'WhatsApp unavailable',
           'Could not open WhatsApp on this device.'
         )
@@ -483,7 +483,7 @@ const KhataScreen = ({
         customer.balance <=
         0
       ) {
-        return Alert.alert(
+        return showAlert(
           'No Dues',
           `${customer.name} has no pending dues to remind them about.`
         );
@@ -531,7 +531,7 @@ const KhataScreen = ({
         cleanPhone.length <
         10
       ) {
-        return Alert.alert(
+        return showAlert(
           'Invalid number',
           'Please enter a valid 10-digit mobile number.'
         );
@@ -580,7 +580,7 @@ const KhataScreen = ({
         if (
           otherCustomer
         ) {
-          return Alert.alert(
+          return showAlert(
             'Number already used',
             `This number already belongs to ${otherCustomer.customerId}.`
           );
@@ -626,7 +626,7 @@ const KhataScreen = ({
 
         await fetchKhata();
       } catch (error) {
-        Alert.alert(
+        showAlert(
           'Error saving number',
           error?.message ||
             'Unable to save the number.'
@@ -651,7 +651,7 @@ const KhataScreen = ({
         isNaN(amount) ||
         amount <= 0
       ) {
-        return Alert.alert(
+        return showAlert(
           'Invalid amount',
           'Enter a valid payment amount.'
         );
@@ -715,7 +715,7 @@ const KhataScreen = ({
         );
 
 
-        Alert.alert(
+        showAlert(
           'Payment Received',
           `₹${amount.toFixed(
             2
@@ -734,7 +734,7 @@ const KhataScreen = ({
 
         await fetchKhata();
       } catch (error) {
-        Alert.alert(
+        showAlert(
           'Database Error',
           error?.message ||
             'Could not record payment.'

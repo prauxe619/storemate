@@ -82,6 +82,11 @@ class User(db.Model):
 
     is_active = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), default='MERCHANT', nullable=False)
+    # Store profile information
+    address = db.Column(db.String(500), nullable=True)
+    upi_id = db.Column(db.String(100), nullable=True)
+
+    last_ip = db.Column(db.String(45), nullable=True)
 
 
 # ============================================================

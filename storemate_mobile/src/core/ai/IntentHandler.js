@@ -3,23 +3,98 @@ import { Q } from '@nozbe/watermelondb';
 import { requireCurrentUserId } from '../auth/localUser';
 import TelemetryService from '../../services/TelemetryService';
 
+import {
+  normalizeUnit,
+  convertQuantity,
+  canConvertUnit,
+  unitLabel,
+  formatQuantity,
+} from './UnitConversion';
+
 
 /*
  * ============================================================
- * Countr IntentHandler
+ * StoreMate IntentHandler
  * ============================================================
+ *
+ * OFFLINE-FIRST ACTION EXECUTOR
  *
  * Responsibilities:
  *
- * - Execute local/remote voice intents
+ * - Execute local voice intents
+ * - Execute backend AI intents
  * - Keep every database operation owner-scoped
  * - Handle inventory
+ * - Handle universal inventory units
  * - Handle sales
  * - Handle Khata
  * - Handle customer creation
  * - Handle inventory queries
  * - Handle daily Khata summaries
- * - Understand quantity units coming from LocalVoiceParser
+ * - Convert compatible units automatically
+ *
+ *
+ * IMPORTANT UNIT BEHAVIOUR
+ * ============================================================
+ *
+ * Inventory:
+ *
+ *   Sugar
+ *   quantity = 10
+ *   unit = KG
+ *
+ * User says:
+ *
+ *   "add 200 gram sugar"
+ *
+ * Parser:
+ *
+ *   qty  = 200
+ *   unit = GRAM
+ *
+ * IntentHandler:
+ *
+ *   200 GRAM
+ *       ↓
+ *   0.2 KG
+ *       ↓
+ *   stock becomes 10.2 KG
+ *
+ *
+ * User says:
+ *
+ *   "sell 500 gram sugar"
+ *
+ * If price = ₹50 / KG:
+ *
+ *   500 GRAM
+ *       ↓
+ *   0.5 KG
+ *       ↓
+ *   ₹50 × 0.5
+ *       ↓
+ *   ₹25
+ *
+ *
+ * Compatible conversions are allowed.
+ *
+ * Examples:
+ *
+ * GRAM      ↔ KG
+ * MG        ↔ GRAM
+ * KG        ↔ QUINTAL
+ * KG        ↔ TON
+ * ML        ↔ LITRE
+ * LITRE     ↔ KILOLITRE
+ *
+ *
+ * We DO NOT guess:
+ *
+ * PACK → PCS
+ * BOX  → PCS
+ * CARTON → PCS
+ *
+ * unless a product-specific pack-size system exists.
  *
  * ============================================================
  */
@@ -31,16 +106,14 @@ import TelemetryService from '../../services/TelemetryService';
  * ============================================================
  */
 
-const MAX_QTY =
-  100000;
+const MAX_QTY = 100000;
 
-const MAX_MONEY =
-  100000000;
+const MAX_MONEY = 100000000;
 
 
 /*
  * ============================================================
- * TELEMETRY HELPERS
+ * TELEMETRY
  * ============================================================
  */
 
@@ -49,14 +122,24 @@ const trackIntentSuccess = (
   payload = {}
 ) => {
 
-  TelemetryService.trackEvent(
-    'voice_action_success',
-    'voice',
-    {
-      intent,
-      ...payload,
-    }
-  );
+  try {
+
+    TelemetryService.trackEvent(
+      'voice_action_success',
+      'voice',
+      {
+        intent,
+        ...payload,
+      }
+    );
+
+  } catch (error) {
+
+    console.log(
+      'Telemetry success error:',
+      error?.message || error
+    );
+  }
 };
 
 
@@ -66,163 +149,40 @@ const trackIntentFailure = (
   payload = {}
 ) => {
 
-  TelemetryService.trackEvent(
-    'voice_action_failed',
-    'voice',
-    {
-      intent,
-      reason:
-        String(
-          reason ||
-          'Unknown error'
-        ).slice(
-          0,
-          300
-        ),
+  try {
 
-      ...payload,
-    }
-  );
-};
+    TelemetryService.trackEvent(
+      'voice_action_failed',
+      'voice',
+      {
+        intent,
 
+        reason:
+          String(
+            reason ||
+            'Unknown error'
+          ).slice(
+            0,
+            300
+          ),
 
-/*
- * ============================================================
- * SUPPORTED UNITS
- * ============================================================
- */
+        ...payload,
+      }
+    );
 
-const SUPPORTED_UNITS =
-  new Set([
+  } catch (error) {
 
-    'KG',
-    'GRAM',
-
-    'LITRE',
-    'ML',
-
-    'PIECE',
-    'PACK',
-
-    'BOTTLE',
-    'BOX',
-
-    'DOZEN',
-
-    'STRIP',
-
-    'CARTON',
-    'BUNDLE',
-
-  ]);
-
-
-/*
- * ============================================================
- * UNIT DISPLAY
- * ============================================================
- */
-
-const unitLabel = unit => {
-
-  if (
-    !unit
-  ) {
-
-    return 'units';
-  }
-
-
-  switch (
-    String(
-      unit
-    )
-      .trim()
-      .toUpperCase()
-  ) {
-
-    case 'KG':
-      return 'kg';
-
-    case 'GRAM':
-      return 'grams';
-
-    case 'LITRE':
-      return 'litres';
-
-    case 'ML':
-      return 'ml';
-
-    case 'PIECE':
-      return 'pieces';
-
-    case 'PACK':
-      return 'packets';
-
-    case 'BOTTLE':
-      return 'bottles';
-
-    case 'BOX':
-      return 'boxes';
-
-    case 'DOZEN':
-      return 'dozen';
-
-    case 'STRIP':
-      return 'strips';
-
-    case 'CARTON':
-      return 'cartons';
-
-    case 'BUNDLE':
-      return 'bundles';
-
-    default:
-      return 'units';
+    console.log(
+      'Telemetry failure error:',
+      error?.message || error
+    );
   }
 };
 
 
 /*
  * ============================================================
- * NORMALIZE UNIT
- * ============================================================
- */
-
-const normalizeUnit = value => {
-
-  if (
-    typeof value !==
-    'string'
-  ) {
-
-    return null;
-  }
-
-
-  const normalized =
-    value
-      .trim()
-      .toUpperCase();
-
-
-  if (
-    !SUPPORTED_UNITS.has(
-      normalized
-    )
-  ) {
-
-    return null;
-  }
-
-
-  return normalized;
-};
-
-
-/*
- * ============================================================
- * HELPERS
+ * TEXT HELPERS
  * ============================================================
  */
 
@@ -232,8 +192,7 @@ const cleanText = (
 ) => {
 
   if (
-    typeof value !==
-    'string'
+    typeof value !== 'string'
   ) {
 
     return '';
@@ -257,38 +216,54 @@ const cleanText = (
 };
 
 
-const parsePositiveNumber =
-  value => {
+/*
+ * ============================================================
+ * NUMBER HELPERS
+ * ============================================================
+ */
 
-    if (
-      value === null ||
-      value === undefined ||
-      value === ''
-    ) {
+const parsePositiveNumber = value => {
 
-      return null;
-    }
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
 
-
-    const number =
-      Number(
-        value
-      );
-
-
-    if (
-      !Number.isFinite(
-        number
-      ) ||
-      number <= 0
-    ) {
-
-      return null;
-    }
+    return null;
+  }
 
 
-    return number;
-  };
+  const number =
+    Number(value);
+
+
+  if (
+    !Number.isFinite(number) ||
+    number <= 0
+  ) {
+
+    return null;
+  }
+
+
+  return number;
+};
+
+
+const safeNumber = (
+  value,
+  fallback = 0
+) => {
+
+  const number =
+    Number(value);
+
+
+  return Number.isFinite(number)
+    ? number
+    : fallback;
+};
 
 
 /*
@@ -297,82 +272,305 @@ const parsePositiveNumber =
  * ============================================================
  */
 
-const getStartOfToday =
-  () => {
+const getStartOfToday = () => {
 
-    const date =
-      new Date();
-
-
-    date.setHours(
-      0,
-      0,
-      0,
-      0
-    );
+  const date =
+    new Date();
 
 
-    return date.getTime();
-  };
+  date.setHours(
+    0,
+    0,
+    0,
+    0
+  );
 
 
-const getStartOfTomorrow =
-  () => {
-
-    const date =
-      new Date();
+  return date.getTime();
+};
 
 
-    date.setHours(
-      0,
-      0,
-      0,
-      0
-    );
+const getStartOfTomorrow = () => {
+
+  const date =
+    new Date();
 
 
-    date.setDate(
-      date.getDate() + 1
-    );
+  date.setHours(
+    0,
+    0,
+    0,
+    0
+  );
 
 
-    return date.getTime();
-  };
+  date.setDate(
+    date.getDate() + 1
+  );
 
 
-const isTodayTimestamp =
-  timestamp => {
+  return date.getTime();
+};
 
-    const value =
-      Number(
-        timestamp
-      );
 
+const isTodayTimestamp = timestamp => {
+
+  const value =
+    Number(timestamp);
+
+
+  if (
+    !Number.isFinite(value)
+  ) {
+
+    return false;
+  }
+
+
+  return (
+    value >= getStartOfToday() &&
+    value < getStartOfTomorrow()
+  );
+};
+
+
+/*
+ * ============================================================
+ * INVENTORY PRODUCT NAME NORMALIZATION
+ * ============================================================
+ *
+ * Makes product matching more tolerant.
+ *
+ * Examples:
+ *
+ * "Sugar"
+ * " sugar "
+ * "SUGAR"
+ * "sugar  "
+ *
+ * all become:
+ *
+ * "sugar"
+ *
+ * ============================================================
+ */
+
+const normalizeProductName = value => {
+
+  return cleanText(
+    value,
+    150
+  )
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9\u0900-\u097F\s.-]/gi,
+      ''
+    )
+    .replace(
+      /\s+/g,
+      ' '
+    )
+    .trim();
+};
+
+
+
+/*
+ * ============================================================
+ * VOICE PRODUCT ALIASES
+ * ============================================================
+ *
+ * Used by the local and execution layers so:
+ *
+ *   Parle G / Parle Ji / Parle Jee
+ *   rice / chawal
+ *   sugar / chini / cheeni
+ *   biscuit / biskit
+ *
+ * resolve to the same inventory product.
+ * ============================================================
+ */
+
+const PRODUCT_ALIAS_GROUPS = [
+  {
+    canonical: 'parle g',
+    aliases: [
+      'parle g',
+      'parle ji',
+      'parle jee',
+      'parle gee',
+      'parle gi',
+      'g biscuit',
+      'पारले जी',
+      'पार्ले जी',
+    ],
+  },
+  {
+    canonical: 'rice',
+    aliases: [
+      'rice',
+      'chawal',
+      'chaawal',
+      'चावल',
+    ],
+  },
+  {
+    canonical: 'sugar',
+    aliases: [
+      'sugar',
+      'chini',
+      'cheeni',
+      'चीनी',
+      'शक्कर',
+    ],
+  },
+  {
+    canonical: 'biscuit',
+    aliases: [
+      'biscuit',
+      'biscuits',
+      'biskit',
+      'बिस्किट',
+      'बिस्कुट',
+    ],
+  },
+  {
+    canonical: 'tooth brush',
+    aliases: [
+      'toothbrush',
+      'tooth brush',
+      'ब्रश',
+      'टूथब्रश',
+      'टूथ ब्रश',
+    ],
+  },
+];
+
+const normalizeVoiceProduct = value =>
+  cleanText(value, 150)
+    .toLowerCase()
+    .replace(/[\/,]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const canonicalVoiceProduct = value => {
+
+  const normalized =
+    normalizeVoiceProduct(value);
+
+  if (!normalized) {
+    return '';
+  }
+
+  for (const group of PRODUCT_ALIAS_GROUPS) {
 
     if (
-      !Number.isFinite(
-        value
-      )
+      normalized ===
+      normalizeVoiceProduct(group.canonical)
     ) {
-
-      return false;
+      return group.canonical;
     }
 
+    if (
+      group.aliases.some(
+        alias =>
+          normalizeVoiceProduct(alias) ===
+          normalized
+      )
+    ) {
+      return group.canonical;
+    }
+  }
 
-    const start =
-      getStartOfToday();
+  return normalized;
+};
 
+const productAliasMatches = (
+  requested,
+  stored
+) => {
 
-    const end =
-      getStartOfTomorrow();
+  const requestText =
+    normalizeVoiceProduct(requested);
 
+  const storedText =
+    normalizeVoiceProduct(stored);
 
-    return (
-      value >= start &&
-      value < end
+  if (
+    !requestText ||
+    !storedText
+  ) {
+    return false;
+  }
+
+  if (
+    requestText === storedText ||
+    requestText.includes(storedText) ||
+    storedText.includes(requestText)
+  ) {
+    return true;
+  }
+
+  const requestCanonical =
+    canonicalVoiceProduct(
+      requestText
     );
-  };
 
+  const storedCanonical =
+    canonicalVoiceProduct(
+      storedText
+    );
+
+  if (
+    requestCanonical ===
+    storedCanonical
+  ) {
+    return true;
+  }
+
+  /*
+   * Match an alias contained inside a larger spoken phrase.
+   */
+  return PRODUCT_ALIAS_GROUPS.some(
+    group => {
+
+      const canonical =
+        group.canonical;
+
+      if (
+        storedCanonical !== canonical
+      ) {
+        return false;
+      }
+
+      return group.aliases.some(
+        alias =>
+          requestText.includes(
+            normalizeVoiceProduct(alias)
+          )
+      );
+    }
+  );
+};
+
+
+/*
+ * ============================================================
+ * PRICE / UNIT AWARE INVENTORY LOOKUP
+ * ============================================================
+ *
+ * priceHint is a SKU selector, not a quantity.
+ *
+ * Example:
+ *
+ *   "10 wala Kurkure"
+ *
+ * selects the Kurkure record whose sellingPrice is ₹10.
+ *
+ * If there are multiple records for the same product,
+ * exact price wins.
+ * ============================================================
+ */
 
 /*
  * ============================================================
@@ -380,251 +578,506 @@ const isTodayTimestamp =
  * ============================================================
  */
 
-const findInventoryItem =
-  async (
-    product,
-    ownerId
-  ) => {
+const findInventoryItem = async (
+  product,
+  ownerId,
+  options = {}
+) => {
 
-    if (
-      !product ||
-      !ownerId
-    ) {
+  if (!product || !ownerId) {
+    return null;
+  }
 
-      return null;
-    }
+  const normalizedProduct =
+    normalizeProductName(product);
 
+  if (!normalizedProduct) {
+    return null;
+  }
 
-    const allItems =
-      await database
-        .get(
-          'inventory_items'
+  const priceHint =
+    Number.isFinite(
+      Number(options?.priceHint)
+    ) &&
+    Number(options?.priceHint) > 0
+      ? Number(options.priceHint)
+      : null;
+
+  const requestedUnit =
+    normalizeUnit(
+      options?.unit
+    );
+
+  const allItems =
+    await database
+      .get('inventory_items')
+      .query(
+        Q.where(
+          'owner_id',
+          ownerId
         )
-        .query(
-          Q.where(
-            'owner_id',
-            ownerId
-          )
-        )
-        .fetch();
-
-
-    const normalized =
-      String(
-        product
       )
-        .trim()
-        .toLowerCase();
+      .fetch();
 
+  const productCandidates =
+    allItems.filter(
+      item =>
+        productAliasMatches(
+          normalizedProduct,
+          item.productName
+        )
+    );
 
-    if (
-      !normalized
-    ) {
+  if (!productCandidates.length) {
+    return null;
+  }
 
-      return null;
-    }
+  /*
+   * ----------------------------------------------------------
+   * PRICE-QUALIFIED MATCH
+   * ----------------------------------------------------------
+   *
+   * "10 wala Kurkure"
+   *
+   * Exact selling price gets first priority.
+   */
+  if (priceHint !== null) {
 
-
-    /*
-     * Exact match first.
-     */
-
-    const exact =
-      allItems.find(
+    const exactPrice =
+      productCandidates.filter(
         item =>
-          String(
-            item.productName ||
-            ''
-          )
-            .trim()
-            .toLowerCase() ===
-          normalized
+          Math.abs(
+            safeNumber(
+              item.sellingPrice
+            ) -
+            priceHint
+          ) < 0.000001
       );
 
-
-    if (
-      exact
-    ) {
-
-      return exact;
+    if (!exactPrice.length) {
+      return null;
     }
 
-
     /*
-     * Partial match second.
+     * If the user also spoke a unit, prefer the same unit.
      */
+    if (requestedUnit) {
 
-    return (
-      allItems.find(
-        item =>
-          String(
-            item.productName ||
-            ''
-          )
-            .trim()
-            .toLowerCase()
-            .includes(
-              normalized
+      const unitMatch =
+        exactPrice.find(
+          item =>
+            getStoredUnit(item) ===
+            requestedUnit
+        );
+
+      if (unitMatch) {
+        return unitMatch;
+      }
+    }
+
+    return exactPrice[0];
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * UNIT-AWARE MATCH
+   * ----------------------------------------------------------
+   */
+  if (requestedUnit) {
+
+  const unitMatch =
+    productCandidates.find(
+      item => {
+
+        const stored =
+          getStoredUnit(item);
+
+        return (
+          stored === requestedUnit ||
+          (
+            stored &&
+            canConvertUnit(
+              requestedUnit,
+              stored
             )
-      ) ||
-      null
+          )
+        );
+      }
     );
-  };
+
+  if (unitMatch) {
+    return unitMatch;
+  }
+}
+
+  /*
+   * ----------------------------------------------------------
+   * EXACT NAME MATCH
+   * ----------------------------------------------------------
+   */
+  const exact =
+    productCandidates.find(
+      item =>
+        normalizeProductName(
+          item.productName
+        ) ===
+        normalizedProduct
+    );
+
+  if (exact) {
+    return exact;
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * WORD / TOKEN MATCH
+   * ----------------------------------------------------------
+   */
+  const requestedWords =
+    normalizedProduct
+      .split(' ')
+      .filter(
+        word =>
+          word.length >= 2
+      );
+
+  const wordMatch =
+    productCandidates.find(
+      item => {
+
+        const itemName =
+          normalizeProductName(
+            item.productName
+          );
+
+        return requestedWords.every(
+          word =>
+            itemName.includes(word)
+        );
+      }
+    );
+
+  return (
+    wordMatch ||
+    productCandidates[0] ||
+    null
+  );
+};
 
 
 /*
  * ============================================================
- * INVENTORY UNIT SAFETY
+ * STORED UNIT
+ * ============================================================
+ *
+ * Supports current and older model variations.
  * ============================================================
  */
 
-const getStoredUnit =
-  item => {
+const getStoredUnit = item => {
 
-    if (
-      !item
-    ) {
-
-      return null;
-    }
-
-
-    const possibleUnits = [
-
-      item.unit,
-
-      item.unitType,
-
-      item.stockUnit,
-
-    ];
-
-
-    for (
-      const value of
-      possibleUnits
-    ) {
-
-      const normalized =
-        normalizeUnit(
-          value
-        );
-
-
-      if (
-        normalized
-      ) {
-
-        return normalized;
-      }
-    }
-
+  if (
+    !item
+  ) {
 
     return null;
-  };
+  }
 
 
-const validateUnitCompatibility =
-  (
-    item,
-    requestedUnit
-  ) => {
+  const possibleUnits = [
 
-    const unit =
+    item.unit,
+
+    item.unitType,
+
+    item.stockUnit,
+
+  ];
+
+
+  for (
+    const value of
+    possibleUnits
+  ) {
+
+    const normalized =
       normalizeUnit(
-        requestedUnit
+        value
       );
 
 
-    /*
-     * No explicit unit from voice.
-     */
-
     if (
-      !unit
+      normalized
     ) {
 
-      return {
-        ok: true,
-        unit: null,
-      };
+      return normalized;
     }
+  }
 
 
-    const storedUnit =
-      getStoredUnit(
-        item
-      );
+  return null;
+};
 
 
-    /*
-     * No persisted unit.
-     */
+/*
+ * ============================================================
+ * RESOLVE INVENTORY QUANTITY
+ * ============================================================
+ *
+ * Converts the spoken quantity into the unit used by the
+ * inventory record.
+ *
+ * ============================================================
+ */
 
-    if (
-      !storedUnit
-    ) {
+const resolveQuantityForInventory = (
+  requestedQty,
+  requestedUnit,
+  item
+) => {
 
-      return {
-        ok: true,
-        unit,
-      };
-    }
-
-
-    /*
-     * Same unit.
-     */
-
-    if (
-      storedUnit ===
-      unit
-    ) {
-
-      return {
-        ok: true,
-        unit,
-      };
-    }
+  const qty =
+    Number(
+      requestedQty
+    );
 
 
-    /*
-     * Do NOT mix units.
-     */
+  if (
+    !Number.isFinite(qty) ||
+    qty <= 0
+  ) {
 
     return {
 
       ok: false,
 
-      unit,
+      message:
+        'Invalid quantity.',
+
+    };
+  }
+
+
+  if (
+    qty > MAX_QTY
+  ) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'The requested quantity is too large.',
+
+    };
+  }
+
+
+  const storedUnit =
+    getStoredUnit(
+      item
+    );
+
+
+  const normalizedRequested =
+    normalizeUnit(
+      requestedUnit
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * USER DID NOT SPEAK A UNIT
+   * ----------------------------------------------------------
+   *
+   * "add 10 sugar"
+   *
+   * If inventory is KG:
+   *
+   * → 10 KG
+   *
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !normalizedRequested
+  ) {
+
+    return {
+
+      ok: true,
+
+      quantity: qty,
+
+      originalQuantity: qty,
 
       storedUnit,
+
+      requestedUnit: null,
+
+      converted: false,
+
     };
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * OLD PRODUCT WITHOUT UNIT
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !storedUnit
+  ) {
+
+    return {
+
+      ok: true,
+
+      quantity: qty,
+
+      originalQuantity: qty,
+
+      storedUnit: normalizedRequested,
+
+      requestedUnit:
+        normalizedRequested,
+
+      converted: false,
+
+    };
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * SAME UNIT
+   * ----------------------------------------------------------
+   */
+
+  if (
+    storedUnit ===
+    normalizedRequested
+  ) {
+
+    return {
+
+      ok: true,
+
+      quantity: qty,
+
+      originalQuantity: qty,
+
+      storedUnit,
+
+      requestedUnit:
+        normalizedRequested,
+
+      converted: false,
+
+    };
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * SAFE CONVERSION
+   * ----------------------------------------------------------
+   */
+
+  if (
+    canConvertUnit(
+      normalizedRequested,
+      storedUnit
+    )
+  ) {
+
+    const converted =
+      convertQuantity(
+        qty,
+        normalizedRequested,
+        storedUnit
+      );
+
+
+    if (
+      converted !== null &&
+      Number.isFinite(converted) &&
+      converted > 0
+    ) {
+
+      return {
+
+        ok: true,
+
+        quantity: converted,
+
+        originalQuantity: qty,
+
+        storedUnit,
+
+        requestedUnit:
+          normalizedRequested,
+
+        converted: true,
+
+      };
+    }
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * UNSAFE CONVERSION
+   * ----------------------------------------------------------
+   */
+
+  return {
+
+    ok: false,
+
+    message:
+      `I can't safely convert ` +
+      `${formatQuantity(qty)} ` +
+      `${unitLabel(normalizedRequested)} ` +
+      `to ${unitLabel(storedUnit)} ` +
+      `for ${item.productName}.`,
+
+    storedUnit,
+
+    requestedUnit:
+      normalizedRequested,
+
   };
+};
 
 
 /*
  * ============================================================
- * SALE COMMIT
+ * COMMIT SALE
  * ============================================================
  */
 
 async function commitSale(
   soldItem,
-  qty,
+  requestedQty,
   totalSaleValue,
   paymentType,
-  customer_name,
+  customerName,
   now,
   ownerId,
-  requestedUnit = null
+  requestedUnit = null,
+  priceHint = null
 ) {
 
   if (
     !soldItem
   ) {
 
-    return 'Product could not be found.';
+    return (
+      'Product could not be found.'
+    );
   }
 
 
@@ -632,12 +1085,14 @@ async function commitSale(
     !ownerId
   ) {
 
-    return 'No active account found.';
+    return (
+      'No active account found.'
+    );
   }
 
 
   /*
-   * CRITICAL USER ISOLATION CHECK.
+   * OWNER SECURITY
    */
 
   if (
@@ -651,120 +1106,150 @@ async function commitSale(
   }
 
 
+  /*
+   * UNIT CONVERSION
+   */
+
+  const quantityResolution =
+    resolveQuantityForInventory(
+      requestedQty,
+      requestedUnit,
+      soldItem
+    );
+
+
   if (
-    !Number.isFinite(
-      Number(qty)
-    ) ||
-    Number(qty) <= 0
-  ) {
-
-    return 'Invalid quantity.';
-  }
-
-
-  if (
-    Number(qty) >
-    MAX_QTY
+    !quantityResolution.ok
   ) {
 
     return (
-      'The requested quantity is too large.'
+      quantityResolution.message
     );
   }
+
+
+  const quantityToSell =
+    quantityResolution.quantity;
+
+
+  const storedUnit =
+    quantityResolution.storedUnit ||
+    quantityResolution.requestedUnit ||
+    null;
 
 
   /*
-   * UNIT SAFETY.
+   * STOCK
    */
 
-  const unitCheck =
-    validateUnitCompatibility(
-      soldItem,
-      requestedUnit
-    );
-
-
-  if (
-    !unitCheck.ok
-  ) {
-
-    return (
-      `This product is stored in ${unitLabel(unitCheck.storedUnit)}, ` +
-      `but you asked for ${unitLabel(unitCheck.unit)}. ` +
-      `Please use the same stock unit.`
-    );
-  }
-
-
-  if (
-    Number(
+  const currentStock =
+    safeNumber(
       soldItem.quantity
-    ) <
-    Number(qty)
+    );
+
+
+  if (
+    currentStock <
+    quantityToSell
   ) {
 
     return (
       `Not enough stock. You only have ` +
-      `${soldItem.quantity} ` +
-      `${unitLabel(
-        unitCheck.unit ||
-        getStoredUnit(
-          soldItem
-        )
-      )} ` +
+      `${formatQuantity(currentStock)} ` +
+      `${unitLabel(storedUnit)} ` +
       `${soldItem.productName} left.`
     );
   }
 
 
-  if (
-    !Number.isFinite(
-      Number(totalSaleValue)
-    ) ||
-    Number(totalSaleValue) < 0 ||
-    Number(totalSaleValue) >
-      MAX_MONEY
-  ) {
+  /*
+   * MONEY
+   */
 
-    return 'Invalid sale amount.';
-  }
+  const finalAmount =
+    Number(
+      totalSaleValue
+    );
 
 
   if (
-    paymentType !==
-      'CASH' &&
-    paymentType !==
-      'KHATA'
-  ) {
-
-    return 'Invalid payment method.';
-  }
-
-
-  if (
-    paymentType ===
-      'KHATA' &&
-    !customer_name
+    !Number.isFinite(finalAmount) ||
+    finalAmount < 0 ||
+    finalAmount > MAX_MONEY
   ) {
 
     return (
-      "Please also say the customer's name for Khata sales."
+      'Invalid sale amount.'
     );
   }
 
 
+  /*
+   * PRICE-QUALIFIED PRODUCT SAFETY
+   *
+   * A "10 wala" command must never silently bill a different
+   * price variant.
+   */
+  if (
+    priceHint !== null &&
+    priceHint !== undefined
+  ) {
+
+    const expectedPrice =
+      Number(priceHint);
+
+    const actualPrice =
+      safeNumber(
+        soldItem.sellingPrice
+      );
+
+    if (
+      Number.isFinite(expectedPrice) &&
+      Math.abs(
+        actualPrice -
+        expectedPrice
+      ) > 0.000001
+    ) {
+
+      return (
+        `I couldn't find the requested ` +
+        `₹${expectedPrice} price variant of ` +
+        `${soldItem.productName}.`
+      );
+    }
+  }
+
+
+  /*
+   * PAYMENT TYPE
+   */
+
+  if (
+    paymentType !== 'CASH' &&
+    paymentType !== 'KHATA'
+  ) {
+
+    return (
+      'Invalid payment method.'
+    );
+  }
+
+
+  /*
+   * KHATA CUSTOMER
+   */
+
   const cleanCustomerName =
-    customer_name
+    customerName
       ? cleanText(
-          customer_name,
+          customerName,
           100
         )
       : '';
 
 
   if (
-    paymentType ===
-      'KHATA' &&
+    paymentType === 'KHATA' &&
     !cleanCustomerName
   ) {
 
@@ -774,11 +1259,17 @@ async function commitSale(
   }
 
 
+  /*
+   * ==========================================================
+   * ATOMIC DATABASE WRITE
+   * ==========================================================
+   */
+
   await database.write(
     async () => {
 
       /*
-       * CREATE SALE TRANSACTION
+       * SALE TRANSACTION
        */
 
       await database
@@ -792,7 +1283,7 @@ async function commitSale(
               ownerId;
 
             transaction.totalAmount =
-              totalSaleValue;
+              finalAmount;
 
             transaction.paymentType =
               paymentType;
@@ -807,7 +1298,7 @@ async function commitSale(
 
 
       /*
-       * REDUCE INVENTORY
+       * INVENTORY DEDUCTION
        */
 
       await soldItem.update(
@@ -825,30 +1316,29 @@ async function commitSale(
 
 
           const currentQuantity =
-            Number(
+            safeNumber(
               item.quantity
-            ) || 0;
+            );
 
 
           if (
             currentQuantity <
-            qty
+            quantityToSell
           ) {
 
             throw new Error(
-              `Not enough stock. Only ${currentQuantity} ${unitLabel(
-                requestedUnit ||
-                getStoredUnit(
-                  item
-                )
-              )} ${item.productName} available.`
+              `Not enough stock. Only ` +
+              `${formatQuantity(currentQuantity)} ` +
+              `${unitLabel(storedUnit)} ` +
+              `${item.productName} available.`
             );
           }
 
 
           item.quantity =
             currentQuantity -
-            qty;
+            quantityToSell;
+
 
           item.isSynced =
             false;
@@ -860,7 +1350,7 @@ async function commitSale(
 
 
       /*
-       * KHATA ENTRY
+       * KHATA
        */
 
       if (
@@ -882,7 +1372,7 @@ async function commitSale(
                 cleanCustomerName;
 
               entry.amount =
-                totalSaleValue;
+                finalAmount;
 
               entry.entryType =
                 'CREDIT';
@@ -899,13 +1389,38 @@ async function commitSale(
   );
 
 
-  const displayUnit =
-    unitLabel(
-      requestedUnit ||
-      getStoredUnit(
-        soldItem
-      )
-    );
+  /*
+   * RESPONSE
+   */
+
+  let quantityMessage;
+
+
+  if (
+    quantityResolution.converted
+  ) {
+
+    quantityMessage =
+      `${formatQuantity(
+        quantityResolution.originalQuantity
+      )} ${unitLabel(
+        quantityResolution.requestedUnit
+      )} ` +
+      `(${formatQuantity(
+        quantityToSell
+      )} ${unitLabel(
+        storedUnit
+      )})`;
+
+  } else {
+
+    quantityMessage =
+      `${formatQuantity(
+        quantityToSell
+      )} ${unitLabel(
+        storedUnit
+      )}`;
+  }
 
 
   if (
@@ -914,17 +1429,17 @@ async function commitSale(
   ) {
 
     return (
-      `Billed ₹${totalSaleValue} to ` +
+      `Billed ₹${finalAmount} to ` +
       `${cleanCustomerName}'s Khata for ` +
-      `${qty} ${displayUnit} ` +
+      `${quantityMessage} ` +
       `${soldItem.productName}.`
     );
   }
 
 
   return (
-    `Cash sale recorded: ₹${totalSaleValue} ` +
-    `for ${qty} ${displayUnit} ` +
+    `Cash sale recorded: ₹${finalAmount} ` +
+    `for ${quantityMessage} ` +
     `${soldItem.productName}.`
   );
 }
@@ -1024,56 +1539,50 @@ export const confirmPendingSale =
       }
 
 
-      if (
-        pendingQty >
-        MAX_QTY
-      ) {
-
-        return (
-          'The requested quantity is too large.'
-        );
-      }
-
-
       const requestedUnit =
         normalizeUnit(
           pendingSale.unit
         );
 
 
-      const unitCheck =
-        validateUnitCompatibility(
-          soldItem,
-          requestedUnit
+      const quantityResolution =
+        resolveQuantityForInventory(
+          pendingQty,
+          requestedUnit,
+          soldItem
         );
 
 
       if (
-        !unitCheck.ok
+        !quantityResolution.ok
       ) {
 
         return (
-          `This product is stored in ${unitLabel(unitCheck.storedUnit)}, ` +
-          `but you asked for ${unitLabel(unitCheck.unit)}.`
+          quantityResolution.message
         );
       }
 
 
-      if (
-        Number(
+      const quantityToSell =
+        quantityResolution.quantity;
+
+
+      const currentStock =
+        safeNumber(
           soldItem.quantity
-        ) <
-        pendingQty
+        );
+
+
+      if (
+        currentStock <
+        quantityToSell
       ) {
 
         return (
           `Not enough stock. You only have ` +
-          `${soldItem.quantity} ` +
+          `${formatQuantity(currentStock)} ` +
           `${unitLabel(
-            requestedUnit ||
-            getStoredUnit(
-              soldItem
-            )
+            quantityResolution.storedUnit
           )} ` +
           `${soldItem.productName} left.`
         );
@@ -1091,8 +1600,7 @@ export const confirmPendingSale =
           totalSaleValue
         ) ||
         totalSaleValue < 0 ||
-        totalSaleValue >
-          MAX_MONEY
+        totalSaleValue > MAX_MONEY
       ) {
 
         return (
@@ -1104,13 +1612,22 @@ export const confirmPendingSale =
       const result =
         await commitSale(
           soldItem,
+
           pendingQty,
+
           totalSaleValue,
+
           chosenPaymentType,
+
           pendingSale.customer_name,
+
           Date.now(),
+
           ownerId,
-          requestedUnit
+
+          requestedUnit,
+
+          pendingSale.price_hint
         );
 
 
@@ -1120,14 +1637,18 @@ export const confirmPendingSale =
           product:
             soldItem.productName,
 
-          qty:
+          requested_qty:
             pendingQty,
 
-          unit:
+          requested_unit:
             requestedUnit ||
-            getStoredUnit(
-              soldItem
-            ) ||
+            null,
+
+          stored_qty:
+            quantityToSell,
+
+          stored_unit:
+            quantityResolution.storedUnit ||
             null,
 
           amount:
@@ -1162,12 +1683,16 @@ export const confirmPendingSale =
       );
 
 
-      TelemetryService.logError(
-        'voice_sale_confirm',
-        error?.message ||
-          'Database error while trying to save.',
-        error?.stack
-      );
+      try {
+
+        TelemetryService.logError(
+          'voice_sale_confirm',
+          error?.message ||
+            'Database error while trying to save.',
+          error?.stack
+        );
+
+      } catch (_) {}
 
 
       return (
@@ -1207,6 +1732,7 @@ const getTodayKhataSummary =
 
         paymentEntries:
           0,
+
       };
     }
 
@@ -1234,17 +1760,13 @@ const getTodayKhataSummary =
       );
 
 
-    let totalCredit =
-      0;
+    let totalCredit = 0;
 
-    let totalPayment =
-      0;
+    let totalPayment = 0;
 
-    let creditEntries =
-      0;
+    let creditEntries = 0;
 
-    let paymentEntries =
-      0;
+    let paymentEntries = 0;
 
 
     const customers =
@@ -1261,9 +1783,7 @@ const getTodayKhataSummary =
 
 
         if (
-          !Number.isFinite(
-            value
-          ) ||
+          !Number.isFinite(value) ||
           value <= 0
         ) {
 
@@ -1339,6 +1859,7 @@ const getTodayKhataSummary =
       creditEntries,
 
       paymentEntries,
+
     };
   };
 
@@ -1359,7 +1880,9 @@ export const executeAIAction =
 
 
     /*
-     * BASIC VALIDATION
+     * ==========================================================
+     * VALIDATE AI RESPONSE
+     * ==========================================================
      */
 
     if (
@@ -1378,13 +1901,16 @@ export const executeAIAction =
 
 
     /*
+     * ==========================================================
      * ALLOWED INTENTS
+     * ==========================================================
      */
 
     const allowedIntents =
       new Set([
 
         'inventory.create',
+
         'inventory.add',
 
         'sale.create',
@@ -1456,7 +1982,9 @@ export const executeAIAction =
 
 
     /*
-     * SANITIZE TEXT
+     * ==========================================================
+     * SANITIZE
+     * ==========================================================
      */
 
     const product =
@@ -1489,7 +2017,9 @@ export const executeAIAction =
 
 
     /*
-     * UNIT
+     * ==========================================================
+     * UNIVERSAL UNIT
+     * ==========================================================
      */
 
     const unit =
@@ -1499,14 +2029,15 @@ export const executeAIAction =
 
 
     /*
+     * ==========================================================
      * PAYMENT TYPE
+     * ==========================================================
      */
 
     const payment_type =
       (
         aiResponse.payment_type ===
           'CASH' ||
-
         aiResponse.payment_type ===
           'KHATA'
       )
@@ -1517,7 +2048,9 @@ export const executeAIAction =
 
 
     /*
+     * ==========================================================
      * NUMBERS
+     * ==========================================================
      */
 
     const qty =
@@ -1538,6 +2071,16 @@ export const executeAIAction =
       );
 
 
+    /*
+     * "10 wala Kurkure" / "100 wale basmati chawal"
+     * price_hint is a SKU selector.
+     */
+    const price_hint =
+      parsePositiveNumber(
+        aiResponse.price_hint
+      );
+
+
     const discount_percent =
       parsePositiveNumber(
         aiResponse.discount_percent
@@ -1545,10 +2088,8 @@ export const executeAIAction =
 
 
     if (
-      discount_percent !==
-        null &&
-      discount_percent >
-        100
+      discount_percent !== null &&
+      discount_percent > 100
     ) {
 
       return (
@@ -1556,10 +2097,6 @@ export const executeAIAction =
       );
     }
 
-
-    /*
-     * HARD LIMITS
-     */
 
     if (
       qty !== null &&
@@ -1595,7 +2132,9 @@ export const executeAIAction =
 
 
     /*
+     * ==========================================================
      * CURRENT USER
+     * ==========================================================
      */
 
     try {
@@ -1615,9 +2154,9 @@ export const executeAIAction =
 
 
       /*
-       * ======================================================
-       * EXECUTE INTENT
-       * ======================================================
+       * ========================================================
+       * INTENT SWITCH
+       * ========================================================
        */
 
       switch (
@@ -1627,7 +2166,7 @@ export const executeAIAction =
 
         /*
          * ====================================================
-         * CREATE NEW INVENTORY PRODUCT
+         * INVENTORY CREATE
          * ====================================================
          */
 
@@ -1707,7 +2246,7 @@ export const executeAIAction =
                     if (
                       unit &&
                       typeof item.unit !==
-                        'undefined'
+                      'undefined'
                     ) {
 
                       item.unit =
@@ -1718,12 +2257,26 @@ export const executeAIAction =
                     if (
                       aiResponse.barcode &&
                       typeof item.barcode !==
-                        'undefined'
+                      'undefined'
                     ) {
 
                       item.barcode =
                         cleanText(
                           aiResponse.barcode,
+                          100
+                        );
+                    }
+
+
+                    if (
+                      aiResponse.category &&
+                      typeof item.category !==
+                      'undefined'
+                    ) {
+
+                      item.category =
+                        cleanText(
+                          aiResponse.category,
                           100
                         );
                     }
@@ -1737,31 +2290,29 @@ export const executeAIAction =
             'inventory.create',
             {
               product,
+
               qty:
                 startingQuantity,
+
               unit:
                 unit ||
                 null,
+
               price:
                 startingPrice,
             }
           );
 
 
-          const displayUnit =
-            unitLabel(
-              unit
-            );
-
-
           if (
-            startingPrice > 0 &&
-            startingQuantity > 0
+            startingQuantity > 0 &&
+            startingPrice > 0
           ) {
 
             return (
               `New product ${product} created with ` +
-              `${startingQuantity} ${displayUnit} ` +
+              `${formatQuantity(startingQuantity)} ` +
+              `${unitLabel(unit)} ` +
               `at ₹${startingPrice}.`
             );
           }
@@ -1773,7 +2324,8 @@ export const executeAIAction =
 
             return (
               `New product ${product} created with ` +
-              `${startingQuantity} ${displayUnit} stock.`
+              `${formatQuantity(startingQuantity)} ` +
+              `${unitLabel(unit)} stock.`
             );
           }
 
@@ -1796,7 +2348,7 @@ export const executeAIAction =
 
         /*
          * ====================================================
-         * ADD INVENTORY
+         * INVENTORY ADD
          * ====================================================
          */
 
@@ -1834,8 +2386,7 @@ export const executeAIAction =
           ) {
 
             return (
-              `I couldn't find ${product} in your inventory. ` +
-              `If this is a new product, say "create product ${product}".`
+              `I couldn't find ${product} in your inventory.`
             );
           }
 
@@ -1851,23 +2402,38 @@ export const executeAIAction =
           }
 
 
-          const unitCheck =
-            validateUnitCompatibility(
-              item,
-              unit
+          /*
+           * --------------------------------------------------
+           * UNIVERSAL UNIT CONVERSION
+           * --------------------------------------------------
+           */
+
+          const quantityResolution =
+            resolveQuantityForInventory(
+              qty,
+              unit,
+              item
             );
 
 
           if (
-            !unitCheck.ok
+            !quantityResolution.ok
           ) {
 
             return (
-              `This product is stored in ${unitLabel(unitCheck.storedUnit)}, ` +
-              `but you asked to add ${qty} ${unitLabel(unitCheck.unit)}. ` +
-              `I won't mix different units.`
+              quantityResolution.message
             );
           }
+
+
+          const quantityToAdd =
+            quantityResolution.quantity;
+
+
+          const storedUnit =
+            quantityResolution.storedUnit ||
+            quantityResolution.requestedUnit ||
+            null;
 
 
           await database.write(
@@ -1887,21 +2453,31 @@ export const executeAIAction =
                   }
 
 
-                  current.quantity =
-                    Number(
+                  const currentQuantity =
+                    safeNumber(
                       current.quantity
-                    ) +
-                    qty;
+                    );
 
+
+                  current.quantity =
+                    currentQuantity +
+                    quantityToAdd;
+
+
+                  /*
+                   * If an old product has no unit,
+                   * initialize it from the spoken unit.
+                   */
 
                   if (
-                    unit &&
+                    !getStoredUnit(current) &&
+                    quantityResolution.requestedUnit &&
                     typeof current.unit !==
-                      'undefined'
+                    'undefined'
                   ) {
 
                     current.unit =
-                      unit;
+                      quantityResolution.requestedUnit;
                   }
 
 
@@ -1916,52 +2492,102 @@ export const executeAIAction =
           );
 
 
+          /*
+           * Read updated record again.
+           */
+
+          const updatedItem =
+            await database
+              .get(
+                'inventory_items'
+              )
+              .find(
+                item.id
+              );
+
+
+          const finalQuantity =
+            safeNumber(
+              updatedItem.quantity
+            );
+
+
           trackIntentSuccess(
             'inventory.add',
             {
               product:
-                item.productName,
+                updatedItem.productName,
 
-              qty,
+              requested_qty:
+                qty,
 
-              unit:
+              requested_unit:
                 unit ||
-                getStoredUnit(item) ||
                 null,
+
+              stored_qty:
+                quantityToAdd,
+
+              stored_unit:
+                storedUnit ||
+                null,
+
+              converted:
+                quantityResolution.converted ||
+                false,
             }
           );
 
 
-          const storedOrRequestedUnit =
-            unit ||
-            getStoredUnit(
-              item
+          /*
+           * Converted response.
+           */
+
+          if (
+            quantityResolution.converted
+          ) {
+
+            return (
+              `Added ${formatQuantity(qty)} ` +
+              `${unitLabel(unit)} ` +
+              `${updatedItem.productName}. ` +
+              `That is ${formatQuantity(quantityToAdd)} ` +
+              `${unitLabel(storedUnit)}. ` +
+              `You now have ${formatQuantity(finalQuantity)} ` +
+              `${unitLabel(storedUnit)} ` +
+              `${updatedItem.productName}.`
             );
+          }
 
 
           return (
-            `Stock updated. You now have ` +
-            `${Number(
-              item.quantity
-            )} ` +
-            `${unitLabel(
-              storedOrRequestedUnit
-            )} ` +
-            `${item.productName}.`
+            `Added ${formatQuantity(qty)} ` +
+            `${unitLabel(unit || storedUnit)} ` +
+            `${updatedItem.productName}. ` +
+            `You now have ${formatQuantity(finalQuantity)} ` +
+            `${unitLabel(storedUnit)}.`
           );
         }
 
 
         /*
          * ====================================================
-         * SALE
+         * SALE CREATE
          * ====================================================
          */
 
         case 'sale.create': {
 
           /*
-           * Flat Khata entry.
+           * --------------------------------------------------
+           * FLAT KHATA
+           * --------------------------------------------------
+           *
+           * Example:
+           *
+           * "Ravi ko 500 udhaar"
+           *
+           * --------------------------------------------------
            */
 
           if (
@@ -1981,12 +2607,9 @@ export const executeAIAction =
 
 
             if (
-              !Number.isFinite(
-                flatAmount
-              ) ||
+              !Number.isFinite(flatAmount) ||
               flatAmount <= 0 ||
-              flatAmount >
-                MAX_MONEY
+              flatAmount > MAX_MONEY
             ) {
 
               return (
@@ -2057,10 +2680,9 @@ export const executeAIAction =
               'khata.credit',
               {
                 customer_name,
+
                 amount:
                   flatAmount,
-                entry_type:
-                  'CREDIT',
               }
             );
 
@@ -2095,13 +2717,29 @@ export const executeAIAction =
           const soldItem =
             await findInventoryItem(
               product,
-              ownerId
+              ownerId,
+              {
+                priceHint:
+                  price_hint,
+
+                unit,
+              }
             );
 
 
           if (
             !soldItem
           ) {
+
+            if (
+              price_hint !== null
+            ) {
+
+              return (
+                `I couldn't find a ₹${price_hint} ` +
+                `price variant of ${product} in your inventory.`
+              );
+            }
 
             return (
               `Product "${product}" not found in your inventory.`
@@ -2120,60 +2758,92 @@ export const executeAIAction =
           }
 
 
-          const saleUnitCheck =
-            validateUnitCompatibility(
-              soldItem,
-              unit
+          /*
+           * --------------------------------------------------
+           * CONVERT QUANTITY FIRST
+           * --------------------------------------------------
+           */
+
+          const quantityResolution =
+            resolveQuantityForInventory(
+              qty,
+              unit,
+              soldItem
             );
 
 
           if (
-            !saleUnitCheck.ok
+            !quantityResolution.ok
           ) {
 
             return (
-              `This product is stored in ${unitLabel(
-                saleUnitCheck.storedUnit
-              )}, ` +
-              `but you asked for ${unitLabel(
-                saleUnitCheck.unit
-              )}. ` +
-              `Please use the correct stock unit.`
+              quantityResolution.message
             );
           }
 
 
-          if (
-            Number(
+          const quantityToSell =
+            quantityResolution.quantity;
+
+
+          const storedUnit =
+            quantityResolution.storedUnit ||
+            quantityResolution.requestedUnit ||
+            null;
+
+
+          /*
+           * --------------------------------------------------
+           * STOCK CHECK
+           * --------------------------------------------------
+           */
+
+          const currentStock =
+            safeNumber(
               soldItem.quantity
-            ) <
-            qty
+            );
+
+
+          if (
+            currentStock <
+            quantityToSell
           ) {
 
             return (
               `Not enough stock. You only have ` +
-              `${soldItem.quantity} ` +
-              `${unitLabel(
-                unit ||
-                getStoredUnit(
-                  soldItem
-                )
-              )} ` +
+              `${formatQuantity(currentStock)} ` +
+              `${unitLabel(storedUnit)} ` +
               `${soldItem.productName} left.`
             );
           }
 
 
+          /*
+           * --------------------------------------------------
+           * PRICE
+           * --------------------------------------------------
+           *
+           * selling_price is the price per stored unit.
+           *
+           * KG product:
+           *
+           * ₹50/KG
+           *
+           * 200 GRAM:
+           *
+           * 0.2 KG × ₹50
+           *
+           * = ₹10
+           * --------------------------------------------------
+           */
+
           const sellingPrice =
-            Number(
+            safeNumber(
               soldItem.sellingPrice
             );
 
 
           if (
-            !Number.isFinite(
-              sellingPrice
-            ) ||
             sellingPrice < 0
           ) {
 
@@ -2185,15 +2855,13 @@ export const executeAIAction =
 
           const totalSaleValue =
             sellingPrice *
-            qty;
+            quantityToSell;
 
 
           if (
-            !Number.isFinite(
-              totalSaleValue
-            ) ||
+            !Number.isFinite(totalSaleValue) ||
             totalSaleValue >
-              MAX_MONEY
+            MAX_MONEY
           ) {
 
             return (
@@ -2202,15 +2870,19 @@ export const executeAIAction =
           }
 
 
+          /*
+           * --------------------------------------------------
+           * PAYMENT TYPE
+           * --------------------------------------------------
+           */
+
           let resolvedPaymentType =
             null;
 
 
           if (
-            payment_type ===
-              'CASH' ||
-            payment_type ===
-              'KHATA'
+            payment_type === 'CASH' ||
+            payment_type === 'KHATA'
           ) {
 
             resolvedPaymentType =
@@ -2225,9 +2897,36 @@ export const executeAIAction =
           }
 
 
+          /*
+           * --------------------------------------------------
+           * ASK CASH / KHATA
+           * --------------------------------------------------
+           */
+
           if (
             !resolvedPaymentType
           ) {
+
+            let quantityMessage;
+
+
+            if (
+              quantityResolution.converted
+            ) {
+
+              quantityMessage =
+                `${formatQuantity(qty)} ` +
+                `${unitLabel(unit)} ` +
+                `(${formatQuantity(quantityToSell)} ` +
+                `${unitLabel(storedUnit)})`;
+
+            } else {
+
+              quantityMessage =
+                `${formatQuantity(quantityToSell)} ` +
+                `${unitLabel(storedUnit)}`;
+            }
+
 
             return {
 
@@ -2235,13 +2934,8 @@ export const executeAIAction =
                 true,
 
               message:
-                `Cash or Khata for ${qty} ` +
-                `${unitLabel(
-                  unit ||
-                  getStoredUnit(
-                    soldItem
-                  )
-                )} ` +
+                `Cash or Khata for ` +
+                `${quantityMessage} ` +
                 `${soldItem.productName} ` +
                 `(₹${totalSaleValue})?`,
 
@@ -2250,18 +2944,25 @@ export const executeAIAction =
                 itemId:
                   soldItem.id,
 
+                /*
+                 * Store original spoken quantity.
+                 */
+
                 qty:
                   qty,
 
                 unit:
                   unit ||
-                  getStoredUnit(
-                    soldItem
-                  ) ||
                   null,
+
+                /*
+                 * Store already calculated sale value.
+                 */
 
                 totalSaleValue:
                   totalSaleValue,
+
+                price_hint,
 
                 customer_name:
                   customer_name ||
@@ -2271,16 +2972,31 @@ export const executeAIAction =
           }
 
 
+          /*
+           * --------------------------------------------------
+           * COMMIT
+           * --------------------------------------------------
+           */
+
           const saleResult =
             await commitSale(
               soldItem,
+
               qty,
+
               totalSaleValue,
+
               resolvedPaymentType,
+
               customer_name,
+
               now,
+
               ownerId,
-              unit
+
+              unit,
+
+              price_hint
             );
 
 
@@ -2290,17 +3006,24 @@ export const executeAIAction =
               product:
                 soldItem.productName,
 
-              qty,
+              requested_qty:
+                qty,
 
-              unit:
+              requested_unit:
                 unit ||
-                getStoredUnit(
-                  soldItem
-                ) ||
+                null,
+
+              stored_qty:
+                quantityToSell,
+
+              stored_unit:
+                storedUnit ||
                 null,
 
               amount:
                 totalSaleValue,
+
+              price_hint,
 
               payment_type:
                 resolvedPaymentType,
@@ -2318,7 +3041,7 @@ export const executeAIAction =
 
         /*
          * ====================================================
-         * PAYMENT RECEIVED
+         * KHATA PAYMENT
          * ====================================================
          */
 
@@ -2342,12 +3065,9 @@ export const executeAIAction =
 
 
           if (
-            !Number.isFinite(
-              paymentAmount
-            ) ||
+            !Number.isFinite(paymentAmount) ||
             paymentAmount <= 0 ||
-            paymentAmount >
-              MAX_MONEY
+            paymentAmount > MAX_MONEY
           ) {
 
             return (
@@ -2508,7 +3228,7 @@ export const executeAIAction =
 
         /*
          * ====================================================
-         * CREATE CUSTOMER / KHATA
+         * CUSTOMER CREATE
          * ====================================================
          */
 
@@ -2525,19 +3245,14 @@ export const executeAIAction =
 
 
           const cleanCustomerName =
-            String(
-              customer_name
-            )
-              .trim()
-              .replace(
-                /\s+/g,
-                ' '
-              );
+            cleanText(
+              customer_name,
+              100
+            );
 
 
           if (
-            cleanCustomerName.length <
-            2
+            cleanCustomerName.length < 2
           ) {
 
             return (
@@ -2676,11 +3391,8 @@ export const executeAIAction =
                 sale
               ) =>
                 sum +
-                (
-                  Number(
-                    sale.totalAmount
-                  ) ||
-                  0
+                safeNumber(
+                  sale.totalAmount
                 ),
               0
             );
@@ -2697,7 +3409,7 @@ export const executeAIAction =
          * ====================================================
          * KHATA QUERY
          * ====================================================
- */
+         */
 
         case 'query.khata':
         case 'query.khata.summary': {
@@ -2713,6 +3425,7 @@ export const executeAIAction =
           const summaryRequested =
             intent ===
               'query.khata.summary' ||
+
             (
               !customer_name &&
               (
@@ -2742,10 +3455,8 @@ export const executeAIAction =
 
 
             if (
-              summary.totalCredit <=
-                0 &&
-              summary.totalPayment <=
-                0
+              summary.totalCredit <= 0 &&
+              summary.totalPayment <= 0
             ) {
 
               return (
@@ -2754,52 +3465,56 @@ export const executeAIAction =
             }
 
 
-            const summaryText =
+            const creditText =
+              `₹${summary.totalCredit.toLocaleString('en-IN')}`;
+
+
+            const paymentText =
+              `₹${summary.totalPayment.toLocaleString('en-IN')}`;
+
+
+            if (
+              summary.totalCredit <= 0
+            ) {
+
+              return (
+                `You received ${paymentText} ` +
+                `in Khata payments today.`
+              );
+            }
+
+
+            if (
+              summary.totalPayment <= 0
+            ) {
+
+              return (
+                `${summary.uniqueCustomers} ` +
+                (
+                  summary.uniqueCustomers === 1
+                    ? 'customer'
+                    : 'customers'
+                ) +
+                ` were given credit today ` +
+                `totalling ${creditText}.`
+              );
+            }
+
+
+            return (
               `${summary.uniqueCustomers} ` +
               (
-                summary.uniqueCustomers ===
-                1
+                summary.uniqueCustomers === 1
                   ? 'customer'
                   : 'customers'
               ) +
               ` were given credit today ` +
-              `totalling ₹${summary.totalCredit.toLocaleString('en-IN')}.`;
-
-
-            if (
-              summary.totalCredit <=
-                0 &&
-              summary.totalPayment >
-                0
-            ) {
-
-              return (
-                `You received ₹${summary.totalPayment.toLocaleString('en-IN')} ` +
-                `in Khata payments today.`
-              );
-            }
-
-
-            if (
-              summary.totalPayment >
-                0
-            ) {
-
-              return (
-                `${summaryText} ` +
-                `You also received ₹${summary.totalPayment.toLocaleString('en-IN')} ` +
-                `in Khata payments today.`
-              );
-            }
-
-
-            return summaryText;
+              `totalling ${creditText}. ` +
+              `You also received ${paymentText} ` +
+              `in Khata payments today.`
+            );
           }
 
-
-          /*
-           * Customer-specific Khata.
-           */
 
           if (
             !customer_name
@@ -2847,8 +3562,7 @@ export const executeAIAction =
 
 
           if (
-            entries.length ===
-            0
+            entries.length === 0
           ) {
 
             return (
@@ -2857,8 +3571,7 @@ export const executeAIAction =
           }
 
 
-          let balance =
-            0;
+          let balance = 0;
 
 
           entries.forEach(
@@ -2880,8 +3593,17 @@ export const executeAIAction =
               }
 
 
+              const entryType =
+                String(
+                  entry.entryType ||
+                  ''
+                )
+                  .trim()
+                  .toUpperCase();
+
+
               if (
-                entry.entryType ===
+                entryType ===
                 'CREDIT'
               ) {
 
@@ -2891,7 +3613,7 @@ export const executeAIAction =
 
 
               if (
-                entry.entryType ===
+                entryType ===
                 'PAYMENT'
               ) {
 
@@ -2937,7 +3659,7 @@ export const executeAIAction =
          * ====================================================
          * INVENTORY QUERY
          * ====================================================
- */
+         */
 
         case 'query.inventory': {
 
@@ -2985,10 +3707,14 @@ export const executeAIAction =
             );
 
 
-          if (
-            Number(
+          const stock =
+            safeNumber(
               stockItem.quantity
-            ) <= 0
+            );
+
+
+          if (
+            stock <= 0
           ) {
 
             return (
@@ -2998,10 +3724,9 @@ export const executeAIAction =
 
 
           return (
-            `You have ${stockItem.quantity} ` +
-            `${unitLabel(
-              storedUnit
-            )} ` +
+            `You have ` +
+            `${formatQuantity(stock)} ` +
+            `${unitLabel(storedUnit)} ` +
             `${stockItem.productName} ready to sell.`
           );
         }
@@ -3011,7 +3736,7 @@ export const executeAIAction =
          * ====================================================
          * UI ACTIONS
          * ====================================================
- */
+         */
 
         case 'ui.open_billing':
 
@@ -3032,7 +3757,7 @@ export const executeAIAction =
          * ====================================================
          * POS ACTIONS
          * ====================================================
- */
+         */
 
         case 'pos.add_item':
         case 'pos.apply_discount':
@@ -3047,7 +3772,7 @@ export const executeAIAction =
          * ====================================================
          * UNKNOWN
          * ====================================================
- */
+         */
 
         case 'unknown':
         default:
@@ -3075,12 +3800,16 @@ export const executeAIAction =
       );
 
 
-      TelemetryService.logError(
-        'voice_action',
-        error?.message ||
-          'Database error while trying to save.',
-        error?.stack
-      );
+      try {
+
+        TelemetryService.logError(
+          'voice_action',
+          error?.message ||
+            'Database error while trying to save.',
+          error?.stack
+        );
+
+      } catch (_) {}
 
 
       return (
@@ -3089,3 +3818,19 @@ export const executeAIAction =
       );
     }
   };
+
+
+/*
+ * ============================================================
+ * OPTIONAL EXPORTS
+ * ============================================================
+ *
+ * Useful for testing the unit conversion layer.
+ * ============================================================
+ */
+
+export {
+  findInventoryItem,
+  getStoredUnit,
+  resolveQuantityForInventory,
+};

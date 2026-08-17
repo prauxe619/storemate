@@ -99,7 +99,7 @@ def dashboard():
     merchants = User.query.filter(~User.role.in_(['SUPERADMIN', 'ADMIN'])).limit(20).all()
 
     return render_template(
-        'dashboard.html',
+        'admin/dashboard.html',
         total_merchants=total_merchants,
         total_gmv=total_gmv,
         total_khata=total_khata,

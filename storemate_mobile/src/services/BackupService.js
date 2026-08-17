@@ -1757,14 +1757,23 @@ export async function restoreFromCloudBackup() {
           data: {
 
             email:
-              result.profile.email,
+              result.profile.email || '',
 
             shopName:
               result.profile.shop_name ||
-              result.profile.name,
+              result.profile.name ||
+              '',
 
             phone:
-              result.profile.phone,
+              result.profile.phone || '',
+
+            address:
+              result.profile.address || '',
+
+            upiId:
+              result.profile.upi_id ||
+              result.profile.upiId ||
+              '',
 
           },
 
