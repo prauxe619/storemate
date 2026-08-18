@@ -2924,11 +2924,43 @@ const extractPayment = (
  */
 
 const PRODUCT_ALIASES = [
-  { canonical: 'parle g', aliases: ['parle g','parle ji','parle jee','parle gee','parle gi','पारले जी','पार्ले जी','g biscuit'] },
-  { canonical: 'rice', aliases: ['rice','chawal','chaawal','चावल'] },
-  { canonical: 'sugar', aliases: ['sugar','chini','cheeni','चीनी','शक्कर'] },
-  { canonical: 'biscuit', aliases: ['biscuit','biscuits','biskit','biskits','बिस्किट','बिस्कुट'] },
-  { canonical: 'tooth brush', aliases: ['toothbrush','tooth brush','ब्रश','टूथब्रश','टूथ ब्रश'] },
+  {
+    canonical: 'parle g',
+    aliases: [
+      'parle g', 'parle ji', 'parle jee', 'parle gee', 'parle gi',
+      'parle g biscuit', 'parle ji biscuit', 'parle jee biscuit',
+      'g biscuit', 'जी बिस्किट', 'पारले जी', 'पार्ले जी',
+      'पारले जी बिस्किट', 'पार्ले जी बिस्किट'
+    ]
+  },
+  {
+    canonical: 'kurkure',
+    aliases: ['kurkure', 'kurkura', 'kurkure namkeen', 'कुरकुरे', 'कुरकुरा']
+  },
+  {
+    canonical: 'tiger biscuit',
+    aliases: ['tiger biscuit', 'tiger biscuits', 'tiger', 'टाइगर बिस्किट', 'टाइगर बिस्कुट']
+  },
+  {
+    canonical: 'rice',
+    aliases: ['rice', 'chawal', 'chaawal', 'चावल']
+  },
+  {
+    canonical: 'basmati rice',
+    aliases: ['basmati rice', 'basmati chawal', 'basmati chaawal', 'बासमती चावल']
+  },
+  {
+    canonical: 'sugar',
+    aliases: ['sugar', 'chini', 'cheeni', 'चीनी', 'शक्कर']
+  },
+  {
+    canonical: 'biscuit',
+    aliases: ['biscuit', 'biscuits', 'biskit', 'biskits', 'बिस्किट', 'बिस्कुट']
+  },
+  {
+    canonical: 'tooth brush',
+    aliases: ['toothbrush', 'tooth brush', 'toothbrushes', 'ब्रश', 'टूथब्रश', 'टूथ ब्रश']
+  },
 ];
 
 const normalizeAliasText = value =>
@@ -2964,6 +2996,74 @@ const parsePriceHint = raw => {
   }
   return null;
 };
+
+
+/*
+ * ============================================================
+ * PRODUCT VARIANT / PRICE QUALIFIER
+ * ============================================================
+ *
+ * Examples:
+ *
+ *   10 wala Kurkure
+ *   5 wala Tiger biscuit
+ *   10 wala Parle G
+ *   10 wala Parle Ji
+ *   100 wale basmati chawal
+ *   50 wala chawal 5 kilo
+ *
+ * IMPORTANT:
+ * "10 wala" is a PRICE HINT, not quantity 10.
+ */
+const extractProductVariant =
+  itemText => {
+
+    const cleaned =
+      cleanText(itemText);
+
+    if (!cleaned) {
+      return null;
+    }
+
+    const price =
+      parsePriceHint(cleaned);
+
+    if (price === null) {
+      return null;
+    }
+
+    const quantity =
+      extractQuantityAndUnit(cleaned);
+
+    /*
+     * Remove the price qualifier from the product phrase,
+     * while preserving the actual quantity.
+     */
+    const productText =
+      cleaned
+        .replace(
+          /\b\d+(?:\.\d+)?\s*(?:wala|wale|wali|waala|waale|waali)\b/gi,
+          ' '
+        )
+        .replace(
+          /(?:₹|rs\.?|rupees?|rupee|rupaye|rupay|rupiya|rupiye)\s*\d+(?:\.\d+)?/gi,
+          ' '
+        )
+        .replace(
+          /\d+(?:\.\d+)?\s*(?:₹|rs\.?|rupees?|rupee|rupaye|rupay|rupiya|rupiye)\b/gi,
+          ' '
+        )
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    return {
+      price_hint: price,
+      product_text: productText,
+      qty: quantity.qty,
+      unit: quantity.unit,
+    };
+  };
+
 
 const extractKhataItemCommand = (raw, customerNames) => {
   if (!raw) return null;
@@ -3007,58 +3107,388 @@ const productFromInventory =
     inventoryNames
   ) => {
 
-    if (!Array.isArray(inventoryNames) || inventoryNames.length === 0) {
+    if (
+      !Array.isArray(
+        inventoryNames
+      ) ||
+      inventoryNames.length === 0
+    ) {
+
       return null;
     }
 
-    const rawNormalized = normalizeAliasText(raw);
-    const rawCanonical = canonicalProductSpeech(rawNormalized);
 
-    const sorted = [...inventoryNames]
-      .filter(Boolean)
-      .map(name => String(name).trim())
-      .filter(Boolean)
-      .sort((a,b) => b.length - a.length);
+    const rawNormalized =
+      normalizeAliasText(
+        raw
+      );
 
-    const exact = sorted.find(
-      name => rawNormalized.includes(normalizeAliasText(name))
-    );
 
-    if (exact) return exact;
+    if (!rawNormalized) {
 
-    for (const name of sorted) {
-      const nameCanonical = canonicalProductSpeech(name);
-
-      if (rawCanonical === nameCanonical) return name;
-
-      if (
-        rawCanonical &&
-        nameCanonical &&
-        (rawCanonical.includes(nameCanonical) || nameCanonical.includes(rawCanonical))
-      ) return name;
-
-      /*
-       * Alias may be only one part of the sentence:
-       * "10 wala parle ji"
-       * "50 wala chawal 10kg"
-       */
-      const matchingGroup =
-        PRODUCT_ALIASES.find(group =>
-          group.aliases.some(alias =>
-            rawNormalized.includes(normalizeAliasText(alias))
-          )
-        );
-
-      if (
-        matchingGroup &&
-        normalizeAliasText(matchingGroup.canonical) === nameCanonical
-      ) {
-        return name;
-      }
+      return null;
     }
 
+
+    /*
+     * ========================================================
+     * 1. PREPARE INVENTORY
+     * ========================================================
+     */
+
+    const sorted =
+      [...inventoryNames]
+        .filter(Boolean)
+        .map(
+          name =>
+            String(name).trim()
+        )
+        .filter(Boolean);
+
+
+    /*
+     * ========================================================
+     * 2. EXACT STORED PRODUCT
+     * ========================================================
+     *
+     * Prefer the longest actual inventory name.
+     */
+
+    const exactCandidates =
+      sorted
+        .filter(
+          name =>
+            rawNormalized.includes(
+              normalizeAliasText(
+                name
+              )
+            )
+        )
+        .sort(
+          (a, b) =>
+            normalizeAliasText(b).length -
+            normalizeAliasText(a).length
+        );
+
+
+    if (
+      exactCandidates.length
+    ) {
+
+      return exactCandidates[0];
+
+    }
+
+
+    /*
+     * ========================================================
+     * 3. ALIAS MATCH
+     * ========================================================
+     *
+     * Longest alias wins.
+     *
+     * This prevents:
+     *
+     * "basmati chawal"
+     *
+     * from becoming:
+     *
+     * "chawal"
+     */
+
+    const aliasCandidates = [];
+
+
+    for (
+      const group of PRODUCT_ALIASES
+    ) {
+
+      for (
+        const alias of group.aliases
+      ) {
+
+        const normalizedAlias =
+          normalizeAliasText(
+            alias
+          );
+
+
+        if (
+          !normalizedAlias
+        ) {
+
+          continue;
+
+        }
+
+
+        if (
+          rawNormalized.includes(
+            normalizedAlias
+          )
+        ) {
+
+          aliasCandidates.push({
+
+            group,
+
+            alias:
+              normalizedAlias,
+
+            length:
+              normalizedAlias.length,
+
+          });
+
+        }
+
+      }
+
+    }
+
+
+    aliasCandidates.sort(
+      (a, b) =>
+        b.length -
+        a.length
+    );
+
+
+    /*
+     * ========================================================
+     * 4. RESOLVE ALIAS TO REAL INVENTORY PRODUCT
+     * ========================================================
+     */
+
+    for (
+      const candidate of
+      aliasCandidates
+    ) {
+
+      const canonical =
+        normalizeAliasText(
+          candidate.group.canonical
+        );
+
+
+      const inventoryMatch =
+        sorted.find(
+          name =>
+            canonicalProductSpeech(
+              name
+            ) === canonical
+        );
+
+
+      if (
+        inventoryMatch
+      ) {
+
+        return inventoryMatch;
+
+      }
+
+    }
+
+
+    /*
+     * ========================================================
+     * 5. WORD-BASED SCORING
+     * ========================================================
+     *
+     * This handles products that aren't explicitly listed
+     * in PRODUCT_ALIASES.
+     *
+     * Example:
+     *
+     * "basmati chawal"
+     *
+     * inventory:
+     *
+     * "Basmati Rice"
+     * "Rice"
+     *
+     * Basmati Rice gets the stronger semantic/word score.
+     * ========================================================
+     */
+
+    const ignoredWords =
+      new Set([
+
+        'wala',
+        'wale',
+        'wali',
+        'waala',
+        'waale',
+        'waali',
+
+        'ka',
+        'ke',
+        'ki',
+
+        'rupaye',
+        'rupay',
+        'rupee',
+        'rupees',
+
+        'kg',
+        'kgs',
+        'kilo',
+        'kilos',
+
+        'g',
+        'gm',
+        'gram',
+        'grams',
+
+        'packet',
+        'packets',
+        'pack',
+
+        'box',
+        'boxes',
+
+        'bottle',
+        'bottles',
+
+        'piece',
+        'pieces',
+        'pcs',
+
+        'daalo',
+        'dalo',
+        'do',
+        'de',
+        'dena',
+
+      ]);
+
+
+    const rawWords =
+      rawNormalized
+        .split(/\s+/)
+        .filter(
+          word =>
+            word.length >= 2 &&
+            !ignoredWords.has(
+              word
+            ) &&
+            !/^\d+(?:\.\d+)?$/.test(
+              word
+            )
+        );
+
+
+    if (
+      !rawWords.length
+    ) {
+
+      return null;
+
+    }
+
+
+    let bestProduct =
+      null;
+
+
+    let bestScore =
+      0;
+
+
+    for (
+      const name of sorted
+    ) {
+
+      const productNormalized =
+        normalizeAliasText(
+          name
+        );
+
+
+      const productWords =
+        productNormalized
+          .split(/\s+/)
+          .filter(Boolean);
+
+
+      let score = 0;
+
+
+      for (
+        const rawWord of rawWords
+      ) {
+
+        /*
+         * Direct word match.
+         */
+
+        if (
+          productWords.includes(
+            rawWord
+          )
+        ) {
+
+          score += 10;
+
+          continue;
+
+        }
+
+
+        /*
+         * Hindi → English semantic aliases.
+         */
+
+        const canonicalRaw =
+          canonicalProductSpeech(
+            rawWord
+          );
+
+
+        if (
+          productNormalized.includes(
+            canonicalRaw
+          )
+        ) {
+
+          score += 8;
+
+        }
+
+      }
+
+
+      /*
+       * Prefer products with more matching words.
+       */
+
+      if (
+        score > bestScore
+      ) {
+
+        bestScore =
+          score;
+
+        bestProduct =
+          name;
+
+      }
+
+    }
+
+
+    if (
+      bestProduct &&
+      bestScore > 0
+    ) {
+
+      return bestProduct;
+
+    }
     return null;
   };
+
 
 /*
  * ============================================================
@@ -3493,11 +3923,39 @@ export function parseVoiceCommandLocally(
   const khataItem = extractKhataItemCommand(raw, customerNames);
 
   if (khataItem) {
-    const { qty: itemQty, unit: itemUnit } =
-      extractQuantityAndUnit(khataItem.itemText);
+    const variant =
+      extractProductVariant(
+        khataItem.itemText
+      );
 
-    const itemPriceHint = parsePriceHint(khataItem.itemText);
-    const itemProduct = productFromWords(khataItem.itemText, inventoryNames);
+    const itemQty =
+      variant
+        ? variant.qty
+        : extractQuantityAndUnit(
+            khataItem.itemText
+          ).qty;
+
+    const itemUnit =
+      variant
+        ? variant.unit
+        : extractQuantityAndUnit(
+            khataItem.itemText
+          ).unit;
+
+    const itemPriceHint =
+      variant
+        ? variant.price_hint
+        : parsePriceHint(
+            khataItem.itemText
+          );
+
+    const itemProduct =
+      productFromWords(
+        variant
+          ? variant.product_text
+          : khataItem.itemText,
+        inventoryNames
+      );
 
     if (itemProduct) {
       return makeResult({
@@ -3992,6 +4450,7 @@ export {
   canonicalProductSpeech,
   productFromInventory,
   extractKhataItemCommand,
+  extractProductVariant,
 };
 
 export default parseVoiceCommandLocally;

@@ -1,65 +1,36 @@
 /*
  * ============================================================
- * StoreMate Offline-First Voice Command Router
+ * COUNTR - OFFLINE FIRST VOICE COMMAND ROUTER
  * ============================================================
  *
- * RESPONSIBILITIES
- * ------------------------------------------------------------
+ * PHASE 3F
  *
- * 1. ALWAYS parse locally first.
- * 2. Work without internet.
- * 3. Use backend AI only when local interpretation is not
- *    sufficiently confident.
- * 4. NEVER allow backend AI to override a high-confidence
- *    local transactional command.
- * 5. Pass quantity + unit information through unchanged.
- * 6. Unit conversion is handled downstream by IntentHandler /
- *    UnitConversion.js.
+ * Architecture:
  *
- * ARCHITECTURE
- * ------------------------------------------------------------
- *
- * Voice
- *   ↓
+ * Voice text
+ *     ↓
+ * LocalCommandPipeline
+ *     ↓
  * LocalVoiceParser
- *   ↓
- * High-confidence transaction?
- *   ├── YES → local result
- *   │
- *   └── NO
- *        ↓
- *      Internet?
- *        ├── NO → local result
- *        │
- *        └── YES → Backend AI
- *                       ↓
- *                    Remote result
+ *     ↓
+ * InventoryVariantResolver
+ *     ↓
+ * Can execute locally?
+ *     ├── YES → return LOCAL
+ *     │
+ *     └── NO
+ *          ↓
+ *       Internet?
+ *          ├── NO → return local result
+ *          │
+ *          └── YES → Backend AI / Gemini
  *
- * IMPORTANT
- * ------------------------------------------------------------
+ * IMPORTANT:
  *
- * This router does NOT perform inventory quantity conversion.
+ * Local commands always get first priority.
  *
- * Example:
- *
- * "add 200 gram sugar"
- *
- * LocalVoiceParser:
- *
- * {
- *   intent: "inventory.add",
- *   product: "sugar",
- *   quantity: 200,
- *   unit: "GRAM"
- * }
- *
- * Then:
- *
- * IntentHandler
- *      ↓
- * UnitConversion
- *      ↓
- * 200 GRAM → 0.2 KG
+ * We NEVER send a high-confidence executable local
+ * transaction to Gemini.
  *
  * ============================================================
  */
@@ -70,8 +41,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../../config/api';
 
 import {
-  parseVoiceCommandLocally,
-} from './LocalVoiceParser';
+  processLocalVoiceCommand,
+  canExecuteLocalCommand,
+} from './LocalCommandPipeline';
+
+import {
+  bridgeGeminiCommand,
+} from './GeminiCommandBridge';
 
 
 /*
@@ -84,127 +60,82 @@ const SERVER_TIMEOUT_MS = 5000;
 
 
 /*
- * High-confidence local transaction threshold.
- *
- * If the local parser reaches this confidence level,
- * backend AI is completely bypassed.
+ * ============================================================
+ * LOCAL CONFIDENCE THRESHOLDS
+ * ============================================================
  */
 
 const LOCAL_TRANSACTION_CONFIDENCE = 0.90;
-
-
-/*
- * Safety threshold.
- *
- * Even if local confidence is slightly below the primary
- * threshold, a sufficiently strong transactional result
- * should still prevent the backend from changing its meaning.
- */
 
 const LOCAL_SAFETY_CONFIDENCE = 0.85;
 
 
 /*
  * ============================================================
- * LOCAL TRANSACTIONAL INTENTS
+ * LOCAL PRIORITY INTENTS
  * ============================================================
  *
- * These intents can modify important shop data.
+ * These are important transactional operations.
  *
- * A high-confidence local interpretation of these commands
- * should NEVER be replaced by backend AI.
- *
- * IMPORTANT:
- *
- * Only intents actually produced by LocalVoiceParser should
- * be added here.
- *
+ * If LocalCommandPipeline produces one of these with enough
+ * confidence and it is executable, Gemini must NOT override it.
  * ============================================================
  */
 
 const LOCAL_PRIORITY_INTENTS = new Set([
 
   /*
-   * ----------------------------------------------------------
    * CUSTOMER
-   * ----------------------------------------------------------
    */
 
   'customer.create',
-
   'customer.update',
-
   'customer.delete',
 
 
   /*
-   * ----------------------------------------------------------
    * KHATA
-   * ----------------------------------------------------------
    */
 
   'khata.credit',
-
   'khata.debit',
-
   'khata.payment',
-
   'khata.settle',
-
   'khata.update',
-
   'khata.delete',
-
-  'query.khata',
 
 
   /*
-   * ----------------------------------------------------------
    * INVENTORY
-   * ----------------------------------------------------------
    */
 
   'inventory.create',
-
   'inventory.add',
-
   'inventory.remove',
-
   'inventory.update',
-
   'inventory.update_price',
-
   'inventory.delete',
 
 
   /*
-   * ----------------------------------------------------------
    * SALES
-   * ----------------------------------------------------------
    */
 
   'sale.create',
-
   'sale.update',
-
   'sale.delete',
 
 
   /*
-   * ----------------------------------------------------------
-   * PURCHASES
-   * ----------------------------------------------------------
+   * PURCHASE
    */
 
   'purchase.create',
-
   'purchase.update',
 
 
   /*
-   * ----------------------------------------------------------
-   * EXPENSES
-   * ----------------------------------------------------------
+   * EXPENSE
    */
 
   'expense.create',
@@ -225,7 +156,6 @@ const safeString = value => {
   ) {
     return '';
   }
-
 
   return value
     .replace(
@@ -251,39 +181,15 @@ const safeArray = value => {
     return [];
   }
 
-
   return value
-    .filter(
-      item =>
-        typeof item === 'string'
-    )
-    .map(
-      item =>
-        safeString(item)
-    )
-    .filter(
-      Boolean
-    )
-    .slice(0, 1000);
+    .filter(Boolean)
+    .slice(0, 2000);
 };
 
 
 /*
  * ============================================================
- * NETWORK CHECK
- * ============================================================
- *
- * Network is considered usable when:
- *
- * isConnected === true
- *
- * AND
- *
- * isInternetReachable !== false
- *
- * If isInternetReachable is null/unknown,
- * we still allow the request.
- *
+ * NETWORK
  * ============================================================
  */
 
@@ -304,26 +210,23 @@ const isUsableNetwork = state => {
 
 const getConfidence = result => {
 
-  const confidence =
+  const value =
     Number(
+      result?.command?.confidence ??
       result?.confidence
     );
 
-
   if (
-    !Number.isFinite(
-      confidence
-    )
+    !Number.isFinite(value)
   ) {
     return 0;
   }
-
 
   return Math.max(
     0,
     Math.min(
       1,
-      confidence
+      value
     )
   );
 };
@@ -331,16 +234,16 @@ const getConfidence = result => {
 
 /*
  * ============================================================
- * IS LOCAL PRIORITY INTENT
+ * LOCAL PRIORITY
  * ============================================================
  */
 
 const isLocalPriorityIntent = result => {
 
-  return (
-    !!result &&
+  return Boolean(
+    result?.command &&
     LOCAL_PRIORITY_INTENTS.has(
-      result.intent
+      result.command.intent
     )
   );
 };
@@ -349,17 +252,6 @@ const isLocalPriorityIntent = result => {
 /*
  * ============================================================
  * NORMALIZE REMOTE RESULT
- * ============================================================
- *
- * Backend must return an object containing at least:
- *
- * {
- *   intent: "inventory.add"
- * }
- *
- * Invalid responses are rejected and local interpretation
- * is used instead.
- *
  * ============================================================
  */
 
@@ -373,27 +265,22 @@ const normalizeRemoteResult = remote => {
     return null;
   }
 
-
   if (
     typeof remote.intent !== 'string'
   ) {
     return null;
   }
 
-
   const intent =
     remote.intent
       .trim()
       .toLowerCase();
 
-
   if (!intent) {
     return null;
   }
 
-
   return {
-
     ...remote,
 
     intent,
@@ -401,53 +288,6 @@ const normalizeRemoteResult = remote => {
     source:
       remote.source ||
       'remote',
-
-  };
-};
-
-
-/*
- * ============================================================
- * LOCAL RESULT NORMALIZER
- * ============================================================
- *
- * We don't modify the parser's actual data.
- *
- * We only ensure the result is an object.
- *
- * ============================================================
- */
-
-const normalizeLocalResult = local => {
-
-  if (
-    !local ||
-    typeof local !== 'object' ||
-    Array.isArray(local)
-  ) {
-    return {
-
-      intent:
-        'unknown',
-
-      confidence:
-        0,
-
-      source:
-        'local',
-
-    };
-  }
-
-
-  return {
-
-    ...local,
-
-    source:
-      local.source ||
-      'local',
-
   };
 };
 
@@ -457,15 +297,18 @@ const normalizeLocalResult = local => {
  * MAIN ROUTER
  * ============================================================
  *
- * parseVoiceCommand({
+ * Supported input:
  *
+ * {
  *   text,
- *
+ *   inventory,
  *   inventoryNames,
- *
  *   customerNames
+ * }
  *
- * })
+ * inventory = ACTUAL inventory objects
+ *
+ * inventoryNames remains supported for backwards compatibility.
  *
  * ============================================================
  */
@@ -474,27 +317,28 @@ export async function parseVoiceCommand({
 
   text,
 
+  inventory = [],
+
   inventoryNames = [],
 
   customerNames = [],
 
-}) {
+} = {}) {
+
 
   /*
    * ==========================================================
-   * SANITIZE INPUT
+   * SANITIZE
    * ==========================================================
    */
 
   const safeText =
     safeString(text);
 
-
-  const safeInventoryNames =
+  const safeInventory =
     safeArray(
-      inventoryNames
+      inventory
     );
-
 
   const safeCustomerNames =
     safeArray(
@@ -506,79 +350,85 @@ export async function parseVoiceCommand({
    * ==========================================================
    * EMPTY COMMAND
    * ==========================================================
-   *
-   * Even empty input goes through the local parser so that
-   * LocalVoiceParser remains the single source of truth for
-   * its fallback/unknown structure.
-   * ==========================================================
    */
 
   if (!safeText) {
 
-    const emptyResult =
-      parseVoiceCommandLocally(
-        '',
-        safeInventoryNames,
-        safeCustomerNames
-      );
+    return {
+      status:
+        'INVALID_COMMAND',
 
+      command:
+        null,
 
-    return normalizeLocalResult(
-      emptyResult
-    );
+      source:
+        'local',
+
+      confidence:
+        0,
+    };
   }
 
 
   /*
    * ==========================================================
-   * LOCAL PARSE FIRST
+   * PHASE 3C - LOCAL COMMAND PIPELINE
    * ==========================================================
    *
-   * THIS ALWAYS HAPPENS.
+   * THIS IS NOW THE PRIMARY LOCAL ENGINE.
    *
-   * Therefore:
+   * It performs:
    *
-   * Internet ON  → local first
-   * Internet OFF → local first
+   * LocalVoiceParser
+   *       ↓
+   * Khata detection
+   *       ↓
+   * Product detection
+   *       ↓
+   * InventoryVariantResolver
+   *       ↓
+   * Normalized command
    *
    * ==========================================================
    */
 
   let localResult;
 
-
   try {
 
     localResult =
-      parseVoiceCommandLocally(
-        safeText,
-        safeInventoryNames,
-        safeCustomerNames
-      );
+      processLocalVoiceCommand({
+
+        text:
+          safeText,
+
+        inventory:
+          safeInventory,
+
+        customerNames:
+          safeCustomerNames,
+
+      });
 
   } catch (error) {
 
-    /*
-     * Local parser failure.
-     *
-     * We don't silently fabricate an intent.
-     *
-     * If online, backend gets a chance.
-     */
-
     console.error(
-      'VoiceCommandRouter: local parser failed',
-      error?.message || error
+      'VoiceCommandRouter: LocalCommandPipeline failed',
+      error?.message ||
+        error
     );
-
 
     localResult = {
 
-      intent:
-        'unknown',
+      status:
+        'PARSER_ERROR',
 
-      confidence:
-        0,
+      reason:
+        error?.message ||
+        'Local command pipeline failed.',
+
+      command:
+        null,
 
       source:
         'local_error',
@@ -587,43 +437,65 @@ export async function parseVoiceCommand({
   }
 
 
-  localResult =
-    normalizeLocalResult(
+  /*
+   * ==========================================================
+   * CHECK WHETHER LOCAL COMMAND CAN EXECUTE
+   * ==========================================================
+   */
+
+  const localCanExecute =
+    canExecuteLocalCommand(
       localResult
     );
 
 
+  const localConfidence =
+    getConfidence(
+      localResult
+    );
+
+
+  const localPriority =
+    isLocalPriorityIntent(
+      localResult
+    );
+
+  const localPriorityNeedsCloudValidation =
+  Boolean(
+    localCanExecute &&
+    localPriority &&
+    localConfidence >= LOCAL_SAFETY_CONFIDENCE &&
+    localConfidence < LOCAL_TRANSACTION_CONFIDENCE
+  );
+
   /*
    * ==========================================================
-   * LOCAL TRANSACTIONAL PRIORITY
+   * HIGH-CONFIDENCE LOCAL TRANSACTION
    * ==========================================================
    *
    * Example:
    *
-   * "add 200 gram sugar"
+   * "10 wala Kurkure"
    *
-   * Local:
+   * OR:
    *
-   * inventory.add
-   * confidence 0.95
+   * "Rahul ke khate mein 500 rupaye daalo"
    *
-   * → RETURN IMMEDIATELY.
+   * If local pipeline can safely execute it,
+   * STOP HERE.
    *
-   * Backend AI is NOT contacted.
-   *
+   * Gemini is NOT contacted.
    * ==========================================================
    */
 
   if (
 
-    isLocalPriorityIntent(
-      localResult
-    ) &&
+    localCanExecute &&
 
-    getConfidence(
-      localResult
-    ) >=
-    LOCAL_TRANSACTION_CONFIDENCE
+    localPriority &&
+
+    localConfidence >=
+      LOCAL_TRANSACTION_CONFIDENCE
 
   ) {
 
@@ -632,7 +504,13 @@ export async function parseVoiceCommand({
       ...localResult,
 
       source:
-        'local_priority',
+        'local_pipeline',
+
+      execution:
+        'local',
+
+      cloud_called:
+        false,
 
     };
   }
@@ -640,60 +518,120 @@ export async function parseVoiceCommand({
 
   /*
    * ==========================================================
-   * CHECK NETWORK
+   * LOCAL NON-TRANSACTIONAL READY RESULT
    * ==========================================================
    *
-   * If there is no internet:
+   * Queries and other safe commands do not necessarily need
+   * the backend.
    *
-   * return local interpretation.
+   * Example:
+   *
+   * "Parle G kitna stock hai"
    *
    * ==========================================================
    */
+
+  if (
+
+    localResult?.status ===
+      'READY' &&
+
+    !localPriority
+
+  ) {
+
+    return {
+
+      ...localResult,
+
+      source:
+        'local_pipeline',
+
+      execution:
+        'local',
+
+      cloud_called:
+        false,
+
+    };
+  }
+
+
+  /*
+   * ==========================================================
+   * NETWORK CHECK
+   * ==========================================================
+   */
+
+  let networkAvailable =
+    false;
 
   try {
 
     const networkState =
       await NetInfo.fetch();
 
-
-    if (
-      !isUsableNetwork(
+    networkAvailable =
+      isUsableNetwork(
         networkState
-      )
-    ) {
-
-      return localResult;
-    }
+      );
 
   } catch (error) {
 
-    /*
-     * NetInfo itself failed.
-     *
-     * Stay offline-first.
-     */
-
     console.log(
-      'VoiceCommandRouter: NetInfo unavailable, using local parser',
-      error?.message || error
+      'VoiceCommandRouter: NetInfo failed',
+      error?.message ||
+        error
     );
 
-
-    return localResult;
+    networkAvailable =
+      false;
   }
 
 
   /*
    * ==========================================================
-   * BACKEND REQUEST
+   * OFFLINE FALLBACK
    * ==========================================================
    *
-   * Internet appears available.
+   * If internet is unavailable,
+   * NEVER block the app.
    *
-   * Local parser was not sufficiently confident to completely
-   * own the command.
+   * Return the local interpretation.
+   * ==========================================================
+   */
+
+  if (!networkAvailable) {
+
+    return {
+
+      ...localResult,
+
+      source:
+        'local_offline',
+
+      execution:
+        'local',
+
+      cloud_called:
+        false,
+
+    };
+  }
+
+
+  /*
+   * ==========================================================
+   * CLOUD AI
+   * ==========================================================
    *
-   * Give backend AI a chance.
+   * At this point:
+   *
+   * - local pipeline could not safely execute
+   * - internet is available
+   *
+   * Therefore Gemini/backend gets a chance.
+   *
    * ==========================================================
    */
 
@@ -703,11 +641,8 @@ export async function parseVoiceCommand({
 
   const timeoutId =
     setTimeout(
-      () => {
-
-        controller.abort();
-
-      },
+      () =>
+        controller.abort(),
       SERVER_TIMEOUT_MS
     );
 
@@ -716,20 +651,11 @@ export async function parseVoiceCommand({
 
     /*
      * ========================================================
-     * AUTH TOKEN
-     * ========================================================
-     *
-     * Your backend expects:
-     *
-     * Authorization:
-     * Bearer <JWT>
-     *
-     * We use getItem because userToken is stored as one key.
+     * AUTH
      * ========================================================
      */
 
     let token = null;
-
 
     try {
 
@@ -738,85 +664,186 @@ export async function parseVoiceCommand({
           'userToken'
         );
 
-    } catch (tokenError) {
+    } catch (error) {
 
       console.log(
-        'VoiceCommandRouter: failed to read auth token',
-        tokenError?.message ||
-          tokenError
+        'VoiceCommandRouter: token read failed',
+        error?.message ||
+          error
       );
     }
 
 
     /*
      * ========================================================
-     * REQUEST BODY
+     * INVENTORY NAMES
+     * ========================================================
+     *
+     * Backend AI does not need the entire WatermelonDB
+     * objects.
+     *
+     * Send only product names.
      * ========================================================
      */
 
+    const resolvedInventoryNames =
+      safeInventory.length
+
+        ? safeInventory
+            .map(
+              item =>
+                item?.productName ??
+                item?.product_name ??
+                null
+            )
+            .filter(Boolean)
+
+        : safeArray(
+            inventoryNames
+          );
+
+
+    /*
+     * ========================================================
+     * LOCAL HINT
+     * ========================================================
+     *
+     * This is extremely important.
+     *
+     * We don't throw away local understanding.
+     *
+     * Gemini receives what the local engine already understood
+     * and can improve/complete it.
+     * ========================================================
+     */
+
+    const localCommand =
+      localResult?.command ||
+      null;
+
+
     const requestBody = {
+
+      /*
+       * Original speech.
+       */
 
       text:
         safeText,
 
+
+      /*
+       * Context.
+       */
+
       inventory_names:
-        safeInventoryNames,
+        resolvedInventoryNames,
 
       customer_names:
         safeCustomerNames,
 
+
+      /*
+       * Language context.
+       */
+
       voice_language:
         'hi-en-hinglish',
 
+
+      /*
+       * Tell backend what this system is.
+       */
+
+      mode:
+        'command_parser',
+
+
+      /*
+       * We don't want conversational responses.
+       */
+
+      response_mode:
+        'strict_command_json',
+
+
+      /*
+       * Local understanding.
+       */
+
+      local_hint: {
+
+        status:
+          localResult?.status ||
+          null,
+
+        intent:
+          localCommand?.intent ||
+          null,
+
+        product:
+          localCommand?.product ||
+          null,
+
+        quantity:
+          localCommand?.quantity ??
+          null,
+
+        unit:
+          localCommand?.unit ||
+          null,
+
+        price_hint:
+          localCommand?.price_hint ??
+          null,
+
+        amount:
+          localCommand?.amount ??
+          null,
+
+        customer_name:
+          localCommand?.customer_name ||
+          null,
+
+        payment_type:
+          localCommand?.payment_type ||
+          null,
+
+        confidence:
+          localConfidence,
+
+      },
+
+
+      /*
+       * Feature flags.
+       */
+
       voice_features: {
 
-        price_qualified_products:
+        indian_numbers:
           true,
 
-        direct_khata_item_sales:
+        hindi:
+          true,
+
+        hinglish:
           true,
 
         product_aliases:
           true,
 
+        price_variants:
+          true,
+
+        direct_khata_item_sales:
+          true,
+
         mixed_units:
           true,
 
-      },
-
-      local_hint: {
-
-        intent:
-          localResult.intent,
-
-        product:
-          localResult.product ||
-          null,
-
-        qty:
-          localResult.qty ??
-          null,
-
-        unit:
-          localResult.unit ||
-          null,
-
-        price_hint:
-          localResult.price_hint ??
-          null,
-
-        customer_name:
-          localResult.customer_name ||
-          null,
-
-        payment_type:
-          localResult.payment_type ||
-          null,
-
-        confidence:
-          getConfidence(
-            localResult
-          ),
+        inventory_resolution:
+          true,
 
       },
 
@@ -825,7 +852,7 @@ export async function parseVoiceCommand({
 
     /*
      * ========================================================
-     * SEND TO BACKEND
+     * REQUEST
      * ========================================================
      */
 
@@ -865,58 +892,73 @@ export async function parseVoiceCommand({
 
     /*
      * ========================================================
-     * BACKEND FAILURE
-     * ========================================================
-     *
-     * 401
-     * 403
-     * 404
-     * 429
-     * 500
-     * 502
-     * timeout
-     *
-     * ALL fall back to local.
+     * BACKEND ERROR
      * ========================================================
      */
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
 
       console.log(
         `VoiceCommandRouter: backend returned ${response.status}; using local result`
       );
 
 
-      return localResult;
+      return {
+
+        ...localResult,
+
+        source:
+          'local_backend_error',
+
+        execution:
+          'local',
+
+        cloud_called:
+          true,
+
+        cloud_status:
+          response.status,
+
+      };
     }
 
 
     /*
      * ========================================================
-     * PARSE REMOTE JSON
+     * JSON
      * ========================================================
      */
 
     let remoteRaw;
-
 
     try {
 
       remoteRaw =
         await response.json();
 
-    } catch (jsonError) {
+    } catch (error) {
 
       console.log(
-        'VoiceCommandRouter: invalid backend JSON',
-        jsonError?.message ||
-          jsonError
+        'VoiceCommandRouter: backend returned invalid JSON',
+        error?.message ||
+          error
       );
 
 
-      return localResult;
+      return {
+
+        ...localResult,
+
+        source:
+          'local_invalid_remote',
+
+        execution:
+          'local',
+
+        cloud_called:
+          true,
+
+      };
     }
 
 
@@ -932,47 +974,57 @@ export async function parseVoiceCommand({
       );
 
 
-    /*
-     * Invalid backend response.
-     */
-
     if (!remote) {
 
-      return localResult;
+      return {
+
+        ...localResult,
+
+        source:
+          'local_invalid_remote',
+
+        execution:
+          'local',
+
+        cloud_called:
+          true,
+
+      };
     }
 
 
     /*
      * ========================================================
-     * SECOND TRANSACTION SAFETY CHECK
+     * REMOTE SAFETY CHECK
      * ========================================================
      *
-     * Example:
+     * VERY IMPORTANT.
      *
-     * Local:
+     * Suppose local understood:
      *
-     * inventory.add
-     * confidence 0.87
+     * "10 wala Kurkure"
      *
-     * Remote:
+     * but for some reason local wasn't executable because
+     * inventory was unavailable.
      *
-     * sale.create
+     * Gemini says:
      *
-     * We DO NOT allow the remote model to reinterpret it.
+     * "inventory.add"
      *
+     *
+     * That's okay.
+     *
+     * But if local already had a strong transaction,
+     * it must not be silently replaced.
      * ========================================================
      */
 
     if (
 
-      isLocalPriorityIntent(
-        localResult
-      ) &&
+      localPriority &&
 
-      getConfidence(
-        localResult
-      ) >=
-      LOCAL_SAFETY_CONFIDENCE
+      localConfidence >=
+        LOCAL_SAFETY_CONFIDENCE
 
     ) {
 
@@ -983,7 +1035,13 @@ export async function parseVoiceCommand({
         source:
           'local_priority',
 
-        remoteIntent:
+        execution:
+          'local',
+
+        cloud_called:
+          true,
+
+        remote_intent:
           remote.intent,
 
       };
@@ -992,36 +1050,162 @@ export async function parseVoiceCommand({
 
     /*
      * ========================================================
-     * REMOTE RESULT
+     * PHASE 3E-3 / 3F - GEMINI COMMAND BRIDGE
      * ========================================================
      *
-     * Local parser was not confident enough to claim the
-     * command.
+     * Gemini is ONLY the language interpreter.
      *
-     * Backend AI is therefore allowed to interpret it.
+     * The remote command must pass through the deterministic
+     * business validator + inventory resolver before COUNTR
+     * accepts it.
      *
+     * Flow:
+     *
+     * Gemini
+     *   ↓
+     * GeminiCommandBridge
+     *   ↓
+     * GeminiCommandValidator
+     *   ↓
+     * Inventory validation
+     *   ↓
+     * READY
+     *
+     * Gemini never gets authority to execute a transaction.
      * ========================================================
      */
 
-    return {
+    const bridged =
+      bridgeGeminiCommand({
 
-      ...remote,
+        geminiResult:
+          remote,
+
+        inventory:
+          safeInventory,
+
+        customerNames:
+          safeCustomerNames,
+
+      });
+
+
+    /*
+     * ========================================================
+     * REMOTE COMMAND REJECTED
+     * ========================================================
+     *
+     * If Gemini invents a product, price, unit, customer, etc.,
+     * the deterministic bridge rejects it.
+     *
+     * We NEVER pass an unvalidated Gemini command to execution.
+     * ========================================================
+     */
+
+    if (
+      !bridged ||
+      bridged.status !== 'READY'
+    ) {
+
+      return {
+
+        ...localResult,
+
+        source:
+          'local_remote_rejected',
+
+        execution:
+          'local',
+
+        cloud_called:
+          true,
+
+        cloud_status:
+          response.status,
+
+        remote_intent:
+          remote.intent,
+
+        remote_validation_status:
+          bridged?.status ||
+          'GEMINI_VALIDATION_FAILED',
+
+        remote_validation_reason:
+          bridged?.reason ||
+          'Gemini command failed deterministic validation.',
+
+        remote_result:
+          remote,
+
+      };
+    }
+
+
+    /*
+     * ========================================================
+     * VALIDATED REMOTE RESULT
+     * ========================================================
+     *
+     * Only this validated command can move toward the normal
+     * transaction executor.
+     * ========================================================
+     */
+
+    const remoteCommand =
+      bridged &&
+      bridged.command &&
+      typeof bridged.command === "object"
+        ? bridged.command
+        : bridged;
+
+    return {
+      ...bridged,
+
+      // ----------------------------------------------------------
+      // BACKWARD COMPATIBILITY
+      // ----------------------------------------------------------
+      //
+      // Older COUNTR consumers expect:
+      //
+      // result.intent
+      // result.product
+      // result.quantity
+      //
+      // New Gemini bridge uses:
+      //
+      // result.command.intent
+      // result.command.product
+      // result.command.quantity
+      //
+      // Expose both shapes.
+      // ----------------------------------------------------------
+
+      ...(remoteCommand || {}),
+
+      command:
+        bridged.command || remoteCommand,
 
       source:
-        remote.source ||
-        'remote',
+        "remote_ai",
 
+      execution:
+        "remote",
+
+      cloud_called:
+        true,
+
+      local_result:
+        localResult,
+
+      remote_result:
+        remote,
     };
 
   } catch (error) {
 
     /*
      * ========================================================
-     * NETWORK / TIMEOUT / DNS FAILURE
-     * ========================================================
-     *
-     * NEVER break the voice feature because internet failed.
-     *
+     * TIMEOUT / NETWORK ERROR
      * ========================================================
      */
 
@@ -1041,13 +1225,30 @@ export async function parseVoiceCommand({
     );
 
 
-    return localResult;
+    return {
+
+      ...localResult,
+
+      source:
+        'local_network_fallback',
+
+      execution:
+        'local',
+
+      cloud_called:
+        true,
+
+      cloud_error:
+        errorMessage,
+
+    };
 
   } finally {
 
     clearTimeout(
       timeoutId
     );
+
   }
 }
 

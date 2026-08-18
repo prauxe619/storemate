@@ -267,7 +267,7 @@ def parse_with_rules(text: str, inventory_names: list = None, customer_names: li
         intent = "pos.checkout"
     
     if not intent:
-        intent = "sale.create"
+        intent = "unknown"
 
     # 5. Entity Extraction (Product Name Matching)
     # 🚀 CRITICAL FIX: "receive" and "from" added to noise words
