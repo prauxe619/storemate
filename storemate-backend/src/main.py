@@ -192,7 +192,41 @@ def get_admin_ledger(db: Session = Depends(get_db)):
     entries = db.query(models.LedgerEntry).order_by(models.LedgerEntry.timestamp.desc()).all()
     return entries
 
-
+# --- AI BRAIN API ---
+@app.post("/api/v1/ai/parse-intent")
+async def parse_intent(command: schemas.VoiceCommand):
+    system_prompt = """
+    You are the natural language parser for an apparel POS and inventory system.
+    Extract the user's spoken command into the exact structured fields.
+    
+    Examples:
+    1. "Update the price of the minimalist pullover to 1499"
+       -> intent: 'inventory.update_price', product: 'minimalist pullover', new_price: 1499
+    2. "Add 2 heavyweight tees to the cart"
+       -> intent: 'pos.add_item', product: 'heavyweight tee', qty: 2
+    3. "Apply a 10 percent discount"
+       -> intent: 'pos.apply_discount', discount_percent: 10
+    4. "Generate the invoice for Rahul"
+       -> intent: 'pos.checkout', customer_name: 'Rahul'
+    """
+    
+    try:
+        # 🚀 Here is where we force Gemini to strictly follow your Phase 3 schema
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=f"{system_prompt}\n\nUser Command: {command.text}",
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=schemas.IntentResult, 
+            ),
+        )
+        
+        # Returns the perfectly structured JSON straight to your mobile app
+        return json.loads(response.text)
+        
+    except Exception as e:
+        print(f"AI Engine Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process voice command")
 
 @app.post("/ai/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...)):

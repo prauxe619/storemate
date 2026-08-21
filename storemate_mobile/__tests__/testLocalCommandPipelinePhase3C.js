@@ -412,7 +412,7 @@ describe(
 
         expect(
           result.command.inventory_item_id
-        ).toBeUndefined();
+        ).toBeNull();
 
         expect(
           canExecuteLocalCommand(

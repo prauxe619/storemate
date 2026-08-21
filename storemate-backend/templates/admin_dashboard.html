@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StoreMate Control Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans">
+
+    <!-- TOP NAVIGATION -->
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl">🏪</span>
+                <h1 class="text-xl font-bold tracking-wide text-indigo-400">StoreMate Admin</h1>
+                <span class="bg-indigo-900 text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-semibold">10-20 Shop Pilot</span>
+            </div>
+            <!-- Quick Link back to the standard web dashboard -->
+            <a href="/admin/dashboard" class="text-gray-400 hover:text-white text-sm font-medium transition">← Back to Merchants</a>
+        </div>
+        
+        <div id="connection-status" class="flex items-center space-x-2 text-sm text-green-400">
+            <span class="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse"></span>
+            <span>Live Telemetry Connected</span>
+        </div>
+    </nav>
+
+    <div class="p-6 space-y-8 max-w-7xl mx-auto">
+
+        <!-- 1. METRIC OVERVIEW CARDS -->
+        <section>
+            <h2 class="text-lg font-semibold mb-4 text-gray-300">Today's Operations Overview</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4" id="overview-cards">
+                <!-- Data populated dynamically via API -->
+                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
+                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
+                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
+                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
+            </div>
+        </section>
+
+        <!-- 📍 NEW: CITY & REGIONAL ADOPTION WIDGET -->
+        <section class="bg-gray-800 rounded-xl border border-gray-700 p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-gray-200">📍 Top Installation Hotspots</h2>
+                <span class="text-xs text-indigo-400 font-mono bg-indigo-900/30 px-2 py-1 rounded">IP Geolocation Active</span>
+            </div>
+            <div id="location-chips" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <!-- Dynamically rendered via JS -->
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 animate-pulse h-16"></div>
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 animate-pulse h-16"></div>
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 animate-pulse h-16"></div>
+            </div>
+        </section>
+
+        <!-- 2. PILOT SHOPS TRACKING TABLE -->
+        <section class="bg-gray-800 rounded-xl border border-gray-700 p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-gray-200">🏪 Active Pilot Shops</h2>
+                <button onclick="loadShops()" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg transition">Refresh Shops</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-900/50 text-gray-400 border-b border-gray-700">
+                        <tr>
+                            <th class="p-3">Status</th>
+                            <th class="p-3">Shop Name</th>
+                            <th class="p-3">Owner</th>
+                            <th class="p-3">City</th>
+                            <th class="p-3">Version</th>
+                            <th class="p-3">Last Active</th>
+                            <th class="p-3 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shops-table-body" class="divide-y divide-gray-700/50">
+                        <!-- Populated via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 3. VOICE & AI DIAGNOSTICS SECTION -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- VOICE PERFORMANCE -->
+            <section class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <h2 class="text-lg font-semibold text-gray-200 mb-2">🎤 Voice Diagnostics</h2>
+                <div class="flex justify-between text-sm mb-4 text-gray-400">
+                    <span>Success Rate: <b id="voice-rate" class="text-green-400">--%</b></span>
+                    <span>Avg Latency: <b id="voice-latency" class="text-indigo-400">--s</b></span>
+                </div>
+                <h3 class="text-xs uppercase font-bold tracking-wider text-gray-500 mb-2">Recent Failed Commands</h3>
+                <div id="voice-failures" class="space-y-2 text-xs font-mono max-h-48 overflow-y-auto">
+                    <!-- Populated via JS -->
+                </div>
+            </section>
+
+            <!-- ERROR CENTER -->
+            <section class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold text-red-400">🚨 Error Center</h2>
+                    <span id="error-count" class="bg-red-900/50 text-red-300 text-xs px-2 py-1 rounded">0 Unresolved</span>
+                </div>
+                <div id="error-list" class="space-y-3 max-h-56 overflow-y-auto text-xs">
+                    <!-- Populated via JS -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- CLIENT SCRIPT TO FETCH API DATA -->
+    <script>
+        // Function to safely read cookie values
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return '';
+        }
+
+        // 🚀 Automatically grab token from localStorage OR Cookie
+        let AUTH_TOKEN = localStorage.getItem('admin_token') || getCookie('jwt_token') || '';
+
+        async function fetchAPI(endpoint) {
+            // If there is no token at all, prompt immediately before making a bad request
+            if (!AUTH_TOKEN) {
+                AUTH_TOKEN = prompt("Session missing. Please enter your Super Admin JWT Token:") || '';
+                if (AUTH_TOKEN) {
+                    localStorage.setItem('admin_token', AUTH_TOKEN);
+                } else {
+                    return null; // Halt execution if they cancel
+                }
+            }
+
+            const res = await fetch(endpoint, {
+                headers: { 
+                    'Authorization': `Bearer ${AUTH_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            // If the token exists but is invalid/expired
+            if (res.status === 401 || res.status === 403 || res.status === 422) {
+                const token = prompt("Token invalid or expired. Enter Super Admin JWT Token:");
+                if (token) {
+                    localStorage.setItem('admin_token', token);
+                    location.reload();
+                }
+                return null;
+            }
+            
+            return res.json();
+        }
+
+        async function loadOverview() {
+            const data = await fetchAPI('/api/v1/admin/overview');
+            
+            // 🚀 FIX: Handle missing data or error response visually instead of infinite pulsing
+            if (!data || !data.overview) {
+                document.getElementById('overview-cards').innerHTML = `
+                    <div class="col-span-full bg-red-900/40 border border-red-700 p-4 rounded-xl text-center text-red-200 text-sm">
+                        ⚠️ Session expired or server error. 
+                        <a href="/admin/login" class="underline font-bold text-white ml-2">Click here to re-login</a>
+                    </div>
+                `;
+                return;
+            }
+
+            const cards = [
+                { label: 'Active Shops', val: data.overview.active_shops, icon: '🏪' },
+                { label: 'Bills Today', val: data.overview.bills_created, icon: '🧾' },
+                { label: 'Sales Today', val: `₹${data.overview.sales_recorded}`, icon: '💰' },
+                { label: 'Sync Success', val: data.overview.sync_success_rate, icon: '🔄' },
+                { label: 'Voice Cmds', val: data.overview.voice_commands, icon: '🎤' },
+                { label: 'AI Requests', val: data.overview.ai_requests, icon: '🤖' },
+                { label: 'Items Added', val: data.overview.products_added, icon: '📦' },
+                { label: 'Errors', val: data.overview.errors, icon: '⚠️' }
+            ];
+
+            document.getElementById('overview-cards').innerHTML = cards.map(c => `
+                <div class="bg-gray-800 p-3 rounded-xl border border-gray-700">
+                    <div class="text-xs text-gray-400 flex justify-between"><span>${c.label}</span><span>${c.icon}</span></div>
+                    <div class="text-lg font-bold text-gray-100 mt-1">${c.val}</div>
+                </div>
+            `).join('');
+        }
+
+        // 📍 NEW: Function to load location hotspots
+        async function loadLocations() {
+            const data = await fetchAPI('/api/v1/admin/analytics/locations');
+            if (!data || !data.locations) return;
+
+            const container = document.getElementById('location-chips');
+            if (data.locations.length === 0) {
+                container.innerHTML = `<div class="text-xs text-gray-500 col-span-full">No regional data recorded yet. Wait for a merchant to sync or log in.</div>`;
+                return;
+            }
+
+            container.innerHTML = data.locations.map(loc => `
+                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col justify-center">
+                    <div class="flex justify-between items-start mb-1">
+                        <div class="text-sm font-bold text-gray-100 truncate pr-2" title="${loc.city}">${loc.city}</div>
+                        <span class="bg-indigo-900/60 text-indigo-300 text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                            ${loc.shop_count} ${loc.shop_count === 1 ? 'Shop' : 'Shops'}
+                        </span>
+                    </div>
+                    <div class="text-[10px] text-gray-400 truncate" title="${loc.state}">${loc.state}</div>
+                </div>
+            `).join('');
+        }
+
+        async function loadShops() {
+            const data = await fetchAPI('/api/v1/admin/shops');
+            if (!data || !data.shops) return;
+
+            document.getElementById('shops-table-body').innerHTML = data.shops.map(s => `
+                <tr class="hover:bg-gray-750">
+                    <td class="p-3">${s.status}</td>
+                    <td class="p-3 font-semibold text-gray-200">${s.shop_name}</td>
+                    <td class="p-3">${s.owner}</td>
+                    <td class="p-3 text-gray-400">${s.city}</td>
+                    <td class="p-3"><span class="bg-gray-700 text-gray-300 px-2 py-0.5 rounded text-xs">${s.app_version}</span></td>
+                    <td class="p-3 text-gray-400">${s.last_active}</td>
+                    <td class="p-3 text-right">
+                        <a href="/admin/merchant/${s.id}" class="text-xs text-indigo-400 hover:underline">Profile</a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadVoice() {
+            const data = await fetchAPI('/api/v1/admin/analytics/voice');
+            if (!data || !data.summary) return;
+
+            document.getElementById('voice-rate').innerText = `${data.summary.success_rate_pct}%`;
+            document.getElementById('voice-latency').innerText = `${data.summary.avg_latency_sec}s`;
+
+            document.getElementById('voice-failures').innerHTML = data.recent_failed_commands.map(f => `
+                <div class="bg-gray-900 p-2 rounded border border-red-900/30 text-red-300">
+                    <div><b>Cmd:</b> "${f.command}"</div>
+                    <div class="text-gray-500">Reason: ${f.reason} | Shop: #${f.shop_id} at ${f.time}</div>
+                </div>
+            `).join('') || '<div class="text-gray-500">No recent voice failures</div>';
+        }
+
+        async function loadErrors() {
+            const data = await fetchAPI('/api/v1/admin/errors');
+            if (!data || !data.unresolved_errors) return;
+
+            document.getElementById('error-count').innerText = `${data.unresolved_errors.length} Unresolved`;
+            document.getElementById('error-list').innerHTML = data.unresolved_errors.map(e => `
+                <div class="bg-gray-900 p-3 rounded border-l-4 border-red-500 flex justify-between items-start">
+                    <div>
+                        <span class="font-bold text-red-400">[${e.feature.toUpperCase()}]</span>
+                        <span class="text-gray-300">${e.message}</span>
+                        <div class="text-gray-500 text-[10px] mt-1">${e.shop_name} • ${e.time}</div>
+                    </div>
+                    <button onclick="resolveErr(${e.id})" class="text-[10px] bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Resolve</button>
+                </div>
+            `).join('') || '<div class="text-gray-500">Zero active errors reported</div>';
+        }
+
+        async function resolveErr(id) {
+            await fetch(`/api/v1/admin/errors/${id}/resolve`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${AUTH_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            loadErrors();
+        }
+
+        // Initialize Dashboard
+        loadOverview();
+        loadLocations(); // 📍 Load Locations on startup
+        loadShops();
+        loadVoice();
+        loadErrors();
+
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            loadOverview();
+            loadLocations(); // 📍 Refresh Locations automatically
+            loadShops();
+            loadVoice();
+            loadErrors();
+        }, 30000);
+    </script>
+</body>
+</html>

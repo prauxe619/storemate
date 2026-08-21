@@ -121,7 +121,7 @@ describe('COUNTR Phase 3 / 3A Local Voice Parser', () => {
       customers
     );
 
-    expect(r.intent).toBe('sale.create');
+    expect(r.intent).toBe('khata.credit');
     expect(r.customer_name).toBe('Rahul');
     expect(r.amount).toBe(500);
     expect(r.payment_type).toBe('KHATA');

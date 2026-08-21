@@ -1,7 +1,7 @@
 import React, {
   useState,
 } from 'react';
-
+import { SecureStorage } from '../utils/secureStorage';
 import {
   View,
   Text,
@@ -144,40 +144,115 @@ const LoginScreen = ({
 
 
   const saveSession =
-    async data => {
+  async data => {
 
-      await AsyncStorage.setItem(
-        'userToken',
-        data.access_token
+    const accessToken =
+      data?.access_token;
+
+    if (!accessToken) {
+      throw new Error(
+        'Login succeeded but no access token was returned.'
       );
+    }
+
+    /*
+     * =======================================================
+     * JWT SESSION
+     *
+     * SecureStorage is now the single source of truth
+     * for the application's authentication token.
+     * =======================================================
+     */
+
+    await SecureStorage.setToken(
+      accessToken
+    );
 
 
-      await AsyncStorage.setItem(
-        'shopName',
-        data.shop_name ||
-          shopName ||
-          ''
-      );
+    /*
+     * =======================================================
+     * LEGACY COMPATIBILITY
+     *
+     * Keep this temporarily because other existing parts
+     * of the application still read userToken from
+     * AsyncStorage.
+     * =======================================================
+     */
+
+    await AsyncStorage.setItem(
+      'userToken',
+      accessToken
+    );
 
 
-      await setActiveUser({
+    /*
+     * =======================================================
+     * SHOP
+     * =======================================================
+     */
+
+    await AsyncStorage.setItem(
+      'shopName',
+      data.shop_name ||
+        shopName ||
+        ''
+    );
+
+
+    /*
+     * =======================================================
+     * ACTIVE USER
+     * =======================================================
+     */
+
+    await setActiveUser({
+
+      userId:
+        getUserId(
+          data
+        ),
+
+      email:
+        data.email ||
+        email,
+
+    });
+
+
+    /*
+     * =======================================================
+     * TELEMETRY
+     * =======================================================
+     */
+
+    TelemetryService.setAuthToken(
+      accessToken
+    );
+
+
+    /*
+     * =======================================================
+     * DEBUG
+     * =======================================================
+     */
+
+    console.log(
+      'COUNTR AUTH: SESSION SAVED',
+      {
+        encryptedToken:
+          true,
+
+        asyncStorageToken:
+          true,
 
         userId:
-          getUserId(
-            data
-          ),
+          getUserId(data),
 
-        email:
-          data.email ||
-          email,
-
-      });
-
-
-      TelemetryService.setAuthToken(
-        data.access_token
-      );
-    };
+        hasAccessToken:
+          true,
+      }
+    );
+  };
 
 
   /* ===========================================================

@@ -1,292 +1,3698 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StoreMate Control Center</title>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Countr Control Center</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 </head>
-<body class="bg-gray-900 text-gray-100 font-sans">
 
-    <!-- TOP NAVIGATION -->
-    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
-        <div class="flex items-center space-x-6">
-            <div class="flex items-center space-x-3">
-                <span class="text-2xl">🏪</span>
-                <h1 class="text-xl font-bold tracking-wide text-indigo-400">StoreMate Admin</h1>
-                <span class="bg-indigo-900 text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-semibold">10-20 Shop Pilot</span>
+
+<body class="bg-gray-950 text-gray-100 font-sans">
+
+
+<!-- ============================================================
+     TOP NAV
+     ============================================================ -->
+
+<nav class="bg-gray-900 border-b border-gray-800 px-6 py-4">
+
+    <div class="max-w-[1600px] mx-auto flex flex-wrap gap-4 justify-between items-center">
+
+        <div class="flex items-center gap-4">
+
+            <div class="flex items-center gap-3">
+
+                <span class="text-2xl">
+                    🏪
+                </span>
+
+                <div>
+
+                    <h1 class="text-xl font-bold text-indigo-400">
+                        Countr Control Center
+                    </h1>
+
+                    <p class="text-[11px] text-gray-500">
+                        Shop Intelligence & Product Diagnostics
+                    </p>
+
+                </div>
+
             </div>
-            <!-- Quick Link back to the standard web dashboard -->
-            <a href="/admin/dashboard" class="text-gray-400 hover:text-white text-sm font-medium transition">← Back to Merchants</a>
+
+
+            <span
+                class="bg-indigo-950 text-indigo-300 border border-indigo-800
+                       text-xs px-3 py-1 rounded-full font-semibold"
+            >
+                Pilot Intelligence
+            </span>
+
+
+            <a
+                href="/admin/dashboard"
+                class="text-gray-400 hover:text-white text-sm"
+            >
+                ← Merchants
+            </a>
+
         </div>
-        
-        <div id="connection-status" class="flex items-center space-x-2 text-sm text-green-400">
-            <span class="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse"></span>
-            <span>Live Telemetry Connected</span>
+
+
+        <div class="flex items-center gap-4">
+
+            <div
+                id="last-refresh"
+                class="text-xs text-gray-500"
+            >
+                Last refresh: --
+            </div>
+
+
+            <div
+                id="connection-status"
+                class="flex items-center gap-2 text-sm text-green-400"
+            >
+
+                <span
+                    id="connection-dot"
+                    class="h-2.5 w-2.5 rounded-full bg-green-500"
+                ></span>
+
+                <span id="connection-text">
+                    Live
+                </span>
+
+            </div>
+
         </div>
-    </nav>
 
-    <div class="p-6 space-y-8 max-w-7xl mx-auto">
-
-        <!-- 1. METRIC OVERVIEW CARDS -->
-        <section>
-            <h2 class="text-lg font-semibold mb-4 text-gray-300">Today's Operations Overview</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4" id="overview-cards">
-                <!-- Data populated dynamically via API -->
-                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
-                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
-                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
-                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 animate-pulse h-24"></div>
-            </div>
-        </section>
-
-        <!-- 📍 NEW: CITY & REGIONAL ADOPTION WIDGET -->
-        <section class="bg-gray-800 rounded-xl border border-gray-700 p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold text-gray-200">📍 Top Installation Hotspots</h2>
-                <span class="text-xs text-indigo-400 font-mono bg-indigo-900/30 px-2 py-1 rounded">IP Geolocation Active</span>
-            </div>
-            <div id="location-chips" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                <!-- Dynamically rendered via JS -->
-                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 animate-pulse h-16"></div>
-                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 animate-pulse h-16"></div>
-                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 animate-pulse h-16"></div>
-            </div>
-        </section>
-
-        <!-- 2. PILOT SHOPS TRACKING TABLE -->
-        <section class="bg-gray-800 rounded-xl border border-gray-700 p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold text-gray-200">🏪 Active Pilot Shops</h2>
-                <button onclick="loadShops()" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg transition">Refresh Shops</button>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-gray-900/50 text-gray-400 border-b border-gray-700">
-                        <tr>
-                            <th class="p-3">Status</th>
-                            <th class="p-3">Shop Name</th>
-                            <th class="p-3">Owner</th>
-                            <th class="p-3">City</th>
-                            <th class="p-3">Version</th>
-                            <th class="p-3">Last Active</th>
-                            <th class="p-3 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="shops-table-body" class="divide-y divide-gray-700/50">
-                        <!-- Populated via JS -->
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- 3. VOICE & AI DIAGNOSTICS SECTION -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- VOICE PERFORMANCE -->
-            <section class="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                <h2 class="text-lg font-semibold text-gray-200 mb-2">🎤 Voice Diagnostics</h2>
-                <div class="flex justify-between text-sm mb-4 text-gray-400">
-                    <span>Success Rate: <b id="voice-rate" class="text-green-400">--%</b></span>
-                    <span>Avg Latency: <b id="voice-latency" class="text-indigo-400">--s</b></span>
-                </div>
-                <h3 class="text-xs uppercase font-bold tracking-wider text-gray-500 mb-2">Recent Failed Commands</h3>
-                <div id="voice-failures" class="space-y-2 text-xs font-mono max-h-48 overflow-y-auto">
-                    <!-- Populated via JS -->
-                </div>
-            </section>
-
-            <!-- ERROR CENTER -->
-            <section class="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-semibold text-red-400">🚨 Error Center</h2>
-                    <span id="error-count" class="bg-red-900/50 text-red-300 text-xs px-2 py-1 rounded">0 Unresolved</span>
-                </div>
-                <div id="error-list" class="space-y-3 max-h-56 overflow-y-auto text-xs">
-                    <!-- Populated via JS -->
-                </div>
-            </section>
-        </div>
     </div>
 
-    <!-- CLIENT SCRIPT TO FETCH API DATA -->
-    <script>
-        // Function to safely read cookie values
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
-            return '';
+</nav>
+
+
+
+<!-- ============================================================
+     MAIN
+     ============================================================ -->
+
+<main class="max-w-[1600px] mx-auto p-5 space-y-6">
+
+
+<!-- ============================================================
+     EXECUTIVE HEALTH
+     ============================================================ -->
+
+<section>
+
+    <div class="flex justify-between items-end mb-4">
+
+        <div>
+
+            <h2 class="text-lg font-semibold">
+                Business Health
+            </h2>
+
+            <p class="text-xs text-gray-500">
+                What is happening across your pilot shops right now
+            </p>
+
+        </div>
+
+        <button
+            onclick="refreshAll()"
+            class="bg-indigo-600 hover:bg-indigo-500
+                   px-4 py-2 rounded-lg text-sm font-semibold"
+        >
+            ↻ Refresh
+        </button>
+
+    </div>
+
+
+    <div
+        id="overview-cards"
+        class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-10 gap-3"
+    >
+
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     ATTENTION REQUIRED
+     ============================================================ -->
+
+<section
+    class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+>
+
+    <div class="flex justify-between items-center mb-4">
+
+        <div>
+
+            <h2 class="font-semibold text-red-300">
+                🚨 Attention Required
+            </h2>
+
+            <p class="text-xs text-gray-500">
+                Shops and problems that need investigation
+            </p>
+
+        </div>
+
+        <span
+            id="attention-count"
+            class="bg-red-950 text-red-300 px-3 py-1 rounded-full text-xs"
+        >
+            0
+        </span>
+
+    </div>
+
+
+    <div
+        id="attention-list"
+        class="grid md:grid-cols-2 lg:grid-cols-4 gap-3"
+    >
+
+        <div class="text-gray-600 text-sm">
+            Loading...
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     SHOP ACTIVITY
+     ============================================================ -->
+
+<section
+    class="bg-gray-900 border border-gray-800 rounded-2xl"
+>
+
+    <div class="p-5 border-b border-gray-800">
+
+        <div class="flex flex-wrap justify-between gap-3">
+
+            <div>
+
+                <h2 class="font-semibold">
+                    🏪 Shop Activity
+                </h2>
+
+                <p class="text-xs text-gray-500 mt-1">
+                    Understand exactly which shops are active and which
+                    features they are using.
+                </p>
+
+            </div>
+
+
+            <div class="flex gap-2">
+
+                <select
+                    id="shop-filter"
+                    onchange="renderShops()"
+                    class="bg-gray-800 border border-gray-700
+                           rounded-lg px-3 py-2 text-xs"
+                >
+
+                    <option value="all">
+                        All shops
+                    </option>
+
+                    <option value="healthy">
+                        Healthy
+                    </option>
+
+                    <option value="attention">
+                        Needs attention
+                    </option>
+
+                    <option value="inactive">
+                        Inactive
+                    </option>
+
+                    <option value="voice">
+                        Voice users
+                    </option>
+
+                </select>
+
+
+                <input
+                    id="shop-search"
+                    oninput="renderShops()"
+                    placeholder="Search shop..."
+                    class="bg-gray-800 border border-gray-700
+                           rounded-lg px-3 py-2 text-xs"
+                >
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="overflow-x-auto">
+
+        <table class="w-full text-left text-xs">
+
+            <thead class="bg-gray-950 text-gray-500">
+
+                <tr>
+
+                    <th class="p-3">
+                        Health
+                    </th>
+
+                    <th class="p-3">
+                        Shop
+                    </th>
+
+                    <th class="p-3">
+                        Location
+                    </th>
+
+                    <th class="p-3">
+                        Last Active
+                    </th>
+
+                    <th class="p-3">
+                        Inventory
+                    </th>
+
+                    <th class="p-3">
+                        Khata
+                    </th>
+
+                    <th class="p-3">
+                        Sales
+                    </th>
+
+                    <th class="p-3">
+                        Voice
+                    </th>
+
+                    <th class="p-3">
+                        Sync
+                    </th>
+
+                    <th class="p-3">
+                        Errors
+                    </th>
+
+                    <th class="p-3">
+                        Version
+                    </th>
+
+                    <th class="p-3">
+                        Action
+                    </th>
+
+                </tr>
+
+            </thead>
+
+
+            <tbody
+                id="shops-table-body"
+                class="divide-y divide-gray-800"
+            ></tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     FEATURE ADOPTION
+     ============================================================ -->
+
+<section class="grid lg:grid-cols-3 gap-5">
+
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold mb-1">
+            📊 Feature Adoption
+        </h2>
+
+        <p class="text-xs text-gray-500 mb-4">
+            What merchants are actually using.
+        </p>
+
+        <canvas id="featureChart"></canvas>
+
+    </div>
+
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold mb-1">
+            📈 Activity Trend
+        </h2>
+
+        <p class="text-xs text-gray-500 mb-4">
+            Events generated by merchants.
+        </p>
+
+        <canvas id="activityChart"></canvas>
+
+    </div>
+
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold mb-1">
+            🔄 Sync Health
+        </h2>
+
+        <p class="text-xs text-gray-500 mb-4">
+            Backup and synchronization reliability.
+        </p>
+
+        <canvas id="syncChart"></canvas>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     VOICE INTELLIGENCE
+     ============================================================ -->
+
+<section
+    class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+>
+
+    <div class="flex justify-between items-start mb-5">
+
+        <div>
+
+            <h2 class="font-semibold">
+                🎤 Voice Intelligence
+            </h2>
+
+            <p class="text-xs text-gray-500 mt-1">
+                Find exactly what merchants are saying and where
+                the voice system fails.
+            </p>
+
+        </div>
+
+
+        <div class="flex gap-5 text-sm">
+
+            <div>
+
+                <span class="text-gray-500">
+                    Success
+                </span>
+
+                <b
+                    id="voice-rate"
+                    class="text-green-400 ml-1"
+                >
+                    --%
+                </b>
+
+            </div>
+
+
+            <div>
+
+                <span class="text-gray-500">
+                    Avg latency
+                </span>
+
+                <b
+                    id="voice-latency"
+                    class="text-indigo-400 ml-1"
+                >
+                    --s
+                </b>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="grid lg:grid-cols-2 gap-5">
+
+
+        <!-- FAILED COMMANDS -->
+
+        <div>
+
+            <h3
+                class="text-xs uppercase tracking-wider
+                       text-gray-500 mb-3"
+            >
+                Failed Commands
+            </h3>
+
+
+            <div
+                id="voice-failures"
+                class="space-y-2 max-h-80 overflow-y-auto"
+            ></div>
+
+        </div>
+
+
+        <!-- INTENT BREAKDOWN -->
+
+        <div>
+
+            <h3
+                class="text-xs uppercase tracking-wider
+                       text-gray-500 mb-3"
+            >
+                Intent / Recognition Problems
+            </h3>
+
+
+            <div
+                id="voice-intents"
+                class="space-y-2 max-h-80 overflow-y-auto"
+            ></div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     INVENTORY + KHATA + SALES
+     ============================================================ -->
+
+<section class="grid lg:grid-cols-3 gap-5">
+
+
+    <!-- INVENTORY -->
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold">
+            📦 Inventory Intelligence
+        </h2>
+
+        <p class="text-xs text-gray-500 mb-4">
+            What merchants are stocking and where inventory
+            problems are appearing.
+        </p>
+
+
+        <div
+            id="inventory-insights"
+            class="space-y-3"
+        ></div>
+
+    </div>
+
+
+    <!-- KHATA -->
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold">
+            📒 Khata Intelligence
+        </h2>
+
+        <p class="text-xs text-gray-500 mb-4">
+            Credit / payment activity and usage.
+        </p>
+
+
+        <div
+            id="khata-insights"
+            class="space-y-3"
+        ></div>
+
+    </div>
+
+
+    <!-- SALES -->
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold">
+            💰 Sales Intelligence
+        </h2>
+
+        <p class="text-xs text-gray-500 mb-4">
+            Sales activity across pilot shops.
+        </p>
+
+
+        <div
+            id="sales-insights"
+            class="space-y-3"
+        ></div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     DEVICE / VERSION / LOCATION
+     ============================================================ -->
+
+<section class="grid lg:grid-cols-3 gap-5">
+
+
+    <!-- LOCATIONS -->
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <div class="flex justify-between mb-4">
+
+            <h2 class="font-semibold">
+                📍 Merchant Locations
+            </h2>
+
+            <span class="text-[10px] text-indigo-400">
+                IP based
+            </span>
+
+        </div>
+
+
+        <div
+            id="location-chips"
+            class="grid grid-cols-2 gap-2"
+        ></div>
+
+    </div>
+
+
+    <!-- DEVICES -->
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold mb-4">
+            📱 Devices
+        </h2>
+
+
+        <div
+            id="device-list"
+            class="space-y-2"
+        ></div>
+
+    </div>
+
+
+    <!-- APP VERSIONS -->
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold mb-4">
+            📲 App Versions
+        </h2>
+
+
+        <div
+            id="version-list"
+            class="space-y-2"
+        ></div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     AI / OCR / SYNC
+     ============================================================ -->
+
+<section class="grid lg:grid-cols-3 gap-5">
+
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold">
+            🤖 AI Usage
+        </h2>
+
+        <div
+            id="ai-insights"
+            class="mt-4 space-y-2"
+        ></div>
+
+    </div>
+
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold">
+            📷 OCR Usage
+        </h2>
+
+        <div
+            id="ocr-insights"
+            class="mt-4 space-y-2"
+        ></div>
+
+    </div>
+
+
+    <div
+        class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+    >
+
+        <h2 class="font-semibold">
+            🔄 Sync Diagnostics
+        </h2>
+
+        <div
+            id="sync-insights"
+            class="mt-4 space-y-2"
+        ></div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ============================================================
+     ACTIVITY TIMELINE
+     ============================================================ -->
+
+<section
+    class="bg-gray-900 border border-gray-800 rounded-2xl p-5"
+>
+
+    <div class="flex justify-between items-center mb-4">
+
+        <div>
+
+            <h2 class="font-semibold">
+                🕐 Recent Merchant Activity
+            </h2>
+
+            <p class="text-xs text-gray-500">
+                Latest actions generated by the pilot.
+            </p>
+
+        </div>
+
+
+        <button
+            onclick="loadActivity()"
+            class="text-xs bg-gray-800 hover:bg-gray-700
+                   px-3 py-2 rounded-lg"
+        >
+            Refresh
+        </button>
+
+    </div>
+
+
+    <div
+        id="activity-feed"
+        class="space-y-2 max-h-[500px] overflow-y-auto"
+    ></div>
+
+</section>
+
+
+
+<!-- ============================================================
+     ERROR CENTER
+     ============================================================ -->
+
+<section
+    class="bg-gray-900 border border-red-950 rounded-2xl p-5"
+>
+
+    <div class="flex justify-between items-center mb-4">
+
+        <div>
+
+            <h2 class="font-semibold text-red-300">
+                🚨 Error Center
+            </h2>
+
+            <p class="text-xs text-gray-500">
+                Problems affecting merchants.
+            </p>
+
+        </div>
+
+
+        <span
+            id="error-count"
+            class="bg-red-950 text-red-300
+                   px-3 py-1 rounded-full text-xs"
+        >
+            0
+        </span>
+
+    </div>
+
+
+    <div
+        id="error-list"
+        class="space-y-2 max-h-96 overflow-y-auto"
+    ></div>
+
+</section>
+
+
+</main>
+
+
+
+<!-- ============================================================
+     SHOP DETAIL MODAL
+     ============================================================ -->
+
+<div
+    id="shop-modal"
+    class="hidden fixed inset-0 z-50 bg-black/80
+           flex items-center justify-center p-4"
+>
+
+    <div
+        class="bg-gray-900 border border-gray-700
+               rounded-2xl w-full max-w-5xl max-h-[90vh]
+               overflow-y-auto"
+    >
+
+        <div
+            class="sticky top-0 bg-gray-900 border-b
+                   border-gray-800 p-5 flex justify-between"
+        >
+
+            <div>
+
+                <h2
+                    id="modal-shop-name"
+                    class="text-xl font-bold"
+                >
+                    Shop
+                </h2>
+
+                <p
+                    id="modal-shop-meta"
+                    class="text-xs text-gray-500"
+                ></p>
+
+            </div>
+
+
+            <button
+                onclick="closeShopModal()"
+                class="text-gray-400 hover:text-white
+                       text-xl"
+            >
+                ✕
+            </button>
+
+        </div>
+
+
+        <div
+            id="shop-detail"
+            class="p-5"
+        ></div>
+
+    </div>
+
+</div>
+
+
+
+<!-- ============================================================
+     STYLES
+     ============================================================ -->
+
+<style>
+
+.skeleton {
+
+    height: 90px;
+
+    background:
+        linear-gradient(
+            90deg,
+            #111827 25%,
+            #1f2937 50%,
+            #111827 75%
+        );
+
+    background-size: 200% 100%;
+
+    animation: loading 1.5s infinite;
+
+    border-radius: 14px;
+
+    border: 1px solid #1f2937;
+}
+
+
+@keyframes loading {
+
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+
+}
+
+
+.health-good {
+
+    color: #4ade80;
+
+}
+
+
+.health-warning {
+
+    color: #facc15;
+
+}
+
+
+.health-danger {
+
+    color: #f87171;
+
+}
+
+
+.health-dot {
+
+    width: 8px;
+
+    height: 8px;
+
+    border-radius: 999px;
+
+    display: inline-block;
+
+}
+
+
+::-webkit-scrollbar {
+
+    width: 7px;
+
+}
+
+
+::-webkit-scrollbar-track {
+
+    background: #111827;
+
+}
+
+
+::-webkit-scrollbar-thumb {
+
+    background: #374151;
+
+    border-radius: 10px;
+
+}
+
+</style>
+
+
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+
+<script>
+
+
+/* ============================================================
+   AUTH
+   ============================================================ */
+
+function getCookie(name) {
+
+    const value =
+        `; ${document.cookie}`;
+
+    const parts =
+        value.split(`; ${name}=`);
+
+    if (parts.length === 2) {
+
+        return parts
+            .pop()
+            .split(';')
+            .shift();
+
+    }
+
+    return '';
+
+}
+
+
+let AUTH_TOKEN =
+    localStorage.getItem('admin_token') ||
+    getCookie('jwt_token') ||
+    '';
+
+
+/* ============================================================
+   GLOBAL STATE
+   ============================================================ */
+
+let shops = [];
+
+let charts = {};
+
+
+/* ============================================================
+   API
+   ============================================================ */
+
+async function fetchAPI(
+    endpoint,
+    options = {}
+) {
+
+    if (!AUTH_TOKEN) {
+
+        AUTH_TOKEN =
+            prompt(
+                'Enter Super Admin JWT Token:'
+            ) || '';
+
+        if (!AUTH_TOKEN) {
+
+            return null;
+
         }
 
-        // 🚀 Automatically grab token from localStorage OR Cookie
-        let AUTH_TOKEN = localStorage.getItem('admin_token') || getCookie('jwt_token') || '';
+        localStorage.setItem(
+            'admin_token',
+            AUTH_TOKEN
+        );
 
-        async function fetchAPI(endpoint) {
-            // If there is no token at all, prompt immediately before making a bad request
-            if (!AUTH_TOKEN) {
-                AUTH_TOKEN = prompt("Session missing. Please enter your Super Admin JWT Token:") || '';
-                if (AUTH_TOKEN) {
-                    localStorage.setItem('admin_token', AUTH_TOKEN);
-                } else {
-                    return null; // Halt execution if they cancel
-                }
-            }
+    }
 
-            const res = await fetch(endpoint, {
-                headers: { 
-                    'Authorization': `Bearer ${AUTH_TOKEN}`,
-                    'Content-Type': 'application/json'
+
+    try {
+
+        const res =
+            await fetch(
+                endpoint,
+                {
+
+                    ...options,
+
+                    headers: {
+
+                        ...(options.headers || {}),
+
+                        'Authorization':
+                            `Bearer ${AUTH_TOKEN}`,
+
+                        'Content-Type':
+                            'application/json'
+
+                    }
+
                 }
-            });
-            
-            // If the token exists but is invalid/expired
-            if (res.status === 401 || res.status === 403 || res.status === 422) {
-                const token = prompt("Token invalid or expired. Enter Super Admin JWT Token:");
-                if (token) {
-                    localStorage.setItem('admin_token', token);
-                    location.reload();
-                }
-                return null;
-            }
-            
-            return res.json();
+            );
+
+
+        if (
+            res.status === 401 ||
+            res.status === 403 ||
+            res.status === 422
+        ) {
+
+            localStorage.removeItem(
+                'admin_token'
+            );
+
+            AUTH_TOKEN = '';
+
+            setConnection(
+                false,
+                'Authentication expired'
+            );
+
+            return null;
+
         }
 
-        async function loadOverview() {
-            const data = await fetchAPI('/api/v1/admin/overview');
-            
-            // 🚀 FIX: Handle missing data or error response visually instead of infinite pulsing
-            if (!data || !data.overview) {
-                document.getElementById('overview-cards').innerHTML = `
-                    <div class="col-span-full bg-red-900/40 border border-red-700 p-4 rounded-xl text-center text-red-200 text-sm">
-                        ⚠️ Session expired or server error. 
-                        <a href="/admin/login" class="underline font-bold text-white ml-2">Click here to re-login</a>
+
+        if (!res.ok) {
+
+            return null;
+
+        }
+
+
+        return await res.json();
+
+
+    } catch (error) {
+
+        setConnection(
+            false,
+            'Server unavailable'
+        );
+
+        return null;
+
+    }
+
+}
+
+
+/* ============================================================
+   CONNECTION
+   ============================================================ */
+
+function setConnection(
+    connected,
+    text
+) {
+
+    const dot =
+        document.getElementById(
+            'connection-dot'
+        );
+
+    const label =
+        document.getElementById(
+            'connection-text'
+        );
+
+
+    if (connected) {
+
+        dot.className =
+            'h-2.5 w-2.5 rounded-full bg-green-500';
+
+        label.innerText =
+            text || 'Live';
+
+        label.className =
+            'text-green-400';
+
+    } else {
+
+        dot.className =
+            'h-2.5 w-2.5 rounded-full bg-red-500';
+
+        label.innerText =
+            text || 'Offline';
+
+        label.className =
+            'text-red-400';
+
+    }
+
+}
+
+
+/* ============================================================
+   SAFE VALUE
+   ============================================================ */
+
+function n(
+    value,
+    fallback = 0
+) {
+
+    return Number.isFinite(
+        Number(value)
+    )
+        ? Number(value)
+        : fallback;
+
+}
+
+
+function text(
+    value,
+    fallback = '—'
+) {
+
+    return (
+        value === undefined ||
+        value === null ||
+        value === ''
+    )
+        ? fallback
+        : value;
+
+}
+
+
+/* ============================================================
+   OVERVIEW
+   ============================================================ */
+
+async function loadOverview() {
+
+    const data =
+        await fetchAPI(
+            '/api/v1/admin/overview'
+        );
+
+
+    if (
+        !data ||
+        !data.overview
+    ) {
+
+        document.getElementById(
+            'overview-cards'
+        ).innerHTML = `
+            <div class="col-span-full
+                        bg-red-950/40
+                        border border-red-900
+                        p-4 rounded-xl
+                        text-red-300">
+                Unable to load overview.
+            </div>
+        `;
+
+        return;
+
+    }
+
+
+    setConnection(
+        true,
+        'Live'
+    );
+
+
+    const o =
+        data.overview;
+
+
+    const cards = [
+
+        [
+            'Active Shops',
+            o.active_shops,
+            '🏪'
+        ],
+
+        [
+            'Bills Today',
+            o.bills_created,
+            '🧾'
+        ],
+
+        [
+            'Sales Today',
+            `₹${n(o.sales_recorded)}`,
+            '💰'
+        ],
+
+        [
+            'Sync Success',
+            o.sync_success_rate,
+            '🔄'
+        ],
+
+        [
+            'Voice Commands',
+            o.voice_commands,
+            '🎤'
+        ],
+
+        [
+            'AI Requests',
+            o.ai_requests,
+            '🤖'
+        ],
+
+        [
+            'Items Added',
+            o.products_added,
+            '📦'
+        ],
+
+        [
+            'Errors',
+            o.errors,
+            '⚠️'
+        ],
+
+        [
+            'Active Today',
+            o.active_today ??
+                o.active_shops,
+            '🔥'
+        ],
+
+        [
+            'Events Today',
+            o.events_today ??
+                '—',
+            '📡'
+        ]
+
+    ];
+
+
+    document.getElementById(
+        'overview-cards'
+    ).innerHTML = cards.map(
+        c => `
+
+        <div
+            class="bg-gray-900
+                   border border-gray-800
+                   rounded-xl p-4"
+        >
+
+            <div
+                class="text-xs text-gray-500
+                       flex justify-between"
+            >
+
+                <span>
+                    ${c[0]}
+                </span>
+
+                <span>
+                    ${c[2]}
+                </span>
+
+            </div>
+
+
+            <div
+                class="text-xl font-bold mt-2"
+            >
+                ${text(c[1])}
+            </div>
+
+        </div>
+
+        `
+    ).join('');
+
+}
+
+
+/* ============================================================
+   SHOPS
+   ============================================================ */
+
+async function loadShops() {
+
+    const data =
+        await fetchAPI(
+            '/api/v1/admin/shops'
+        );
+
+
+    if (
+        !data ||
+        !data.shops
+    ) {
+
+        return;
+
+    }
+
+
+    shops =
+        data.shops || [];
+
+
+    renderShops();
+
+    buildAttentionList();
+
+}
+
+
+function shopHealth(
+    shop
+) {
+
+    let score = 100;
+
+
+    const status =
+        String(
+            shop.status || ''
+        ).toLowerCase();
+
+
+    if (
+        status.includes('inactive')
+    ) {
+
+        score -= 45;
+
+    }
+
+
+    if (
+        n(shop.errors) > 0
+    ) {
+
+        score -= Math.min(
+            30,
+            n(shop.errors) * 5
+        );
+
+    }
+
+
+    if (
+        shop.sync_success_rate !== undefined &&
+        n(shop.sync_success_rate) < 90
+    ) {
+
+        score -= 20;
+
+    }
+
+
+    if (
+        shop.voice_success_rate !== undefined &&
+        n(shop.voice_success_rate) < 80
+    ) {
+
+        score -= 15;
+
+    }
+
+
+    score =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                score
+            )
+        );
+
+
+    if (score >= 80) {
+
+        return {
+            score,
+            label: 'Healthy',
+            cls: 'health-good',
+            dot: 'bg-green-500'
+        };
+
+    }
+
+
+    if (score >= 55) {
+
+        return {
+            score,
+            label: 'Watch',
+            cls: 'health-warning',
+            dot: 'bg-yellow-500'
+        };
+
+    }
+
+
+    return {
+
+        score,
+
+        label: 'Attention',
+
+        cls: 'health-danger',
+
+        dot: 'bg-red-500'
+
+    };
+
+}
+
+
+function renderShops() {
+
+    const filter =
+        document.getElementById(
+            'shop-filter'
+        ).value;
+
+
+    const search =
+        document.getElementById(
+            'shop-search'
+        ).value
+            .toLowerCase();
+
+
+    let filtered =
+        shops.filter(
+            s => {
+
+                const health =
+                    shopHealth(s);
+
+
+                const name =
+                    `${s.shop_name || ''}
+                     ${s.owner || ''}
+                     ${s.city || ''}`
+                        .toLowerCase();
+
+
+                if (
+                    search &&
+                    !name.includes(search)
+                ) {
+
+                    return false;
+
+                }
+
+
+                if (
+                    filter === 'healthy' &&
+                    health.score < 80
+                ) {
+
+                    return false;
+
+                }
+
+
+                if (
+                    filter === 'attention' &&
+                    health.score >= 80
+                ) {
+
+                    return false;
+
+                }
+
+
+                if (
+                    filter === 'inactive'
+                ) {
+
+                    const status =
+                        String(
+                            s.status || ''
+                        ).toLowerCase();
+
+                    if (
+                        !status.includes(
+                            'inactive'
+                        )
+                    ) {
+
+                        return false;
+
+                    }
+
+                }
+
+
+                if (
+                    filter === 'voice' &&
+                    n(
+                        s.voice_commands
+                    ) <= 0
+                ) {
+
+                    return false;
+
+                }
+
+
+                return true;
+
+            }
+        );
+
+
+    document.getElementById(
+        'shops-table-body'
+    ).innerHTML = filtered.map(
+        s => {
+
+            const h =
+                shopHealth(s);
+
+
+            return `
+
+            <tr
+                class="hover:bg-gray-800/60"
+            >
+
+                <td class="p-3">
+
+                    <div
+                        class="flex items-center gap-2"
+                    >
+
+                        <span
+                            class="health-dot ${h.dot}"
+                        ></span>
+
+                        <span
+                            class="${h.cls}"
+                        >
+                            ${h.score}
+                        </span>
+
+                    </div>
+
+                </td>
+
+
+                <td class="p-3">
+
+                    <div class="font-semibold">
+                        ${text(s.shop_name)}
+                    </div>
+
+                    <div class="text-[10px] text-gray-500">
+                        ${text(s.owner)}
+                    </div>
+
+                </td>
+
+
+                <td class="p-3 text-gray-400">
+                    ${text(s.city)}
+                </td>
+
+
+                <td class="p-3 text-gray-400">
+                    ${text(s.last_active)}
+                </td>
+
+
+                <td class="p-3">
+                    ${text(
+                        s.inventory_count ??
+                        s.products_added
+                    )}
+                </td>
+
+
+                <td class="p-3">
+                    ${text(
+                        s.khata_count ??
+                        s.ledger_entries
+                    )}
+                </td>
+
+
+                <td class="p-3">
+                    ${text(
+                        s.sales_count ??
+                        s.bills_created
+                    )}
+                </td>
+
+
+                <td class="p-3">
+                    ${text(
+                        s.voice_commands
+                    )}
+                </td>
+
+
+                <td class="p-3">
+
+                    <span
+                        class="${
+                            n(
+                                s.sync_success_rate,
+                                100
+                            ) >= 90
+
+                            ? 'text-green-400'
+
+                            : 'text-yellow-400'
+                        }"
+                    >
+                        ${text(
+                            s.sync_success_rate,
+                            '—'
+                        )}
+                    </span>
+
+                </td>
+
+
+                <td class="p-3">
+
+                    <span
+                        class="${
+                            n(s.errors) > 0
+                            ? 'text-red-400'
+                            : 'text-gray-500'
+                        }"
+                    >
+                        ${n(s.errors)}
+                    </span>
+
+                </td>
+
+
+                <td class="p-3">
+
+                    <span
+                        class="bg-gray-800
+                               px-2 py-1
+                               rounded"
+                    >
+                        ${text(
+                            s.app_version
+                        )}
+                    </span>
+
+                </td>
+
+
+                <td class="p-3">
+
+                    <button
+                        onclick="openShop(${s.id})"
+                        class="text-indigo-400
+                               hover:text-indigo-300"
+                    >
+                        Inspect →
+                    </button>
+
+                </td>
+
+            </tr>
+
+            `;
+
+        }
+    ).join('');
+
+
+    if (!filtered.length) {
+
+        document.getElementById(
+            'shops-table-body'
+        ).innerHTML = `
+
+            <tr>
+
+                <td
+                    colspan="12"
+                    class="p-8 text-center
+                           text-gray-500"
+                >
+                    No shops match this filter.
+                </td>
+
+            </tr>
+
+        `;
+
+    }
+
+}
+
+
+/* ============================================================
+   ATTENTION LIST
+   ============================================================ */
+
+function buildAttentionList() {
+
+    const problems = [];
+
+
+    shops.forEach(
+        s => {
+
+            const h =
+                shopHealth(s);
+
+
+            if (
+                h.score < 80
+            ) {
+
+                problems.push({
+
+                    shop:
+                        s.shop_name,
+
+                    city:
+                        s.city,
+
+                    score:
+                        h.score,
+
+                    reason:
+                        h.label,
+
+                    errors:
+                        n(s.errors),
+
+                    last:
+                        s.last_active
+
+                });
+
+            }
+
+        }
+    );
+
+
+    problems.sort(
+        (a, b) =>
+            a.score - b.score
+    );
+
+
+    document.getElementById(
+        'attention-count'
+    ).innerText =
+        problems.length;
+
+
+    document.getElementById(
+        'attention-list'
+    ).innerHTML =
+        problems.slice(
+            0,
+            8
+        ).map(
+            p => `
+
+            <div
+                class="bg-gray-950
+                       border border-gray-800
+                       rounded-xl p-3"
+            >
+
+                <div
+                    class="flex justify-between"
+                >
+
+                    <b>
+                        ${text(p.shop)}
+                    </b>
+
+                    <span
+                        class="${
+                            p.score < 55
+                            ? 'text-red-400'
+                            : 'text-yellow-400'
+                        }"
+                    >
+                        ${p.score}/100
+                    </span>
+
+                </div>
+
+                <div
+                    class="text-xs text-gray-500 mt-1"
+                >
+                    ${text(p.city)}
+                </div>
+
+                <div
+                    class="text-xs text-red-300 mt-2"
+                >
+                    ${p.reason}
+
+                    ${
+                        p.errors
+                        ? ` • ${p.errors} errors`
+                        : ''
+                    }
+                </div>
+
+                <div
+                    class="text-[10px]
+                           text-gray-600 mt-1"
+                >
+                    Last active:
+                    ${text(p.last)}
+                </div>
+
+            </div>
+
+            `
+        ).join('') ||
+        `
+            <div
+                class="col-span-full
+                       text-green-400
+                       text-sm"
+            >
+                ✓ No obvious shop problems detected.
+            </div>
+        `;
+
+}
+
+
+/* ============================================================
+   VOICE
+   ============================================================ */
+
+async function loadVoice() {
+
+    const data =
+        await fetchAPI(
+            '/api/v1/admin/analytics/voice'
+        );
+
+
+    if (
+        !data ||
+        !data.summary
+    ) {
+
+        return;
+
+    }
+
+
+    document.getElementById(
+        'voice-rate'
+    ).innerText =
+        `${text(
+            data.summary.success_rate_pct,
+            '--'
+        )}%`;
+
+
+    document.getElementById(
+        'voice-latency'
+    ).innerText =
+        `${text(
+            data.summary.avg_latency_sec,
+            '--'
+        )}s`;
+
+
+    const failures =
+        data.recent_failed_commands ||
+        [];
+
+
+    document.getElementById(
+        'voice-failures'
+    ).innerHTML =
+        failures.map(
+            f => `
+
+            <div
+                class="bg-gray-950
+                       border border-red-950
+                       rounded-lg p-3"
+            >
+
+                <div
+                    class="text-red-300"
+                >
+                    <b>
+                        Command:
+                    </b>
+
+                    "${text(
+                        f.command
+                    )}"
+                </div>
+
+                <div
+                    class="text-xs
+                           text-gray-500 mt-1"
+                >
+                    Reason:
+                    ${text(f.reason)}
+                </div>
+
+                <div
+                    class="text-[10px]
+                           text-gray-600 mt-1"
+                >
+                    Shop:
+                    ${text(f.shop_id)}
+
+                    •
+                    ${text(f.time)}
+                </div>
+
+            </div>
+
+            `
+        ).join('') ||
+
+        `
+            <div
+                class="text-gray-500 text-sm"
+            >
+                No recent voice failures.
+            </div>
+        `;
+
+
+    const intents =
+        data.intent_breakdown ||
+        data.intent_failures ||
+        [];
+
+
+    document.getElementById(
+        'voice-intents'
+    ).innerHTML =
+        Array.isArray(intents)
+
+        ? intents.map(
+            i => `
+
+            <div
+                class="flex justify-between
+                       bg-gray-950
+                       rounded-lg p-3"
+            >
+
+                <span>
+                    ${text(
+                        i.intent
+                    )}
+                </span>
+
+                <span
+                    class="text-red-400"
+                >
+                    ${text(
+                        i.failures ??
+                        i.count
+                    )}
+                </span>
+
+            </div>
+
+            `
+        ).join('')
+
+        : `
+
+            <div
+                class="text-gray-500 text-sm"
+            >
+                No intent breakdown available.
+            </div>
+
+        `;
+
+}
+
+
+/* ============================================================
+   LOCATIONS
+   ============================================================ */
+
+async function loadLocations() {
+
+    const data =
+        await fetchAPI(
+            '/api/v1/admin/analytics/locations'
+        );
+
+
+    if (
+        !data ||
+        !data.locations
+    ) {
+
+        return;
+
+    }
+
+
+    document.getElementById(
+        'location-chips'
+    ).innerHTML =
+        data.locations.map(
+            loc => `
+
+            <div
+                class="bg-gray-950
+                       border border-gray-800
+                       rounded-lg p-3"
+            >
+
+                <div
+                    class="flex justify-between"
+                >
+
+                    <b class="truncate">
+                        ${text(
+                            loc.city
+                        )}
+                    </b>
+
+                    <span
+                        class="text-indigo-400
+                               text-xs"
+                    >
+                        ${n(
+                            loc.shop_count
+                        )}
+                    </span>
+
+                </div>
+
+                <div
+                    class="text-[10px]
+                           text-gray-500 mt-1"
+                >
+                    ${text(loc.state)}
+                </div>
+
+            </div>
+
+            `
+        ).join('');
+
+}
+
+
+/* ============================================================
+   GENERIC INSIGHT LOADER
+   ============================================================ */
+
+async function loadOptionalInsights(
+    endpoint,
+    elementId,
+    renderer
+) {
+
+    const data =
+        await fetchAPI(
+            endpoint
+        );
+
+
+    const el =
+        document.getElementById(
+            elementId
+        );
+
+
+    if (!data) {
+
+        el.innerHTML = `
+
+            <div
+                class="text-xs text-gray-600"
+            >
+                Data not available yet.
+            </div>
+
+        `;
+
+        return null;
+
+    }
+
+
+    renderer(
+        data,
+        el
+    );
+
+
+    return data;
+
+}
+
+
+/* ============================================================
+   INVENTORY
+   ============================================================ */
+
+async function loadInventoryInsights() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/inventory',
+
+        'inventory-insights',
+
+        (data, el) => {
+
+            const items =
+                data.insights ||
+                data.items ||
+                [];
+
+
+            if (!Array.isArray(items)) {
+
+                el.innerHTML = `
+                    <div class="text-gray-500 text-sm">
+                        Inventory analytics unavailable.
                     </div>
                 `;
+
                 return;
+
             }
 
-            const cards = [
-                { label: 'Active Shops', val: data.overview.active_shops, icon: '🏪' },
-                { label: 'Bills Today', val: data.overview.bills_created, icon: '🧾' },
-                { label: 'Sales Today', val: `₹${data.overview.sales_recorded}`, icon: '💰' },
-                { label: 'Sync Success', val: data.overview.sync_success_rate, icon: '🔄' },
-                { label: 'Voice Cmds', val: data.overview.voice_commands, icon: '🎤' },
-                { label: 'AI Requests', val: data.overview.ai_requests, icon: '🤖' },
-                { label: 'Items Added', val: data.overview.products_added, icon: '📦' },
-                { label: 'Errors', val: data.overview.errors, icon: '⚠️' }
-            ];
 
-            document.getElementById('overview-cards').innerHTML = cards.map(c => `
-                <div class="bg-gray-800 p-3 rounded-xl border border-gray-700">
-                    <div class="text-xs text-gray-400 flex justify-between"><span>${c.label}</span><span>${c.icon}</span></div>
-                    <div class="text-lg font-bold text-gray-100 mt-1">${c.val}</div>
-                </div>
-            `).join('');
+            el.innerHTML =
+                items.map(
+                    x => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3"
+                    >
+
+                        <div
+                            class="flex justify-between"
+                        >
+
+                            <span>
+                                ${text(x.label)}
+                            </span>
+
+                            <b>
+                                ${text(x.value)}
+                            </b>
+
+                        </div>
+
+                        ${
+                            x.description
+
+                            ? `
+                                <div
+                                    class="text-[10px]
+                                           text-gray-500 mt-1"
+                                >
+                                    ${x.description}
+                                </div>
+                              `
+
+                            : ''
+                        }
+
+                    </div>
+
+                    `
+                ).join('');
+
         }
 
-        // 📍 NEW: Function to load location hotspots
-        async function loadLocations() {
-            const data = await fetchAPI('/api/v1/admin/analytics/locations');
-            if (!data || !data.locations) return;
+    );
 
-            const container = document.getElementById('location-chips');
-            if (data.locations.length === 0) {
-                container.innerHTML = `<div class="text-xs text-gray-500 col-span-full">No regional data recorded yet. Wait for a merchant to sync or log in.</div>`;
-                return;
-            }
+}
 
-            container.innerHTML = data.locations.map(loc => `
-                <div class="bg-gray-900 p-3 rounded-lg border border-gray-700 flex flex-col justify-center">
-                    <div class="flex justify-between items-start mb-1">
-                        <div class="text-sm font-bold text-gray-100 truncate pr-2" title="${loc.city}">${loc.city}</div>
-                        <span class="bg-indigo-900/60 text-indigo-300 text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
-                            ${loc.shop_count} ${loc.shop_count === 1 ? 'Shop' : 'Shops'}
+
+/* ============================================================
+   KHATA
+   ============================================================ */
+
+async function loadKhataInsights() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/khata',
+
+        'khata-insights',
+
+        (data, el) => {
+
+            const items =
+                data.insights ||
+                [];
+
+
+            el.innerHTML =
+                items.map(
+                    x => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3"
+                    >
+
+                        <div
+                            class="flex justify-between"
+                        >
+
+                            <span>
+                                ${text(x.label)}
+                            </span>
+
+                            <b>
+                                ${text(x.value)}
+                            </b>
+
+                        </div>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No Khata analytics available.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   SALES
+   ============================================================ */
+
+async function loadSalesInsights() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/sales',
+
+        'sales-insights',
+
+        (data, el) => {
+
+            const items =
+                data.insights ||
+                [];
+
+
+            el.innerHTML =
+                items.map(
+                    x => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3"
+                    >
+
+                        <div
+                            class="flex justify-between"
+                        >
+
+                            <span>
+                                ${text(x.label)}
+                            </span>
+
+                            <b>
+                                ${text(x.value)}
+                            </b>
+
+                        </div>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No sales analytics available.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   DEVICES
+   ============================================================ */
+
+async function loadDevices() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/devices',
+
+        'device-list',
+
+        (data, el) => {
+
+            const devices =
+                data.devices ||
+                [];
+
+
+            el.innerHTML =
+                devices.map(
+                    d => `
+
+                    <div
+                        class="flex justify-between
+                               bg-gray-950
+                               rounded-lg p-2"
+                    >
+
+                        <span class="truncate">
+                            📱 ${text(d.model)}
                         </span>
+
+                        <span
+                            class="text-indigo-400"
+                        >
+                            ${n(d.count)}
+                        </span>
+
                     </div>
-                    <div class="text-[10px] text-gray-400 truncate" title="${loc.state}">${loc.state}</div>
-                </div>
-            `).join('');
-        }
 
-        async function loadShops() {
-            const data = await fetchAPI('/api/v1/admin/shops');
-            if (!data || !data.shops) return;
+                    `
+                ).join('') ||
 
-            document.getElementById('shops-table-body').innerHTML = data.shops.map(s => `
-                <tr class="hover:bg-gray-750">
-                    <td class="p-3">${s.status}</td>
-                    <td class="p-3 font-semibold text-gray-200">${s.shop_name}</td>
-                    <td class="p-3">${s.owner}</td>
-                    <td class="p-3 text-gray-400">${s.city}</td>
-                    <td class="p-3"><span class="bg-gray-700 text-gray-300 px-2 py-0.5 rounded text-xs">${s.app_version}</span></td>
-                    <td class="p-3 text-gray-400">${s.last_active}</td>
-                    <td class="p-3 text-right">
-                        <a href="/admin/merchant/${s.id}" class="text-xs text-indigo-400 hover:underline">Profile</a>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        async function loadVoice() {
-            const data = await fetchAPI('/api/v1/admin/analytics/voice');
-            if (!data || !data.summary) return;
-
-            document.getElementById('voice-rate').innerText = `${data.summary.success_rate_pct}%`;
-            document.getElementById('voice-latency').innerText = `${data.summary.avg_latency_sec}s`;
-
-            document.getElementById('voice-failures').innerHTML = data.recent_failed_commands.map(f => `
-                <div class="bg-gray-900 p-2 rounded border border-red-900/30 text-red-300">
-                    <div><b>Cmd:</b> "${f.command}"</div>
-                    <div class="text-gray-500">Reason: ${f.reason} | Shop: #${f.shop_id} at ${f.time}</div>
-                </div>
-            `).join('') || '<div class="text-gray-500">No recent voice failures</div>';
-        }
-
-        async function loadErrors() {
-            const data = await fetchAPI('/api/v1/admin/errors');
-            if (!data || !data.unresolved_errors) return;
-
-            document.getElementById('error-count').innerText = `${data.unresolved_errors.length} Unresolved`;
-            document.getElementById('error-list').innerHTML = data.unresolved_errors.map(e => `
-                <div class="bg-gray-900 p-3 rounded border-l-4 border-red-500 flex justify-between items-start">
-                    <div>
-                        <span class="font-bold text-red-400">[${e.feature.toUpperCase()}]</span>
-                        <span class="text-gray-300">${e.message}</span>
-                        <div class="text-gray-500 text-[10px] mt-1">${e.shop_name} • ${e.time}</div>
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No device data available.
                     </div>
-                    <button onclick="resolveErr(${e.id})" class="text-[10px] bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Resolve</button>
-                </div>
-            `).join('') || '<div class="text-gray-500">Zero active errors reported</div>';
+                `;
+
         }
 
-        async function resolveErr(id) {
-            await fetch(`/api/v1/admin/errors/${id}/resolve`, {
-                method: 'POST',
-                headers: { 
-                    'Authorization': `Bearer ${AUTH_TOKEN}`,
-                    'Content-Type': 'application/json'
+    );
+
+}
+
+
+/* ============================================================
+   VERSIONS
+   ============================================================ */
+
+async function loadVersions() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/versions',
+
+        'version-list',
+
+        (data, el) => {
+
+            const versions =
+                data.versions ||
+                [];
+
+
+            el.innerHTML =
+                versions.map(
+                    v => `
+
+                    <div
+                        class="flex justify-between
+                               bg-gray-950
+                               rounded-lg p-2"
+                    >
+
+                        <span>
+                            ${text(
+                                v.version
+                            )}
+                        </span>
+
+                        <span
+                            class="text-indigo-400"
+                        >
+                            ${n(v.count)}
+                        </span>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No version data available.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   AI
+   ============================================================ */
+
+async function loadAI() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/ai',
+
+        'ai-insights',
+
+        (data, el) => {
+
+            const items =
+                data.insights ||
+                [];
+
+
+            el.innerHTML =
+                items.map(
+                    x => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3
+                               flex justify-between"
+                    >
+
+                        <span>
+                            ${text(x.label)}
+                        </span>
+
+                        <b>
+                            ${text(x.value)}
+                        </b>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No AI analytics available.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   OCR
+   ============================================================ */
+
+async function loadOCR() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/ocr',
+
+        'ocr-insights',
+
+        (data, el) => {
+
+            const items =
+                data.insights ||
+                [];
+
+
+            el.innerHTML =
+                items.map(
+                    x => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3
+                               flex justify-between"
+                    >
+
+                        <span>
+                            ${text(x.label)}
+                        </span>
+
+                        <b>
+                            ${text(x.value)}
+                        </b>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No OCR analytics available.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   SYNC
+   ============================================================ */
+
+async function loadSync() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/sync',
+
+        'sync-insights',
+
+        (data, el) => {
+
+            const items =
+                data.insights ||
+                [];
+
+
+            el.innerHTML =
+                items.map(
+                    x => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3
+                               flex justify-between"
+                    >
+
+                        <span>
+                            ${text(x.label)}
+                        </span>
+
+                        <b
+                            class="${
+                                String(
+                                    x.status || ''
+                                ).toLowerCase()
+                                    .includes('fail')
+                                ? 'text-red-400'
+                                : 'text-green-400'
+                            }"
+                        >
+                            ${text(x.value)}
+                        </b>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No sync analytics available.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   ACTIVITY
+   ============================================================ */
+
+async function loadActivity() {
+
+    await loadOptionalInsights(
+
+        '/api/v1/admin/analytics/activity',
+
+        'activity-feed',
+
+        (data, el) => {
+
+            const events =
+                data.events ||
+                data.activity ||
+                [];
+
+
+            el.innerHTML =
+                events.map(
+                    e => `
+
+                    <div
+                        class="bg-gray-950
+                               border border-gray-800
+                               rounded-lg p-3"
+                    >
+
+                        <div
+                            class="flex justify-between gap-4"
+                        >
+
+                            <div>
+
+                                <span
+                                    class="text-indigo-400
+                                           font-semibold"
+                                >
+                                    ${text(
+                                        e.event_type ||
+                                        e.action
+                                    )}
+                                </span>
+
+                                <span
+                                    class="text-gray-300 ml-2"
+                                >
+                                    ${text(
+                                        e.feature
+                                    )}
+                                </span>
+
+                            </div>
+
+
+                            <span
+                                class="text-[10px]
+                                       text-gray-600
+                                       whitespace-nowrap"
+                            >
+                                ${text(e.time)}
+                            </span>
+
+                        </div>
+
+
+                        <div
+                            class="text-xs text-gray-500 mt-1"
+                        >
+                            Shop:
+                            ${text(
+                                e.shop_name ||
+                                e.user_id
+                            )}
+                        </div>
+
+
+                        ${
+                            e.payload
+
+                            ? `
+                                <pre
+                                    class="text-[10px]
+                                           text-gray-600
+                                           mt-2
+                                           overflow-x-auto"
+                                >${escapeHTML(
+                                    JSON.stringify(
+                                        e.payload,
+                                        null,
+                                        2
+                                    )
+                                )}</pre>
+                              `
+
+                            : ''
+                        }
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500 text-sm"
+                    >
+                        No recent activity.
+                    </div>
+                `;
+
+        }
+
+    );
+
+}
+
+
+/* ============================================================
+   ERRORS
+   ============================================================ */
+
+async function loadErrors() {
+
+    const data =
+        await fetchAPI(
+            '/api/v1/admin/errors'
+        );
+
+
+    if (
+        !data ||
+        !data.unresolved_errors
+    ) {
+
+        return;
+
+    }
+
+
+    const errors =
+        data.unresolved_errors;
+
+
+    document.getElementById(
+        'error-count'
+    ).innerText =
+        `${errors.length} unresolved`;
+
+
+    document.getElementById(
+        'error-list'
+    ).innerHTML =
+        errors.map(
+            e => `
+
+            <div
+                class="bg-gray-950
+                       border-l-4
+                       border-red-500
+                       rounded-lg p-3"
+            >
+
+                <div>
+
+                    <span
+                        class="text-red-400
+                               font-bold"
+                    >
+                        [${text(
+                            e.feature
+                        ).toUpperCase()}]
+                    </span>
+
+                    <span
+                        class="text-gray-300 ml-1"
+                    >
+                        ${text(
+                            e.message
+                        )}
+                    </span>
+
+                </div>
+
+
+                <div
+                    class="text-xs text-gray-500 mt-1"
+                >
+
+                    ${text(e.shop_name)}
+
+                    •
+
+                    ${text(e.time)}
+
+                </div>
+
+
+                <button
+                    onclick="resolveErr(${e.id})"
+                    class="mt-2 text-[10px]
+                           bg-gray-800
+                           hover:bg-gray-700
+                           px-2 py-1 rounded"
+                >
+                    Resolve
+                </button>
+
+            </div>
+
+            `
+        ).join('') ||
+
+        `
+            <div
+                class="text-green-400 text-sm"
+            >
+                ✓ No unresolved errors.
+            </div>
+        `;
+
+}
+
+
+/* ============================================================
+   RESOLVE ERROR
+   ============================================================ */
+
+async function resolveErr(
+    id
+) {
+
+    await fetchAPI(
+
+        `/api/v1/admin/errors/${id}/resolve`,
+
+        {
+            method:
+                'POST'
+        }
+
+    );
+
+
+    loadErrors();
+
+}
+
+
+/* ============================================================
+   SHOP DETAIL
+   ============================================================ */
+
+async function openShop(
+    shopId
+) {
+
+    const modal =
+        document.getElementById(
+            'shop-modal'
+        );
+
+
+    modal.classList.remove(
+        'hidden'
+    );
+
+
+    document.getElementById(
+        'shop-detail'
+    ).innerHTML = `
+
+        <div
+            class="text-gray-500"
+        >
+            Loading merchant intelligence...
+        </div>
+
+    `;
+
+
+    const shop =
+        shops.find(
+            s =>
+                String(s.id) ===
+                String(shopId)
+        );
+
+
+    document.getElementById(
+        'modal-shop-name'
+    ).innerText =
+        text(
+            shop?.shop_name,
+            'Shop'
+        );
+
+
+    document.getElementById(
+        'modal-shop-meta'
+    ).innerText =
+        `${text(
+            shop?.owner
+        )} • ${text(
+            shop?.city
+        )}`;
+
+
+    const data =
+        await fetchAPI(
+            `/api/v1/admin/merchant/${shopId}/intelligence`
+        );
+
+
+    if (!data) {
+
+        document.getElementById(
+            'shop-detail'
+        ).innerHTML = `
+
+            <div
+                class="text-red-400"
+            >
+                Merchant intelligence API is not available yet.
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    renderShopDetail(
+        data
+    );
+
+}
+
+
+function renderShopDetail(
+    data
+) {
+
+    const el =
+        document.getElementById(
+            'shop-detail'
+        );
+
+
+    const s =
+        data.shop ||
+        {};
+
+
+    const activity =
+        data.activity ||
+        [];
+
+
+    const errors =
+        data.errors ||
+        [];
+
+
+    const voice =
+        data.voice ||
+        {};
+
+
+    const inventory =
+        data.inventory ||
+        {};
+
+
+    const khata =
+        data.khata ||
+        {};
+
+
+    const sales =
+        data.sales ||
+        {};
+
+
+    el.innerHTML = `
+
+        <!-- SHOP SUMMARY -->
+
+        <div
+            class="grid grid-cols-2
+                   md:grid-cols-4
+                   gap-3 mb-6"
+        >
+
+            ${metric(
+                'Last Active',
+                s.last_active
+            )}
+
+            ${metric(
+                'Inventory',
+                inventory.count
+            )}
+
+            ${metric(
+                'Khata',
+                khata.customers
+            )}
+
+            ${metric(
+                'Sales',
+                sales.count
+            )}
+
+        </div>
+
+
+        <!-- PROBLEMS -->
+
+        <div
+            class="bg-red-950/20
+                   border border-red-950
+                   rounded-xl p-4 mb-6"
+        >
+
+            <h3
+                class="font-semibold
+                       text-red-300 mb-3"
+            >
+                Problems detected
+            </h3>
+
+
+            ${
+                data.problems?.length
+
+                ? data.problems.map(
+                    p => `
+
+                    <div
+                        class="text-sm
+                               text-red-300
+                               mb-1"
+                    >
+                        • ${text(p)}
+                    </div>
+
+                    `
+                ).join('')
+
+                : `
+                    <div
+                        class="text-green-400
+                               text-sm"
+                    >
+                        ✓ No major problems detected.
+                    </div>
+                `
+            }
+
+        </div>
+
+
+        <!-- FEATURE USAGE -->
+
+        <div
+            class="grid md:grid-cols-3
+                   gap-4 mb-6"
+        >
+
+            ${detailBox(
+                '🎤 Voice',
+                voice.commands,
+                voice.success_rate
+            )}
+
+            ${detailBox(
+                '📦 Inventory',
+                inventory.actions,
+                inventory.items
+            )}
+
+            ${detailBox(
+                '📒 Khata',
+                khata.entries,
+                khata.balance
+            )}
+
+        </div>
+
+
+        <!-- RECENT ACTIVITY -->
+
+        <div>
+
+            <h3
+                class="font-semibold mb-3"
+            >
+                Recent activity
+            </h3>
+
+
+            <div
+                class="space-y-2"
+            >
+
+                ${
+                    activity.map(
+                        e => `
+
+                        <div
+                            class="bg-gray-950
+                                   rounded-lg p-3"
+                        >
+
+                            <div
+                                class="flex
+                                       justify-between"
+                            >
+
+                                <span
+                                    class="text-indigo-400"
+                                >
+                                    ${text(
+                                        e.event_type
+                                    )}
+                                </span>
+
+                                <span
+                                    class="text-[10px]
+                                           text-gray-600"
+                                >
+                                    ${text(
+                                        e.time
+                                    )}
+                                </span>
+
+                            </div>
+
+                            <div
+                                class="text-xs
+                                       text-gray-500"
+                            >
+                                ${text(
+                                    e.feature
+                                )}
+                            </div>
+
+                        </div>
+
+                        `
+                    ).join('') ||
+
+                    `
+                        <div
+                            class="text-gray-500
+                                   text-sm"
+                        >
+                            No recent activity.
+                        </div>
+                    `
                 }
-            });
-            loadErrors();
-        }
 
-        // Initialize Dashboard
-        loadOverview();
-        loadLocations(); // 📍 Load Locations on startup
-        loadShops();
-        loadVoice();
-        loadErrors();
+            </div>
 
-        // Auto-refresh every 30 seconds
-        setInterval(() => {
-            loadOverview();
-            loadLocations(); // 📍 Refresh Locations automatically
-            loadShops();
-            loadVoice();
-            loadErrors();
-        }, 30000);
-    </script>
+        </div>
+
+
+        <!-- ERRORS -->
+
+        <div class="mt-6">
+
+            <h3
+                class="font-semibold
+                       text-red-300 mb-3"
+            >
+                Recent errors
+            </h3>
+
+
+            ${
+                errors.map(
+                    e => `
+
+                    <div
+                        class="bg-gray-950
+                               rounded-lg p-3
+                               mb-2"
+                    >
+
+                        <div
+                            class="text-red-300"
+                        >
+                            ${text(
+                                e.message
+                            )}
+                        </div>
+
+                        <div
+                            class="text-xs
+                                   text-gray-600"
+                        >
+                            ${text(e.time)}
+                        </div>
+
+                    </div>
+
+                    `
+                ).join('') ||
+
+                `
+                    <div
+                        class="text-gray-500
+                               text-sm"
+                    >
+                        No errors.
+                    </div>
+                `
+            }
+
+        </div>
+
+    `;
+
+}
+
+
+function metric(
+    label,
+    value
+) {
+
+    return `
+
+        <div
+            class="bg-gray-950
+                   border border-gray-800
+                   rounded-xl p-4"
+        >
+
+            <div
+                class="text-xs text-gray-500"
+            >
+                ${label}
+            </div>
+
+            <div
+                class="text-lg font-bold mt-1"
+            >
+                ${text(value)}
+            </div>
+
+        </div>
+
+    `;
+
+}
+
+
+function detailBox(
+    title,
+    value,
+    secondary
+) {
+
+    return `
+
+        <div
+            class="bg-gray-950
+                   rounded-xl p-4"
+        >
+
+            <div
+                class="text-sm font-semibold"
+            >
+                ${title}
+            </div>
+
+            <div
+                class="text-xl font-bold mt-2"
+            >
+                ${text(value)}
+            </div>
+
+            <div
+                class="text-xs text-gray-500"
+            >
+                ${text(secondary)}
+            </div>
+
+        </div>
+
+    `;
+
+}
+
+
+function closeShopModal() {
+
+    document.getElementById(
+        'shop-modal'
+    ).classList.add(
+        'hidden'
+    );
+
+}
+
+
+/* ============================================================
+   CHARTS
+   ============================================================ */
+
+async function loadCharts() {
+
+    const data =
+        await fetchAPI(
+            '/api/v1/admin/analytics/charts'
+        );
+
+
+    if (!data) {
+
+        return;
+
+    }
+
+
+    createChart(
+        'featureChart',
+        'doughnut',
+        data.feature?.labels || [],
+        data.feature?.values || []
+    );
+
+
+    createChart(
+        'activityChart',
+        'line',
+        data.activity?.labels || [],
+        data.activity?.values || []
+    );
+
+
+    createChart(
+        'syncChart',
+        'line',
+        data.sync?.labels || [],
+        data.sync?.values || []
+    );
+
+}
+
+
+function createChart(
+    canvasId,
+    type,
+    labels,
+    values
+) {
+
+    const canvas =
+        document.getElementById(
+            canvasId
+        );
+
+
+    if (!canvas) {
+
+        return;
+
+    }
+
+
+    if (charts[canvasId]) {
+
+        charts[canvasId].destroy();
+
+    }
+
+
+    charts[canvasId] =
+        new Chart(
+            canvas,
+            {
+
+                type,
+
+                data: {
+
+                    labels,
+
+                    datasets: [
+
+                        {
+
+                            data: values,
+
+                            borderWidth: 2,
+
+                            tension: 0.35
+
+                        }
+
+                    ]
+
+                },
+
+                options: {
+
+                    responsive: true,
+
+                    plugins: {
+
+                        legend: {
+
+                            labels: {
+
+                                color:
+                                    '#9ca3af'
+
+                            }
+
+                        }
+
+                    },
+
+                    scales:
+                        type === 'doughnut'
+
+                        ? {}
+
+                        : {
+
+                            x: {
+
+                                ticks: {
+
+                                    color:
+                                        '#6b7280'
+
+                                }
+
+                            },
+
+                            y: {
+
+                                ticks: {
+
+                                    color:
+                                        '#6b7280'
+
+                                }
+
+                            }
+
+                        }
+
+                }
+
+            }
+        );
+
+}
+
+
+/* ============================================================
+   HTML ESCAPE
+   ============================================================ */
+
+function escapeHTML(
+    value
+) {
+
+    return String(value)
+        .replace(
+            /&/g,
+            '&amp;'
+        )
+        .replace(
+            /</g,
+            '&lt;'
+        )
+        .replace(
+            />/g,
+            '&gt;'
+        )
+        .replace(
+            /"/g,
+            '&quot;'
+        )
+        .replace(
+            /'/g,
+            '&#039;'
+        );
+
+}
+
+
+/* ============================================================
+   REFRESH
+   ============================================================ */
+
+async function refreshAll() {
+
+    document.getElementById(
+        'last-refresh'
+    ).innerText =
+        'Refreshing...';
+
+
+    await Promise.allSettled([
+
+        loadOverview(),
+
+        loadShops(),
+
+        loadLocations(),
+
+        loadVoice(),
+
+        loadErrors(),
+
+        loadInventoryInsights(),
+
+        loadKhataInsights(),
+
+        loadSalesInsights(),
+
+        loadDevices(),
+
+        loadVersions(),
+
+        loadAI(),
+
+        loadOCR(),
+
+        loadSync(),
+
+        loadActivity(),
+
+        loadCharts()
+
+    ]);
+
+
+    document.getElementById(
+        'last-refresh'
+    ).innerText =
+        `Last refresh: ${
+            new Date().toLocaleTimeString(
+                'en-IN'
+            )
+        }`;
+
+}
+
+
+/* ============================================================
+   INITIAL LOAD
+   ============================================================ */
+
+refreshAll();
+
+
+/* ============================================================
+   AUTO REFRESH
+   ============================================================ */
+
+setInterval(
+    refreshAll,
+    30000
+);
+
+
+</script>
+
+
 </body>
+
 </html>

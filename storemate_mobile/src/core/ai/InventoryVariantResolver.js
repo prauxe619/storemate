@@ -802,84 +802,76 @@ const productScore = (
 export const resolveInventoryVariant = ({
   command,
   inventory,
-}) => {
+  product,
+  priceHint,
+  price_hint,
+  unit,
+  unitType,
+  stockUnit,
+} = {}) => {
+  const normalizedCommand =
+    command && typeof command === 'object'
+      ? command
+      : {
+          product: product ?? null,
+          price_hint: priceHint ?? price_hint ?? null,
+          unit: unit ?? unitType ?? stockUnit ?? null,
+        };
 
   if (
-    !command ||
-    typeof command !== "object"
+    !normalizedCommand ||
+    typeof normalizedCommand !== 'object'
   ) {
-
     return {
-
-      status:
-        "INVALID_COMMAND",
-
-      reason:
-        "No normalized voice command was provided.",
-
+      status: 'INVALID_COMMAND',
+      reason: 'No normalized voice command was provided.',
     };
-
   }
 
-
   if (
-    !Array.isArray(
-      inventory
-    ) ||
+    !Array.isArray(inventory) ||
     inventory.length === 0
   ) {
-
     return {
-
-      status:
-        "PRODUCT_NOT_FOUND",
-
-      reason:
-        "Inventory is empty.",
-
+      status: 'PRODUCT_NOT_FOUND',
+      reason: 'Inventory is empty.',
       requested_product:
-        command.product ||
-        command.product_name ||
+        normalizedCommand.product ||
+        normalizedCommand.product_name ||
         null,
-
     };
-
   }
 
-
   const requestedProduct =
-    command.product ||
-    command.product_name ||
+    normalizedCommand.product ||
+    normalizedCommand.product_name ||
     null;
-
 
   const requestedPrice =
     numberOrNull(
-      command.price_hint ??
-      command.variant_price ??
-      command.selling_price
+      normalizedCommand.price_hint ??
+      normalizedCommand.priceHint ??
+      normalizedCommand.variant_price ??
+      normalizedCommand.selling_price
     );
-
 
   const requestedUnit =
     normalizeVariantUnit(
-      command.unit
+      normalizedCommand.unit ??
+      normalizedCommand.unit_type ??
+      normalizedCommand.unitType ??
+      normalizedCommand.stockUnit
     );
 
-
   if (!requestedProduct) {
-
     return {
-
-      status:
-        "PRODUCT_NOT_FOUND",
-
-      reason:
-        "Command does not contain a product name.",
-
+      status: 'PRODUCT_NOT_FOUND',
+      reason: 'Command does not contain a product name.',
     };
-
   }
+
+  // Continue here with your EXISTING product candidate,
+  // price filter, unit filter, ambiguity and winner logic.
 
 
   /*

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+            <a href="{{ url_for('admin_web.dashboard') }}" class="p-2 bg-white rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition">← Back</a>
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">{{ merchant.shop_name or 'Unnamed Store' }}</h1>
+                <p class="text-sm text-gray-500">Merchant ID: #{{ merchant.id }} | {{ merchant.email }}</p>
+            </div>
+        </div>
+        <div>
+            {% if merchant.is_active != False %}
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Account Active</span>
+            {% else %}
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Account Suspended</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Store Financial Metrics Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Store GMV Processed</span>
+            <p class="text-2xl font-extrabold text-emerald-600 mt-2">₹{{ "{:,.2f}".format(merchant_sales) }}</p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Transactions</span>
+            <p class="text-2xl font-extrabold text-gray-900 mt-2">{{ transaction_count }}</p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Subscription Tier</span>
+            <p class="text-2xl font-extrabold text-indigo-600 mt-2">{{ merchant.subscription.plan_type if merchant.subscription else 'FREE' }}</p>
+        </div>
+    </div>
+
+    <!-- Merchant Inspection Details -->
+    <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+        <h3 class="text-base font-bold text-gray-900 border-b border-gray-100 pb-3">Account Audit Trail</h3>
+        <ul class="divide-y divide-gray-100 text-sm">
+            {% for log in logs %}
+            <li class="py-3 flex justify-between items-center">
+                <span class="font-medium text-gray-800">{{ log.action }}</span>
+                <span class="text-xs text-gray-400">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            </li>
+            {% else %}
+            <li class="py-4 text-center text-gray-400 text-xs">No admin actions recorded for this merchant.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

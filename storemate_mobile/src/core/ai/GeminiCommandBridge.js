@@ -1,136 +1,56 @@
 /**
+ * ============================================================
  * COUNTR Phase 3E-3
- *
  * Gemini Command Bridge
- *
- * Purpose:
- *   Take an already structured Gemini result, validate it with the
- *   deterministic GeminiCommandValidator, and return a safe command
- *   contract for the existing local execution pipeline.
- *
- * IMPORTANT:
- *   This module does NOT execute sales, mutate inventory, create Khata
- *   entries, or write to the database.
- *
- *   Gemini = language interpretation
- *   Validator/Resolver = business authority
- *   Existing executor = transaction authority
+ * Purpose: Take structured backend result, validate it deterministically, and return a safe command contract.
+ * ============================================================
  */
 
-import {
-  validateGeminiCommand,
-} from "./GeminiCommandValidator";
+import { validateGeminiCommand } from "./GeminiCommandValidator";
 
-/**
- * Convert a validator READY result into the command contract expected
- * by the rest of COUNTR.
- *
- * Kept separate so Phase 3E-3 is easy to evolve without changing the
- * validator itself.
- */
-const buildReadyResult = ({
-  validation,
-  originalCommand,
-}) => {
+const buildReadyResult = ({ validation, originalCommand }) => {
   return {
-    status: "READY",
-
-    source: "GEMINI_VALIDATED",
-
+    status: "READY", source: "GEMINI_VALIDATED",
     command: {
       ...validation.command,
-
-      // Keep the original Gemini result available for diagnostics.
-      // Nothing in execution should use this field as authority.
-      gemini_raw: originalCommand,
+      gemini_raw: {
+        intent: originalCommand.intent ?? null, product: originalCommand.product ?? null, quantity: originalCommand.quantity ?? null,
+        qty: originalCommand.qty ?? null, unit: originalCommand.unit ?? null, price_hint: originalCommand.price_hint ?? null,
+        amount: originalCommand.amount ?? null, customer_name: originalCommand.customer_name ?? null, payment_type: originalCommand.payment_type ?? null,
+        confidence: originalCommand.confidence ?? null, source: originalCommand.source ?? null
+      }
     },
-
-    reason: null,
+    reason: null
   };
 };
 
-/**
- * Bridge a Gemini result into the deterministic local command system.
- *
- * @param {Object} options
- * @param {Object} options.geminiResult
- * @param {Array} options.inventory
- * @param {Array} options.customerNames
- *
- * @returns {Object}
- *
- * Possible statuses come from GeminiCommandValidator:
- *   READY
- *   PRODUCT_REQUIRED
- *   PRODUCT_NOT_FOUND
- *   UNIT_VARIANT_NOT_FOUND
- *   PRICE_VARIANT_NOT_FOUND
- *   CUSTOMER_REQUIRED
- *   AMOUNT_REQUIRED
- *   INVALID_QUANTITY
- */
-export const bridgeGeminiCommand = ({
-  geminiResult,
-  inventory = [],
-  customerNames = [],
-} = {}) => {
-  if (
-    !geminiResult ||
-    typeof geminiResult !== "object"
-  ) {
-    return {
-      status: "INVALID_GEMINI_RESULT",
-      source: "GEMINI_BRIDGE",
-      command: null,
-      reason: "Gemini result must be an object.",
-    };
-  }
+const normalizeCommand = command => {
+  if (!command || typeof command !== "object" || Array.isArray(command)) return null;
+  return {
+    ...command,
+    quantity: command.quantity ?? command.qty ?? null, qty: command.qty ?? command.quantity ?? null,
+    product: typeof command.product === "string" ? command.product.trim() || null : (command.product ?? null),
+    unit: typeof command.unit === "string" ? command.unit.trim().toUpperCase() || null : (command.unit ?? null),
+    price_hint: command.price_hint ?? null, amount: command.amount ?? null,
+    customer_name: typeof command.customer_name === "string" ? command.customer_name.trim() || null : (command.customer_name ?? null)
+  };
+};
 
-  // Support both:
-  //
-  // 1. Raw Gemini command:
-  //    { intent, product, quantity, ... }
-  //
-  // 2. A parser response wrapper:
-  //    { command: { intent, product, ... } }
-  //
-  // The wrapper is only unwrapped here; validation still happens below.
-  const originalCommand =
-    geminiResult.command &&
-    typeof geminiResult.command === "object"
-      ? geminiResult.command
-      : geminiResult;
+export const bridgeGeminiCommand = ({ geminiResult, inventory = [], customerNames = [] } = {}) => {
+  if (!geminiResult || typeof geminiResult !== "object" || Array.isArray(geminiResult)) return { status: "INVALID_GEMINI_RESULT", source: "GEMINI_BRIDGE", command: null, reason: "Gemini result must be an object." };
+  const rawCommand = geminiResult.command && typeof geminiResult.command === "object" && !Array.isArray(geminiResult.command) ? geminiResult.command : geminiResult;
+  const originalCommand = normalizeCommand(rawCommand);
+  if (!originalCommand) return { status: "INVALID_GEMINI_COMMAND", source: "GEMINI_BRIDGE", command: null, reason: "Gemini command could not be normalized." };
 
-  const validation =
-    validateGeminiCommand({
-      command: originalCommand,
-      inventory,
-      customerNames,
-    });
+  const safeInventory = Array.isArray(inventory) ? inventory : [];
+  const safeCustomerNames = Array.isArray(customerNames) ? customerNames : [];
+  let validation;
 
-  if (
-    !validation ||
-    validation.status !== "READY"
-  ) {
-    return {
-      status:
-        validation?.status ||
-        "GEMINI_VALIDATION_FAILED",
+  try { validation = validateGeminiCommand({ command: originalCommand, inventory: safeInventory, customerNames: safeCustomerNames }); } 
+  catch (error) { return { status: "GEMINI_VALIDATION_ERROR", source: "GEMINI_BRIDGE", command: null, reason: error?.message || "Gemini command validation failed." }; }
 
-      source: "GEMINI_BRIDGE",
-
-      command: null,
-
-      reason:
-        validation?.reason ||
-        "Gemini command failed deterministic validation.",
-    };
-  }
-
-  return buildReadyResult({
-    validation,
-    originalCommand,
-  });
+  if (!validation || validation.status !== "READY") return { status: validation?.status || "GEMINI_VALIDATION_FAILED", source: "GEMINI_BRIDGE", command: null, reason: validation?.reason || "Gemini command failed deterministic validation." };
+  return buildReadyResult({ validation, originalCommand });
 };
 
 export default bridgeGeminiCommand;

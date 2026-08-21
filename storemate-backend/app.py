@@ -27,7 +27,6 @@ from src.hybrid_parser import parse_with_rules
 from admin_web import admin_web_bp, limiter
 from telemetry import telemetry_bp
 from admin_analytics_bp import admin_analytics_bp
-from gemini_command_parser import parse_with_gemini
 
 
 # ==========================================
@@ -441,7 +440,7 @@ def sync_data():
             updated_at = safe_int(item_data.get("updated_at"))
 
             if updated_at is None:
-                updated_at = int(datetime.datetime.utcnow().timestamp() * 1000)
+                updated_at = int(datetime.utcnow().timestamp() * 1000)
 
             item = db.session.get(InventoryItem, item_id)
 
@@ -529,7 +528,7 @@ def sync_data():
             created_at = safe_int(entry_data.get("created_at"))
 
             if created_at is None:
-                created_at = int(datetime.datetime.utcnow().timestamp() * 1000)
+                created_at = int(datetime.utcnow().timestamp() * 1000)
 
             entry = db.session.get(LedgerEntry, entry_id)
 
@@ -600,7 +599,7 @@ def sync_data():
             created_at = safe_int(sale_data.get("created_at"))
 
             if created_at is None:
-                created_at = int(datetime.datetime.utcnow().timestamp() * 1000)
+                created_at = int(datetime.utcnow().timestamp() * 1000)
 
             sale = db.session.get(SalesTransaction, sale_id)
 
@@ -1751,236 +1750,26 @@ def health_check():
 # 🎙️ 100% OFFLINE VOICE PARSER ROUTE
 # ==========================================
 
-@app.route(
-    '/api/v1/ai/parse-intent',
-    methods=['POST']
-)
+@app.route('/api/v1/ai/parse-intent', methods=['POST'])
 @jwt_required()
 def parse_intent():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    text = (
-        data.get('text') or ''
-    ).strip()
+    data = request.json or {}
+    text = data.get('text', '')
+    inventory_names = data.get('inventory_names', [])
 
     if not text:
-
-        return jsonify({
-            "error":
-                "No speech text provided"
-        }), 400
-
-    inventory_names = (
-        data.get(
-            'inventory_names'
-        )
-        or []
-    )
-
-    customer_names = (
-        data.get(
-            'customer_names'
-        )
-        or []
-    )
-
-    local_hint = (
-        data.get(
-            'local_hint'
-        )
-        or {}
-    )
+        return jsonify({"error": "No speech text provided"}), 400
 
     try:
+        local_result = parse_with_rules(text, inventory_names=inventory_names)
+        print(f"⚡ Confidence: {local_result['confidence']} | Intent: {local_result['intent']} | Command: '{text}'")
 
-        # ======================================================
-        # GEMINI ONLY
-        # ======================================================
-        #
-        # IMPORTANT:
-        #
-        # The mobile application already has:
-        #
-        # LocalCommandPipeline
-        # VoiceCommandRouter
-        # InventoryVariantResolver
-        #
-        # Therefore this endpoint should NOT make the final
-        # transaction decision.
-        #
-        # Gemini's job here is ONLY:
-        #
-        # Natural language
-        #        ↓
-        # Structured command
-        #
-        # The mobile validator/bridge remains authoritative.
-        # ======================================================
+        local_result['source'] = 'LOCAL_HYBRID_ENGINE'
+        return jsonify(local_result), 200
 
-        gemini_result = parse_with_gemini(
-
-            text=text,
-
-            inventory_names=
-                inventory_names,
-
-            customer_names=
-                customer_names,
-
-            local_hint=
-                local_hint,
-
-        )
-
-        print(
-            "🧠 Gemini result:",
-            gemini_result
-        )
-
-
-        # ======================================================
-        # NORMALIZE RESPONSE
-        # ======================================================
-
-        if not isinstance(
-            gemini_result,
-            dict
-        ):
-
-            raise ValueError(
-                "Gemini parser returned invalid result"
-            )
-
-
-        # ======================================================
-        # REQUIRED FIELDS
-        # ======================================================
-        #
-        # Do not invent missing business values here.
-        #
-        # Missing values remain None/null.
-        # ======================================================
-
-        normalized_result = {
-
-            "intent":
-                gemini_result.get(
-                    "intent",
-                    "unknown"
-                ),
-
-            "product":
-                gemini_result.get(
-                    "product"
-                ),
-
-            "quantity":
-                gemini_result.get(
-                    "quantity"
-                ),
-
-            "unit":
-                gemini_result.get(
-                    "unit"
-                ),
-
-            "price_hint":
-                gemini_result.get(
-                    "price_hint"
-                ),
-
-            "amount":
-                gemini_result.get(
-                    "amount"
-                ),
-
-            "new_price":
-                gemini_result.get(
-                    "new_price"
-                ),
-
-            "discount_percent":
-                gemini_result.get(
-                    "discount_percent"
-                ),
-
-            "customer_name":
-                gemini_result.get(
-                    "customer_name"
-                ),
-
-            "payment_type":
-                gemini_result.get(
-                    "payment_type"
-                ),
-
-            "confidence":
-                gemini_result.get(
-                    "confidence",
-                    0
-                ),
-
-            "source":
-                "GEMINI_AI",
-
-            "cloud_called":
-                True,
-
-            # Keep this for diagnostics.
-            "local_hint":
-                local_hint,
-        }
-
-
-        # ======================================================
-        # DEBUG LOG
-        # ======================================================
-
-        print(
-            "✅ Gemini normalized result:",
-            normalized_result
-        )
-
-
-        return jsonify(
-            normalized_result
-        ), 200
-
-
-    except Exception as exc:
-
-        print(
-            f"❌ Gemini AI parse error: {exc}"
-        )
-
-
-        # ======================================================
-        # SAFE ERROR
-        # ======================================================
-        #
-        # IMPORTANT:
-        #
-        # Do NOT execute the local backend parser here.
-        #
-        # The mobile app already has its own local parser and
-        # will automatically fall back when the backend fails.
-        #
-        # Returning 500 allows VoiceCommandRouter to perform
-        # the correct offline/local fallback.
-        # ======================================================
-
-        return jsonify({
-
-            "error":
-                "Gemini voice parsing failed",
-
-            "source":
-                "GEMINI_ERROR",
-
-        }), 500
+    except Exception as e:
+        print(f"❌ Local Parser Error: {e}")
+        return jsonify({"error": "Voice parsing failed", "details": str(e)}), 500
 
 
 # ==========================================

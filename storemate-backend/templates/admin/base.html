@@ -1,51 +1,571 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StoreMate Admin Dashboard</title>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {% block title %}
+            Countr Admin
+        {% endblock %}
+    </title>
+
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    {% block head %}{% endblock %}
+
 </head>
-<body class="bg-gray-100 font-sans antialiased">
-    <nav class="bg-slate-900 border-b border-slate-800">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between h-16">
-            <div class="flex items-center space-x-6">
-                <div class="flex items-center space-x-3">
-                    <span class="text-2xl">🏪</span>
-                    <span class="text-white font-bold text-xl tracking-wide">StoreMate <span class="text-emerald-500 text-sm font-semibold">Admin</span></span>
-                </div>
-                <!-- Navigation Links -->
+
+
+<body class="bg-gray-100 font-sans antialiased text-gray-900">
+
+
+<!-- ============================================================
+     ADMIN NAVIGATION
+     ============================================================ -->
+
+<nav
+    class="bg-slate-950
+           border-b border-slate-800
+           sticky top-0 z-50"
+>
+
+    <div
+        class="max-w-[1600px]
+               mx-auto
+               px-4
+               sm:px-6
+               lg:px-8"
+    >
+
+        <div
+            class="flex
+                   items-center
+                   justify-between
+                   min-h-16
+                   gap-4"
+        >
+
+
+            <!-- =================================================
+                 BRAND
+                 ================================================= -->
+
+            <div class="flex items-center gap-6">
+
+                <a
+                    href="{{ url_for('admin_merchant_dashboard') }}"
+                    class="flex
+                           items-center
+                           gap-3
+                           shrink-0"
+                >
+
+                    <span
+                        class="w-9
+                               h-9
+                               rounded-xl
+                               bg-emerald-500
+                               flex
+                               items-center
+                               justify-center
+                               text-lg"
+                    >
+                        🏪
+                    </span>
+
+
+                    <div class="leading-tight">
+
+                        <div
+                            class="text-white
+                                   font-bold
+                                   text-lg
+                                   tracking-wide"
+                        >
+                            Countr
+                        </div>
+
+                        <div
+                            class="text-emerald-400
+                                   text-[10px]
+                                   font-bold
+                                   uppercase
+                                   tracking-widest"
+                        >
+                            Admin Control Center
+                        </div>
+
+                    </div>
+
+                </a>
+
+
+                <!-- =================================================
+                     DESKTOP NAVIGATION
+                     ================================================= -->
+
                 {% if session.get('admin_email') %}
-                <div class="flex space-x-4">
-                    <a href="{{ url_for('admin_web.dashboard') }}" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Merchants Overview</a>
-                    <a href="{{ url_for('admin_dashboard_ui') }}" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Live Telemetry Dashboard</a>
+
+                <div
+                    class="hidden
+                           lg:flex
+                           items-center
+                           gap-1"
+                >
+
+
+                    <!-- MERCHANTS -->
+
+                    <a
+                        href="{{ url_for('admin_merchant_dashboard') }}"
+                        class="
+                            px-3 py-2
+                            rounded-lg
+                            text-sm
+                            font-medium
+                            transition
+
+                            {% if request.endpoint == 'admin_merchant_dashboard'
+                               or request.endpoint == 'admin_web.dashboard' %}
+                                bg-slate-800
+                                text-white
+                            {% else %}
+                                text-gray-400
+                                hover:text-white
+                                hover:bg-slate-900
+                            {% endif %}
+                        "
+                    >
+                        Merchants
+                    </a>
+
+
+                    <!-- LIVE TELEMETRY -->
+
+                    <a
+                        href="{{ url_for('admin_dashboard_ui') }}"
+                        class="
+                            px-3 py-2
+                            rounded-lg
+                            text-sm
+                            font-medium
+                            transition
+                            flex
+                            items-center
+                            gap-2
+
+                            {% if request.endpoint == 'admin_dashboard_ui' %}
+                                bg-emerald-500/10
+                                text-emerald-400
+                            {% else %}
+                                text-gray-400
+                                hover:text-white
+                                hover:bg-slate-900
+                            {% endif %}
+                        "
+                    >
+
+                        <span
+                            class="relative
+                                   flex
+                                   h-2
+                                   w-2"
+                        >
+
+                            <span
+                                class="
+                                    animate-ping
+                                    absolute
+                                    inline-flex
+                                    h-full
+                                    w-full
+                                    rounded-full
+                                    bg-emerald-400
+                                    opacity-75
+                                "
+                            ></span>
+
+                            <span
+                                class="
+                                    relative
+                                    inline-flex
+                                    rounded-full
+                                    h-2
+                                    w-2
+                                    bg-emerald-500
+                                "
+                            ></span>
+
+                        </span>
+
+                        Live Intelligence
+
+                    </a>
+
                 </div>
+
                 {% endif %}
+
             </div>
+
+
+            <!-- =================================================
+                 RIGHT SIDE
+                 ================================================= -->
+
             {% if session.get('admin_email') %}
-            <div class="flex items-center space-x-4">
-                <span class="text-gray-300 text-sm">{{ session.get('admin_email') }}</span>
-                <a href="{{ url_for('admin_web.logout') }}" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition">Logout</a>
+
+            <div
+                class="flex
+                       items-center
+                       gap-3"
+            >
+
+                <!-- SYSTEM STATUS -->
+
+                <div
+                    class="
+                        hidden
+                        md:flex
+                        items-center
+                        gap-2
+                        px-3
+                        py-1.5
+                        rounded-lg
+                        bg-slate-900
+                        border
+                        border-slate-800
+                    "
+                >
+
+                    <span
+                        class="
+                            w-2
+                            h-2
+                            rounded-full
+                            bg-emerald-500
+                        "
+                    ></span>
+
+                    <span
+                        class="
+                            text-[11px]
+                            font-medium
+                            text-gray-400
+                        "
+                    >
+                        System Online
+                    </span>
+
+                </div>
+
+
+                <!-- ADMIN EMAIL -->
+
+                <div
+                    class="
+                        hidden
+                        sm:block
+                        text-right
+                    "
+                >
+
+                    <div
+                        class="
+                            text-xs
+                            text-gray-300
+                            font-medium
+                        "
+                    >
+                        {{ session.get('admin_email') }}
+                    </div>
+
+                    <div
+                        class="
+                            text-[9px]
+                            uppercase
+                            tracking-wider
+                            text-gray-600
+                        "
+                    >
+                        Super Admin
+                    </div>
+
+                </div>
+
+
+                <!-- LOGOUT -->
+
+                <a
+                    href="{{ url_for('admin_web.logout') }}"
+                    class="
+                        bg-red-600
+                        hover:bg-red-700
+                        text-white
+                        px-3
+                        py-2
+                        rounded-lg
+                        text-xs
+                        font-semibold
+                        transition
+                    "
+                >
+                    Logout
+                </a>
+
             </div>
+
             {% endif %}
+
         </div>
+
+
+        <!-- ========================================================
+             MOBILE NAVIGATION
+             ======================================================== -->
+
+        {% if session.get('admin_email') %}
+
+        <div
+            class="
+                lg:hidden
+                flex
+                items-center
+                gap-2
+                pb-3
+                overflow-x-auto
+            "
+        >
+
+            <a
+                href="{{ url_for('admin_merchant_dashboard') }}"
+                class="
+                    whitespace-nowrap
+                    px-3
+                    py-2
+                    rounded-lg
+                    text-xs
+                    font-semibold
+                    {% if request.endpoint == 'admin_merchant_dashboard'
+                       or request.endpoint == 'admin_web.dashboard' %}
+                        bg-slate-800
+                        text-white
+                    {% else %}
+                        text-gray-400
+                        bg-slate-900
+                    {% endif %}
+                "
+            >
+                🏪 Merchants
+            </a>
+
+
+            <a
+                href="{{ url_for('admin_dashboard_ui') }}"
+                class="
+                    whitespace-nowrap
+                    px-3
+                    py-2
+                    rounded-lg
+                    text-xs
+                    font-semibold
+                    flex
+                    items-center
+                    gap-2
+
+                    {% if request.endpoint == 'admin_dashboard_ui' %}
+                        bg-emerald-500/10
+                        text-emerald-400
+                    {% else %}
+                        text-gray-400
+                        bg-slate-900
+                    {% endif %}
+                "
+            >
+
+                <span
+                    class="w-1.5 h-1.5
+                           rounded-full
+                           bg-emerald-500"
+                ></span>
+
+                Live Intelligence
+
+            </a>
+
+        </div>
+
+        {% endif %}
+
     </div>
+
 </nav>
 
-    <main class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="mb-4 p-4 rounded-lg text-sm font-medium {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-emerald-100 text-emerald-700{% endif %}">
-                {{ message }}
-              </div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
 
-        {% block content %}{% endblock %}
-    </main>
+
+<!-- ============================================================
+     FLASH MESSAGES
+     ============================================================ -->
+
+<main
+    class="
+        max-w-[1600px]
+        mx-auto
+        py-6
+        px-4
+        sm:px-6
+        lg:px-8
+    "
+>
+
+    {% with messages =
+        get_flashed_messages(
+            with_categories=true
+        )
+    %}
+
+        {% if messages %}
+
+            <div class="space-y-3 mb-6">
+
+                {% for category, message in messages %}
+
+                    <div
+                        class="
+                            p-4
+                            rounded-xl
+                            text-sm
+                            font-medium
+                            border
+
+                            {% if category == 'error' %}
+
+                                bg-red-50
+                                text-red-700
+                                border-red-100
+
+                            {% elif category == 'warning' %}
+
+                                bg-yellow-50
+                                text-yellow-700
+                                border-yellow-100
+
+                            {% else %}
+
+                                bg-emerald-50
+                                text-emerald-700
+                                border-emerald-100
+
+                            {% endif %}
+                        "
+                    >
+
+                        {{ message }}
+
+                    </div>
+
+                {% endfor %}
+
+            </div>
+
+        {% endif %}
+
+    {% endwith %}
+
+
+    <!-- ========================================================
+         PAGE CONTENT
+         ======================================================== -->
+
+    {% block content %}{% endblock %}
+
+</main>
+
+
+
+<!-- ============================================================
+     GLOBAL JAVASCRIPT
+     ============================================================ -->
+
+<script>
+
+    /*
+     * Prevent accidental double-clicks
+     * on admin POST forms.
+     */
+
+    document.addEventListener(
+        'submit',
+        function(event) {
+
+            const form =
+                event.target;
+
+            if (
+                form.tagName === 'FORM'
+            ) {
+
+                const button =
+                    form.querySelector(
+                        'button[type="submit"]'
+                    );
+
+                if (button) {
+
+                    setTimeout(
+                        function() {
+
+                            button.disabled =
+                                true;
+
+                            button.classList.add(
+                                'opacity-50',
+                                'cursor-not-allowed'
+                            );
+
+                        },
+                        10
+                    );
+
+                }
+
+            }
+
+        }
+    );
+
+
+    /*
+     * Global page loading indicator.
+     */
+
+    window.addEventListener(
+        'beforeunload',
+        function() {
+
+            document.body.classList.add(
+                'opacity-95'
+            );
+
+        }
+    );
+
+</script>
+
+
+{% block scripts %}{% endblock %}
+
 </body>
+
 </html>
